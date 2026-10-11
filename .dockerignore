@@ -1,0 +1,27 @@
+# Keep secrets, runtime data and dev files out of the Docker build context (S1).
+# The build context is the repository root (see Dockerfile).
+
+# Secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# Runtime data: user database, vectors, logs
+**/*.db
+**/*.db-*
+**/vector_store/
+**/logs/
+data/
+
+# Python and test leftovers
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/tests/
+.venv/
+**/venv/
+
+# Node and VCS
+**/node_modules/
+.git/
