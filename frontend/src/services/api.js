@@ -6,9 +6,19 @@
 const BASE_URL = '/api/v1';  // Proxied via vite.config.js
 
 let currentToken = null;
+let onUnauthorized = null;
+
+export const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
 
 export function setToken(token) {
   currentToken = token;
+}
+
+/**
+ * Register what to do when the server rejects our token (401): the app logs out.
+ */
+export function setUnauthorizedHandler(handler) {
+  onUnauthorized = handler;
 }
 
 function getAuthHeaders(headers = {}) {
@@ -26,6 +36,22 @@ function parseErrorMessage(errData, fallback) {
   }
   if (typeof errData.detail === 'object') return JSON.stringify(errData.detail);
   return fallback;
+}
+
+/**
+ * Throw a readable error for a failed authenticated request.
+ * A 401 means the token is no longer valid: forget it, tell the app once, and say so.
+ */
+async function checkResponse(res, fallback) {
+  if (res.ok) return;
+  if (res.status === 401 && currentToken) {
+    currentToken = null;
+    onUnauthorized?.();
+    throw new Error(SESSION_EXPIRED_MESSAGE);
+  }
+  if (res.status === 401) throw new Error(SESSION_EXPIRED_MESSAGE);
+  const err = await res.json().catch(() => null);
+  throw new Error(parseErrorMessage(err, fallback));
 }
 
 /**
@@ -76,10 +102,7 @@ export async function uploadDocument(file) {
     body: formData,
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(parseErrorMessage(err, 'Upload failed'));
-  }
+  await checkResponse(res, 'Upload failed');
   return res.json();
 }
 
@@ -99,10 +122,7 @@ export async function sendChat({ question, sessionId = 'default', useAgent = fal
     }),
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(parseErrorMessage(err, 'Chat failed'));
-  }
+  await checkResponse(res, 'Chat failed');
   return res.json();
 }
 
@@ -123,14 +143,31 @@ export async function sendChatStream({ question, sessionId = 'default', useAgent
       }),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      throw new Error(parseErrorMessage(err, 'Stream failed'));
-    }
+    await checkResponse(res, 'Stream failed');
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let finished = false;  // set by a 'done' or 'error' event
+
+    const handleLine = (line) => {
+      if (finished || !line.startsWith('data: ')) return;
+      let data;
+      try {
+        data = JSON.parse(line.slice(6));
+      } catch {
+        return;  // Skip malformed SSE lines
+      }
+      if (data.type === 'token') {
+        onToken?.(data.content);
+      } else if (data.type === 'done') {
+        finished = true;
+        onDone?.(data);
+      } else if (data.type === 'error') {
+        finished = true;
+        onError?.(new Error(data.message || 'The answer could not be generated.'));
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -139,21 +176,15 @@ export async function sendChatStream({ question, sessionId = 'default', useAgent
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
+      lines.forEach(handleLine);
+    }
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === 'token') {
-              onToken?.(data.content);
-            } else if (data.type === 'done') {
-              onDone?.(data);
-            }
-          } catch (e) {
-            // Skip malformed SSE lines
-          }
-        }
-      }
+    // The last event may arrive without a trailing newline
+    buffer += decoder.decode();
+    buffer.split('\n').forEach(handleLine);
+
+    if (!finished) {
+      onError?.(new Error('The connection closed before the answer was complete. Please try again.'));
     }
   } catch (err) {
     onError?.(err);
@@ -165,7 +196,7 @@ export async function sendChatStream({ question, sessionId = 'default', useAgent
  */
 export async function getDocuments() {
   const res = await fetch(`${BASE_URL}/documents`, { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch documents');
+  await checkResponse(res, 'Failed to fetch documents');
   return res.json();
 }
 
@@ -174,7 +205,7 @@ export async function getDocuments() {
  */
 export async function getDocumentsDetailed() {
   const res = await fetch(`${BASE_URL}/documents/detailed`, { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch detailed documents');
+  await checkResponse(res, 'Failed to fetch detailed documents');
   return res.json();
 }
 
@@ -183,7 +214,7 @@ export async function getDocumentsDetailed() {
  */
 export async function deleteAllDocuments() {
   const res = await fetch(`${BASE_URL}/documents`, { method: 'DELETE', headers: getAuthHeaders() });
-  if (!res.ok) throw new Error('Failed to delete documents');
+  await checkResponse(res, 'Failed to delete documents');
   return res.json();
 }
 
@@ -196,7 +227,7 @@ export async function clearSession(sessionId) {
     headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ question: '', session_id: sessionId }),
   });
-  if (!res.ok) throw new Error('Failed to clear session');
+  await checkResponse(res, 'Failed to clear session');
   return res.json();
 }
 

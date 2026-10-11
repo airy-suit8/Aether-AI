@@ -106,15 +106,10 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
               timestamp: new Date().toISOString(),
             }
             setMessages(prev => [...prev, aiMessage])
-            setStreamingText('')
-            setStreamingPhase('')
-            setIsLoading(false)
           },
+          // Server error event, dropped connection, or missing 'done': show it, keep no partial answer
           onError: (err) => {
             addToast(err.message || 'Stream failed', 'error')
-            setStreamingText('')
-            setStreamingPhase('')
-            setIsLoading(false)
           },
         })
       } else {
@@ -134,15 +129,17 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
           content: result.answer,
           sources: result.sources || [],
           confidence: result.confidence || 0,
+          toolUsed: result.tool_used || null,
           mode,
           timestamp: new Date().toISOString(),
         }
         setMessages(prev => [...prev, aiMessage])
-        setStreamingPhase('')
-        setIsLoading(false)
       }
     } catch (err) {
       addToast(err.message || 'Failed to get response', 'error')
+    } finally {
+      // Always unlock the composer, whatever happened above
+      setStreamingText('')
       setStreamingPhase('')
       setIsLoading(false)
     }
