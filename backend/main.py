@@ -16,13 +16,13 @@ import tempfile
 import traceback
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 # Rate limiting
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -74,12 +74,16 @@ app.add_middleware(
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown", ".docx", ".csv", ".xlsx", ".xls"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB max upload size
+MAX_QUESTION_CHARS = 5000
+
+# Session ids become cache keys, database values and log text: keep them short and plain
+SessionId = Field(default="default", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
 
 # ── Request/Response Models ────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     question: str
-    session_id: str = "default"
+    session_id: str = SessionId
     use_agent: bool = False
     use_langchain: bool = False
     use_hybrid: bool = False
@@ -92,8 +96,8 @@ class ChatResponse(BaseModel):
     tool_used: Optional[str] = None  # agent mode: which tools answered
 
 class FeedbackRequest(BaseModel):
-    session_id: str
-    feedback: int  # 1 for up, -1 for down, 0 to clear
+    session_id: str = SessionId
+    feedback: Literal[-1, 0, 1]  # 1 for up, -1 for down, 0 to clear
 
 class UploadResponse(BaseModel):
     filename: str
@@ -280,8 +284,8 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
     if not chat_request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    if len(chat_request.question) > 5000:
-        raise HTTPException(status_code=400, detail="Question too long. Maximum 5000 characters.")
+    if len(chat_request.question) > MAX_QUESTION_CHARS:
+        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {MAX_QUESTION_CHARS} characters.")
 
     mode = "agent" if chat_request.use_agent else ("langchain" if chat_request.use_langchain else "original")
     start_time = time.time()
@@ -338,6 +342,9 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
     """Streaming endpoint — returns the answer token-by-token using SSE."""
     if not chat_request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    if len(chat_request.question) > MAX_QUESTION_CHARS:
+        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {MAX_QUESTION_CHARS} characters.")
 
     mode = "agent" if chat_request.use_agent else ("langchain" if chat_request.use_langchain else "original")
 
