@@ -1,0 +1,76 @@
+# Runs on every push and pull request. Needs no secrets: the backend tests use fake models,
+# a temp database and a temp vector store (backend/tests/conftest.py).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest with coverage
+        run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=70
+
+      - name: Coverage of each core module is at least 70%
+        run: |
+          for module in rag_engine.py rag_langchain.py agent.py tools.py auth.py database.py main.py; do
+            if ! python -m coverage report --include="$module" --fail-under=70 > /dev/null; then
+              python -m coverage report --include="$module"
+              echo "::error::$module coverage is below 70%"
+              exit 1
+            fi
+          done
+
+  frontend:
+    name: Frontend (Node 24 LTS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
