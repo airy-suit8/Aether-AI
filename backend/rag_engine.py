@@ -162,7 +162,10 @@ class ChromaVectorStoreWrapper:
         self._chroma = Chroma(
             collection_name=self.collection_name,
             embedding_function=_get_embeddings(),
-            persist_directory=self.persist_directory
+            persist_directory=self.persist_directory,
+            # Cosine distance, so relevance scores are cosine similarity (Chroma's default is L2).
+            # Only applies when the collection is created: delete an old vector_store/ to switch.
+            collection_configuration={"hnsw": {"space": "cosine"}},
         )
 
     def add_documents(self, user_id: int, documents: List[Document]):

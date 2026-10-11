@@ -42,6 +42,8 @@ Run these in **Command Prompt** from the project folder (the one containing this
 
    Open `backend\.env` in a text editor. Put your Gemini key after `GOOGLE_API_KEY=` and paste the long random string printed above after `JWT_SECRET=`. The backend refuses to start without `JWT_SECRET`. Never commit `backend\.env`.
 
+4. If you have an older copy of this project, delete the folder `backend\vector_store\` once (with the backend stopped). The vector store now uses cosine distance, and that setting only applies when the store is first created. Older stores hold no usable data (the audit found them empty), so nothing is lost; upload your documents again.
+
 ## Run on Windows
 
 Double-click `start.bat` (or run it from Command Prompt). It opens two windows, one for the backend on port 8000 and one for the frontend on port 5173. Then open **http://localhost:5173**, register a user, upload a document and ask a question about it.
