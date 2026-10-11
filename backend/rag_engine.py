@@ -634,16 +634,15 @@ def list_documents(user_id: int) -> List[str]:
     return sorted(list(set(d["filename"] for d in docs)))
 
 def clear_documents(user_id: int) -> Dict[str, Any]:
-    """Delete a user's documents from both SQLite and ChromaDB."""
-    # Clear from ChromaDB vector store
-    try:
-        coll = _store.chroma._collection
+    """Delete a user's documents from ChromaDB, then SQLite. Returns the number of chunks deleted."""
+    # Clear from ChromaDB vector store (errors propagate: the caller reports them)
+    coll = _store.chroma._collection
+    chunk_ids = coll.get(where={"user_id": user_id}, include=[])["ids"]
+    if chunk_ids:
         coll.delete(where={"user_id": user_id})
-    except Exception:
-        pass  # Collection may be empty or not exist yet
-    # Clear from SQLite metadata
+    # Clear from SQLite metadata only once the vectors are gone
     clear_user_documents(user_id)
-    return {"status": "cleared", "deleted": 0}
+    return {"status": "cleared", "deleted": len(chunk_ids)}
 
 # ── Session Management ────────────────────────────────────────────────────────
 

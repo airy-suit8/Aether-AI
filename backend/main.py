@@ -222,8 +222,11 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
     existing = check_duplicate_document(user_id, file_hash)
     if existing:
         upload_logger.info(f"UPLOAD DUPLICATE | user={user_id} | file={filename} | matches={existing}")
-        # Allow re-upload but warn
-        # (don't block — user might want to update)
+        # Re-ingesting would store every chunk twice and crowd the top results with copies
+        raise HTTPException(
+            status_code=409,
+            detail=f"This file was already uploaded as '{existing}'. Delete your documents first to upload it again.",
+        )
 
     # Save to a temp file then ingest
     tmp_path = None
@@ -259,8 +262,6 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
             os.unlink(tmp_path)
 
     msg = f"Successfully ingested '{filename}' ({result['chunks']} chunks from {result['pages']} page(s))."
-    if existing:
-        msg += f" Note: This file was previously uploaded as '{existing}'."
 
     return UploadResponse(
         filename=result["filename"],
