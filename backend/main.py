@@ -19,8 +19,7 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, field_validator
 
@@ -128,14 +127,6 @@ class UserRegister(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
-
-# ── Serve Static UI ─────────────────────────────────────────────────────────────
-static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-@app.get("/", tags=["UI"])
-async def root():
-    return FileResponse(str(static_dir / "index.html"))
 
 # ── Authentication ────────────────────────────────────────────────────────────
 
