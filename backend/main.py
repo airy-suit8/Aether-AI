@@ -7,6 +7,7 @@ Endpoints:
   GET  /documents    — list ingested documents
   DELETE /documents  — clear all documents
   GET  /health       — health check endpoint
+  GET  /             — the built React app (frontend/dist), mounted after the API
 """
 
 import os
@@ -20,7 +21,8 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, field_validator
 
@@ -427,3 +429,36 @@ def delete_documents(user_id: int = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     upload_logger.info(f"DOCUMENTS CLEARED | deleted={result['deleted']} chunks")
     return {"message": f"Cleared {result['deleted']} chunks from the vector store.", **result}
+
+
+# ── Serve the React app ───────────────────────────────────────────────────────
+# Mounted last, so every /api/v1 route above is matched first.
+
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+_FRONTEND_NOT_BUILT = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Aether AI</title></head>
+<body style="font-family: sans-serif; max-width: 40em; margin: 4em auto; line-height: 1.5">
+<h1>Aether AI backend is running</h1>
+<p>The web app has not been built, so there is nothing to show here yet. Either:</p>
+<ul>
+<li>run the development server: <code>cd frontend</code>, <code>npm run dev</code>, then open
+<a href="http://localhost:5173">http://localhost:5173</a>; or</li>
+<li>build it once: <code>cd frontend</code>, <code>npm ci</code>, <code>npm run build</code>,
+then restart the backend and reload this page.</li>
+</ul>
+<p>The API is at <a href="/docs">/docs</a>.</p>
+</body></html>"""
+
+
+def mount_frontend(app: FastAPI, dist_dir: Path):
+    """Serve the built React app at /, or a page explaining how to build it."""
+    if (dist_dir / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="frontend")
+    else:
+        @app.get("/", include_in_schema=False)
+        def frontend_not_built():
+            return HTMLResponse(_FRONTEND_NOT_BUILT)
+
+
+mount_frontend(app, FRONTEND_DIST)
