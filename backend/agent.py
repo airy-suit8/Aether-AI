@@ -47,7 +47,8 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     def document_search_wrapper(query: str) -> str:
         """Search the user's uploaded documents for factual questions, general knowledge, summarizing content, or anything related to user documents."""
         metadata_store["tool_used"].add("document_search")
-        rag_result = query_rag(user_id, query, session_id=session_id)
+        # save_turn=False: this is the agent's internal sub-query; run_agent saves the user's turn
+        rag_result = query_rag(user_id, query, session_id=session_id, save_turn=False)
         
         # Merge sources and track minimum confidence across all searches
         metadata_store["sources"].extend(rag_result["sources"])

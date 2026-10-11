@@ -358,7 +358,7 @@ def query_rag_langchain(user_id: int, question: str, session_id: str = "default"
             })
 
     # Store turn in memory
-    _memory.add_turn(user_id, session_id, question, answer)
+    _memory.add_turn(user_id, session_id, question, answer, retrieval["confidence"], mode="langchain")
 
     return RAGResponse(
         answer=answer,
@@ -419,5 +419,5 @@ def query_rag_langchain_stream(user_id: int, question: str, session_id: str = "d
                 "score": round(r["score"], 3),
             })
 
-    _memory.add_turn(user_id, session_id, question, answer_text)
+    _memory.add_turn(user_id, session_id, question, answer_text, retrieval["confidence"], mode="langchain")
     yield {"type": "done", "sources": sources, "confidence": retrieval["confidence"]}
