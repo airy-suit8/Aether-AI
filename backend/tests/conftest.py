@@ -43,6 +43,11 @@ from auth import get_password_hash, create_access_token  # noqa: E402
 from database import init_db, create_user  # noqa: E402
 
 
+def pytest_addoption(parser):
+    parser.addoption("--update-openapi-snapshot", action="store_true",
+                     help="rewrite tests/openapi_snapshot.json from the current API instead of comparing")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _init_test_db():
     """Initialize a clean test database once per session."""
