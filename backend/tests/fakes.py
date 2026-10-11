@@ -100,6 +100,8 @@ class ScriptedChatModel(BaseChatModel):
                 "id": "call_1",
             }])
 
+        if "calendar and time assistant" in text:
+            return AIMessage(content="Date answer. " + _between(text, "The current date and time is:", ". Calculate"))
         if "Standalone Question:" in text:
             return AIMessage(content=_between(text, "Current Question:", "Standalone Question:"))
         if "Focused Summary:" in text:

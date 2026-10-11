@@ -32,6 +32,7 @@ os.environ["GOOGLE_API_KEY"] = ""
 import rag_engine  # noqa: E402
 import rag_langchain  # noqa: E402
 import agent  # noqa: E402
+import tools  # noqa: E402
 from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402
 
 # The vector store opens lazily; give it fake embeddings before anything touches it.
@@ -57,6 +58,8 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr(rag_langchain, "_get_llm", lambda: llm)
     if hasattr(agent, "_get_llm"):
         monkeypatch.setattr(agent, "_get_llm", lambda: llm)
+    # The date-time tool builds its own Gemini client inline
+    monkeypatch.setattr(tools, "ChatGoogleGenerativeAI", lambda **kwargs: llm)
     return llm
 
 
