@@ -439,13 +439,15 @@ _memory = ConversationMemory()
 
 # ── Task 3: Sequential Chain Query (Retrieve → Summarize → Generate) ─────────
 
-def query_rag(user_id: int, question: str, session_id: str = "default", use_hybrid: bool = False) -> Dict[str, Any]:
+def query_rag(user_id: int, question: str, session_id: str = "default", use_hybrid: bool = False,
+              save_turn: bool = True) -> Dict[str, Any]:
     """
     3-step sequential chain using LCEL:
       1. RETRIEVE — embed question → cosine/hybrid search → top-k chunks
       2. SUMMARIZE — condense raw chunks into a focused summary
       3. GENERATE — produce the final answer from the summary
     Returns structured JSON with answer, sources, and confidence.
+    save_turn=False is for callers that save the turn themselves (the agent's document search).
     """
 
     # Contextualize the question for vector search if there's history
@@ -533,7 +535,8 @@ Standalone Question:"""
             })
 
     # Store turn in memory
-    _memory.add_turn(user_id, session_id, question, answer)
+    if save_turn:
+        _memory.add_turn(user_id, session_id, question, answer, confidence, mode="hybrid" if use_hybrid else "original")
 
     return RAGResponse(
         answer=answer,
@@ -623,7 +626,7 @@ Standalone Question:"""
                 "score":   round(r["score"], 3),
             })
 
-    _memory.add_turn(user_id, session_id, question, answer_text)
+    _memory.add_turn(user_id, session_id, question, answer_text, confidence, mode="hybrid" if use_hybrid else "original")
     yield {"type": "done", "sources": sources, "confidence": confidence}
 
 # ── Document List & Clear ─────────────────────────────────────────────────────
