@@ -1,5 +1,7 @@
 # 🚀 Aether AI — SDLC Sprint Tracker & Transformation Log
 
+> **Historical log, superseded (note added 11 October 2026).** This file is kept as a record of what was written between June and July 2026. It is not a description of the current system. Current work is tracked in [SPRINT_PLAN.md](SPRINT_PLAN.md). [AUDIT_REPORT.md](AUDIT_REPORT.md), section 4.8, lists the claims below that were found to be false or misleading, including the final status line, the "100%" evaluation figures, "fails early if critical environment tokens are missing", the "multi-stage ready" Dockerfile, and the feedback and `uuidv4()` session claims.
+
 > **Project:** Aether AI (RAG Chatbot)
 > **Author:** Tirth Ganatra
 > **Date:** July 24, 2026
@@ -144,4 +146,4 @@ A systematic alignment check has been conducted across the repository boundaries
 
 ---
 
-**System Status:** **PRODUCTION READY — CONTAINERIZED, TESTED, & HARDENED.**
+**System Status (corrected 11 October 2026):** Not production ready. The October 2026 audit found blocking defects, no endpoint tests and an unhardened single-stage Dockerfile; see [AUDIT_REPORT.md](AUDIT_REPORT.md) and [SPRINT_PLAN.md](SPRINT_PLAN.md).
