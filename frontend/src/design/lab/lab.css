@@ -24,33 +24,7 @@
 
 .lab-top__tag { margin-right: auto; }
 
-/* ── Hero: the headline's weight and width follow the pointer across the page ── */
-
-.lab-hero {
-  padding: clamp(56px, 10vw, 128px) 0 clamp(36px, 6vw, 72px);
-}
-
-.lab-title {
-  margin: 16px 0 22px;
-  font-size: var(--p-text-2xl);
-  line-height: 0.98;
-  letter-spacing: -0.03em;
-  word-spacing: 0.1em;
-  font-weight: 400;
-  font-variation-settings:
-    "wght" calc(260 + var(--px, 0.5) * 300),
-    "wdth" calc(84 + var(--px, 0.5) * 36);
-  text-wrap: balance;
-}
-
-/* The one place the spectrum is used as decoration: the word that names it. */
-.lab-title em {
-  font-style: normal;
-  color: transparent;
-  background: linear-gradient(90deg, var(--p-s1), var(--p-s2), var(--p-s3), var(--p-s4), var(--p-s5));
-  -webkit-background-clip: text;
-  background-clip: text;
-}
+.lab-hero { padding: clamp(56px, 10vw, 128px) 0 clamp(36px, 6vw, 72px); }
 
 .lab-lede {
   max-width: 52ch;
@@ -60,98 +34,6 @@
   color: var(--p-ink-2);
   text-wrap: pretty;
 }
-
-/* ── The bench: answer on the left, evidence in the margin, composer below ─── */
-
-.lab-stage {
-  padding: clamp(20px, 3.4vw, 44px);
-  border-radius: var(--p-r-4);
-}
-
-.lab-bench {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: clamp(32px, 7vw, 104px);
-  align-items: start;
-  min-height: 330px;
-}
-
-.lab-question {
-  max-width: 22ch;
-  margin: 0 0 16px;
-  font-size: var(--p-text-xl);
-  font-weight: 580;
-  font-stretch: 94%;
-  line-height: 1.16;
-  letter-spacing: -0.025em;
-  text-wrap: balance;
-}
-
-.lab-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  min-height: 34px;
-  margin-bottom: 14px;
-  color: var(--p-ink-3);
-}
-
-.lab-retrieving {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  font-size: var(--p-text-sm);
-  font-weight: 560;
-  color: var(--p-ink-2);
-}
-
-/* White light on the left, splitting into the spectrum as it travels. */
-.lab-beam {
-  width: 120px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--p-ink) 0 34%, var(--p-s1) 44%, var(--p-s2), var(--p-s3), var(--p-s4), var(--p-s5) 100%);
-  background-size: 220% 100%;
-  animation: lab-sweep 1.3s linear infinite;
-}
-
-@keyframes lab-sweep {
-  from { background-position: 100% 0; }
-  to { background-position: -120% 0; }
-}
-
-.lab-margin {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-}
-
-.lab-margin .p-eyebrow { margin: 6px 0 2px; }
-
-.lab-dock {
-  display: grid;
-  gap: 16px;
-  justify-items: center;
-  margin-top: 36px;
-  padding-top: 28px;
-  border-top: 1px solid var(--p-edge);
-}
-
-.lab-dock .p-aperture { justify-self: stretch; }
-
-.lab-replay {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.lab-replay .p-eyebrow { margin-right: 8px; }
-
-/* ── Specimen sections ─────────────────────────────────────────────────────── */
 
 .lab-section { margin-top: clamp(64px, 10vw, 128px); }
 
@@ -243,12 +125,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 14px 22px;
+  margin-bottom: 22px;
 }
 
-/* ── Narrow screens: the margin moves under the answer and the threads rest ── */
+.lab-form { max-width: 360px; }
 
 @media (max-width: 860px) {
-  .lab-bench { grid-template-columns: minmax(0, 1fr); gap: 24px; min-height: 0; }
   .lab-type { grid-template-columns: minmax(0, 1fr); }
   .lab-top__tag { display: none; }
   .lab-brand { margin-right: auto; }

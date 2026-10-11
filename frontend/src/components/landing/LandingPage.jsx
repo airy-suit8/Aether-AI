@@ -1,46 +1,85 @@
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useAuth } from '../../services/AuthContext'
-import ShinyText from '../reactbits/ShinyText'
-import DotPattern from '../reactbits/DotPattern'
 import { login, register } from '../../services/api'
-import './LandingPage.css'
+import { AmbientField, Dialog, Field, Lens, PrismMark } from '../../design/prism'
+import DemoBench from '../../design/DemoBench'
+
+const THEMES = [
+  { value: 'system', label: 'System' },
+  { value: 'dark', label: 'Dark' },
+]
+
+const STEPS = [
+  { n: '01', title: 'Add', text: 'Drop in a PDF, a Word file, a spreadsheet or a note. It is split into passages.', node: 'var(--p-ink)' },
+  { n: '02', title: 'Index', text: 'Each passage becomes a vector, so the search is by meaning and not only by words.', node: 'var(--p-s1)' },
+  { n: '03', title: 'Refract', text: 'Your question pulls out the passages closest to it. Hybrid mode adds keyword search.', node: 'var(--p-s3)' },
+  { n: '04', title: 'Read', text: 'The answer is written from those passages, and each one is shown beside it.', node: 'var(--p-s5)' },
+]
+
+const USERNAME_RULE = /^[A-Za-z0-9_-]{3,50}$/
 
 /**
- * LandingPage — Hero page with glassmorphism, animated RAG pipeline visualization,
- * feature cards, and a glowing CTA to enter the chat.
+ * LandingPage — the start page. The product demonstrates itself with sample data, then
+ * explains the path a document takes, and opens the sign-in sheet.
  */
-export default function LandingPage({ onStartChat }) {
+export default function LandingPage({ onStartChat, theme = 'system', onTheme = () => {} }) {
   const { isAuthenticated, login: setAuth } = useAuth()
   const [showModal, setShowModal] = useState(false)
   const [isLoginView, setIsLoginView] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [phase, setPhase] = useState('idle')
 
-  const handleStartClick = () => {
+  const open = (loginView) => {
     if (isAuthenticated) {
       onStartChat()
-    } else {
-      setShowModal(true)
+      return
     }
+    setIsLoginView(loginView)
+    setError('')
+    setFieldErrors({})
+    setShowModal(true)
+  }
+
+  const closeModal = useCallback(() => setShowModal(false), [])
+
+  const switchView = () => {
+    setIsLoginView(view => !view)
+    setError('')
+    setFieldErrors({})
+  }
+
+  // Mirrors the server's rules, so a mistake is caught before a request is made
+  const validate = (name) => {
+    const problems = {}
+    if (isLoginView) {
+      if (!name) problems.username = 'Enter your username'
+      if (!password) problems.password = 'Enter your password'
+      return problems
+    }
+    if (!USERNAME_RULE.test(name)) problems.username = '3 to 50 letters, digits, hyphens or underscores'
+    if (password.length < 6) problems.password = 'At least 6 characters'
+    else if (new TextEncoder().encode(password).length > 72) problems.password = 'Too long: keep it under 72 characters'
+    return problems
   }
 
   const handleAuth = async (e) => {
     e.preventDefault()
+    const name = username.trim()
+    const problems = validate(name)
+    setFieldErrors(problems)
     setError('')
+    if (Object.keys(problems).length > 0) return
+
     setIsLoading(true)
     try {
-      if (isLoginView) {
-        const data = await login(username, password)
-        setAuth(data.access_token, username.trim())
-        onStartChat()
-      } else {
-        await register(username, password)
-        const data = await login(username, password)
-        setAuth(data.access_token, username.trim())
-        onStartChat()
-      }
+      if (!isLoginView) await register(name, password)
+      const data = await login(name, password)
+      setAuth(data.access_token, name)
+      onStartChat()
     } catch (err) {
       const msg = typeof err === 'string' ? err : err?.message || String(err || 'Authentication failed')
       setError(msg)
@@ -50,183 +89,119 @@ export default function LandingPage({ onStartChat }) {
   }
 
   return (
-    <div className="landing" id="landing-view">
-      {/* Ambient background effects */}
-      <div className="landing-bg-orb landing-orb-1" />
-      <div className="landing-bg-orb landing-orb-2" />
-      <div className="landing-bg-orb landing-orb-3" />
-      <DotPattern width={20} height={20} cx={1} cy={1} cr={1} />
-
-      {/* Navigation */}
-      <nav className="landing-nav glass-strong">
-        <div className="landing-brand">
-          <div className="brand-icon">✦</div>
-          <span className="brand-name">Aether AI</span>
-        </div>
-        <div className="landing-nav-links">
-          <a href="#features">Features</a>
-          <a href="#pipeline">How It Works</a>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={handleStartClick}>
-          {isAuthenticated ? 'Launch App →' : 'Sign In'}
-        </button>
-      </nav>
-
-      {/* Hero Section */}
-      <section className="hero">
-        <div className="hero-badge fade-in">
-          <span className="hero-badge-dot" />
-          RAG-Powered Knowledge Assistant
-        </div>
-        <h1 className="hero-title fade-in-up">
-          Your Private Knowledge,
-          <br />
-          <ShinyText text="Intelligently Unlocked" className="hero-title-accent" speed={4} />
-        </h1>
-        <p className="hero-subtitle fade-in-up" style={{ animationDelay: '0.1s' }}>
-          Upload documents. Ask questions. Get precise, source-cited answers
-          grounded in your data — powered by Google Gemini and a 3-step RAG pipeline.
-        </p>
-        <div className="hero-actions fade-in-up" style={{ animationDelay: '0.2s' }}>
-          <button className="btn btn-primary btn-lg hero-cta" onClick={handleStartClick}>
-            <span>{isAuthenticated ? 'Start Chatting' : 'Log In to Start'}</span>
-            <span className="cta-arrow">→</span>
+    <>
+      <AmbientField state={phase} />
+      <div className="l-page" id="landing-view">
+        <header className="l-top">
+          <span className="x-brand">
+            <PrismMark /> Aether
+          </span>
+          <Lens label="Theme" options={THEMES} value={theme} onChange={onTheme} />
+          <button type="button" className="p-btn p-btn--tonal" onClick={() => open(true)}>
+            {isAuthenticated ? 'Open workspace' : 'Sign in'}
           </button>
-          <a href="#pipeline" className="btn btn-secondary btn-lg">
-            See How It Works
-          </a>
-        </div>
+        </header>
 
-        {/* Floating stat cards */}
-        <div className="hero-stats fade-in-up" style={{ animationDelay: '0.3s' }}>
-          <div className="stat-card glass">
-            <div className="stat-value">3-Step</div>
-            <div className="stat-label">RAG Chain</div>
+        <section className="l-hero">
+          <p className="p-eyebrow">Aether AI · a private knowledge assistant</p>
+          <h1 className="p-display">
+            Ask in white light.
+            <br />
+            Read the <em>spectrum.</em>
+          </h1>
+          <p className="l-lede">
+            Add your documents and ask questions about them. Every answer shows the passages it came from,
+            with the page and a similarity score.
+          </p>
+          <div className="l-actions">
+            <button type="button" className="p-btn p-btn--filled" onClick={() => open(false)}>
+              {isAuthenticated ? 'Open workspace' : 'Start asking'}
+            </button>
+            {!isAuthenticated && (
+              <button type="button" className="p-btn" onClick={() => open(true)}>I have an account</button>
+            )}
           </div>
-          <div className="stat-card glass">
-            <div className="stat-value">Gemini</div>
-            <div className="stat-label">LLM Engine</div>
+        </section>
+
+        <DemoBench onPhase={setPhase} />
+
+        <section className="l-section">
+          <p className="p-eyebrow">How it works</p>
+          <h2 className="p-h2">One line of light, from your document to your answer.</h2>
+          <ol className="l-path">
+            {STEPS.map((step) => (
+              <li key={step.n} className="l-step" style={{ '--node': step.node }}>
+                <span className="p-mono">{step.n}</span>
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="l-section">
+          <p className="p-eyebrow">What you get</p>
+          <h2 className="p-h2">Built to be checked, not just believed.</h2>
+          <div className="l-trio">
+            <article className="p-pane l-card">
+              <span className="p-mono">SOURCES</span>
+              <h3>Every answer shows its evidence.</h3>
+              <p>The file, the page, a similarity score and the passage itself sit beside the answer, so you can check it in seconds.</p>
+            </article>
+            <article className="p-pane l-card">
+              <span className="p-mono">PRIVATE</span>
+              <h3>Your library is yours alone.</h3>
+              <p>Each account has its own documents and its own conversations.</p>
+            </article>
+            <article className="p-pane l-card">
+              <span className="p-mono">MODES</span>
+              <h3>Four ways to answer.</h3>
+              <p>Default, Hybrid search, an Agent with a calculator and a calendar, and a LangChain pipeline.</p>
+            </article>
           </div>
-          <div className="stat-card glass">
-            <div className="stat-value">LCEL</div>
-            <div className="stat-label">Pipeline</div>
-          </div>
-          <div className="stat-card glass">
-            <div className="stat-value">ReAct</div>
-            <div className="stat-label">Agent</div>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Pipeline Visualization */}
-      <section className="pipeline-section" id="pipeline">
-        <h2 className="section-title">How Aether AI Works</h2>
-        <p className="section-subtitle">A three-step sequential chain: Retrieve → Summarize → Generate</p>
-        <div className="pipeline-flow">
-          {[
-            { num: '01', icon: '📄', title: 'Upload & Ingest', desc: 'PDF, DOCX, TXT, MD → parsed, chunked (1000 chars), embedded via Gemini Embedding-001' },
-            { num: '02', icon: '🔍', title: 'Retrieve', desc: 'Question embedded → cosine similarity search → top-5 most relevant chunks retrieved' },
-            { num: '03', icon: '📋', title: 'Summarize', desc: 'Raw chunks condensed into a focused summary, removing noise and irrelevant details' },
-            { num: '04', icon: '✨', title: 'Generate', desc: 'Gemini produces a precise answer with confidence scoring and source citations' },
-          ].map((step, i) => (
-            <React.Fragment key={step.num}>
-              <div className="pipeline-step glass" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div className="step-num">{step.num}</div>
-                <div className="step-icon">{step.icon}</div>
-                <h3 className="step-title">{step.title}</h3>
-                <p className="step-desc">{step.desc}</p>
-              </div>
-              {i < 3 && <div className="pipeline-connector">→</div>}
-            </React.Fragment>
-          ))}
-        </div>
-      </section>
+        <footer className="l-foot">
+          <span>Built by Tirth Ganatra · Guided by Dr. Amit Ganatra</span>
+          <span>Powered by Google Gemini</span>
+        </footer>
+      </div>
 
-      {/* Features Grid */}
-      <section className="features-section" id="features">
-        <h2 className="section-title">Built for Intelligence</h2>
-        <p className="section-subtitle">Production-grade features under the hood</p>
-        <div className="features-grid">
-          {[
-            { icon: '🤖', title: 'ReAct Agent', desc: 'LangGraph-powered multi-step reasoning with calculator, datetime, and document search tools' },
-            { icon: '🧠', title: 'Conversation Memory', desc: 'SQLite-backed multi-turn memory that persists across server restarts' },
-            { icon: '🛡️', title: 'Injection Protection', desc: 'Regex sanitization + prompt guards prevent malicious document attacks' },
-            { icon: '📊', title: 'Confidence Scoring', desc: 'Cosine similarity-based scoring with 0.3 threshold to prevent hallucinations' },
-            { icon: '⚡', title: 'Streaming Responses', desc: 'Real-time SSE token-by-token streaming for instant feedback' },
-            { icon: '⛓️', title: 'Dual Pipeline', desc: 'Custom RAG engine + LangChain LCEL pipeline — switch modes on the fly' },
-          ].map(f => (
-            <div key={f.title} className="feature-card glass">
-              <div className="feature-icon">{f.icon}</div>
-              <h3 className="feature-title">{f.title}</h3>
-              <p className="feature-desc">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Footer CTA */}
-      <section className="cta-section">
-        <div className="cta-glow" />
-        <h2 className="cta-title">Ready to unlock your knowledge?</h2>
-        <button className="btn btn-primary btn-lg hero-cta" onClick={handleStartClick}>
-          {isAuthenticated ? 'Launch Aether AI →' : 'Log In to Start →'}
-        </button>
-      </section>
-
-      <footer className="landing-footer">
-        <p>Built by <strong>Tirth Ganatra</strong> • Powered by Google Gemini • Guided by Dr. Amit Ganatra</p>
-      </footer>
-
-      {/* Auth Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal glass-strong" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{isLoginView ? 'Welcome Back' : 'Create Account'}</h3>
-              <button className="btn-icon" onClick={() => setShowModal(false)}>✕</button>
-            </div>
-            
-            <form className="auth-form" onSubmit={handleAuth}>
-              {error && <div className="auth-error">{error}</div>}
-              
-              <div className="form-group">
-                <label>Username</label>
-                <input 
-                  type="text" 
-                  value={username} 
-                  onChange={e => setUsername(e.target.value)} 
-                  required 
-                  className="glass-input"
-                  placeholder="Enter username"
-                />
-              </div>
-              
-              <div className="form-group">
-                <label>Password</label>
-                <input 
-                  type="password" 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                  required 
-                  className="glass-input"
-                  placeholder="Enter password"
-                />
-              </div>
-              
-              <button type="submit" className="btn btn-primary btn-block" disabled={isLoading}>
-                {isLoading ? 'Processing...' : (isLoginView ? 'Sign In' : 'Register')}
+        <Dialog title={isLoginView ? 'Welcome back' : 'Create your account'} onClose={closeModal}>
+          <form className="l-form" onSubmit={handleAuth} noValidate>
+            <Field
+              label="Username"
+              value={username}
+              onChange={setUsername}
+              error={fieldErrors.username}
+              hint={isLoginView ? undefined : '3 to 50 letters, digits, hyphens or underscores'}
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
+            <Field
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              error={fieldErrors.password}
+              hint={isLoginView ? undefined : 'At least 6 characters'}
+              autoComplete={isLoginView ? 'current-password' : 'new-password'}
+            />
+            {error && <p className="p-hint" data-tone="bad" role="alert">{error}</p>}
+            <button type="submit" className="p-btn p-btn--filled" disabled={isLoading}>
+              {isLoading ? 'One moment' : isLoginView ? 'Sign in' : 'Create account'}
+            </button>
+            <p className="l-form__switch">
+              {isLoginView ? 'New here? ' : 'Already have an account? '}
+              <button type="button" className="p-link" onClick={switchView}>
+                {isLoginView ? 'Create an account' : 'Sign in'}
               </button>
-            </form>
-            
-            <div className="auth-switch">
-              {isLoginView ? "Don't have an account? " : "Already have an account? "}
-              <button className="btn-link" onClick={() => setIsLoginView(!isLoginView)}>
-                {isLoginView ? 'Sign Up' : 'Log In'}
-              </button>
-            </div>
-          </div>
-        </div>
+            </p>
+          </form>
+        </Dialog>
       )}
-    </div>
+    </>
   )
 }

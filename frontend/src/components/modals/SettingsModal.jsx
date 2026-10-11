@@ -1,17 +1,41 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getDocumentsDetailed, deleteAllDocuments, getHealth } from '../../services/api'
-import './SettingsModal.css'
+import { Dialog, HoldButton, Lens } from '../../design/prism'
+
+const TABS = [
+  { value: 'general', label: 'General' },
+  { value: 'documents', label: 'Documents' },
+  { value: 'health', label: 'System' },
+]
+
+const formatSize = (bytes) => {
+  if (!bytes) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const formatDate = (isoString) => (isoString ? new Date(isoString).toLocaleString() : 'Unknown')
+
+const formatUptime = (seconds) => {
+  if (seconds == null) return 'Unknown'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 1) return `${Math.round(seconds)} s`
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
 
 export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation }) {
   const [activeTab, setActiveTab] = useState('general')
   const [docs, setDocs] = useState([])
   const [health, setHealth] = useState(null)
+  const [healthFailed, setHealthFailed] = useState(false)
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
-
 
   // Load health data on mount
   useEffect(() => {
-    getHealth().then(setHealth).catch(() => {})
+    getHealth().then(setHealth).catch(() => setHealthFailed(true))
   }, [])
 
   const loadDetailedDocs = useCallback(async () => {
@@ -19,7 +43,7 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
     try {
       const data = await getDocumentsDetailed()
       setDocs(data.documents || [])
-    } catch (e) {
+    } catch {
       addToast('Failed to load document details', 'error')
     } finally {
       setIsLoadingDocs(false)
@@ -34,154 +58,97 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
   }, [activeTab, loadDetailedDocs])
 
   const handleClearAll = async () => {
-    if (confirm('Are you sure you want to delete all indexed documents from the vector store?')) {
-      try {
-        await deleteAllDocuments()
-        addToast('All documents deleted', 'success')
-        setDocs([])
-        onDocumentsChanged()
-      } catch (e) {
-        addToast('Failed to delete documents', 'error')
-      }
+    try {
+      await deleteAllDocuments()
+      addToast('All documents deleted', 'success')
+      setDocs([])
+      onDocumentsChanged()
+    } catch {
+      addToast('Failed to delete documents', 'error')
     }
   }
 
-  const formatSize = (bytes) => {
-    if (!bytes) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-
-  const formatDate = (isoString) => {
-    if (!isoString) return 'Unknown'
-    return new Date(isoString).toLocaleString()
-  }
-
   return (
-    <div className="modal-overlay fade-in" onClick={onClose}>
-      <div className="modal-container slide-in-down glass-strong" onClick={e => e.stopPropagation()}>
-        
-        <aside className="modal-sidebar">
-          <div className="modal-sidebar-title">Settings</div>
-          <button 
-            className={`modal-tab ${activeTab === 'general' ? 'active' : ''}`}
-            onClick={() => setActiveTab('general')}
-          >
-            General
-          </button>
-          <button 
-            className={`modal-tab ${activeTab === 'documents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('documents')}
-          >
-            Documents
-          </button>
-          <button 
-            className={`modal-tab ${activeTab === 'health' ? 'active' : ''}`}
-            onClick={() => setActiveTab('health')}
-          >
-            System Health
-          </button>
-        </aside>
-
-        <main className="modal-content">
-          <header className="modal-header">
-            <h2 className="modal-title">
-              {activeTab === 'general' && 'General Settings'}
-              {activeTab === 'documents' && 'Document Management'}
-              {activeTab === 'health' && 'System Health'}
-            </h2>
-            <button className="btn btn-ghost btn-icon" onClick={onClose}>×</button>
-          </header>
-
-          <div className="modal-body">
-            
-            {/* ── GENERAL TAB ── */}
-            {activeTab === 'general' && (
-              <div className="settings-pane">
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <div className="setting-label">Clear Conversation</div>
-                    <div className="setting-desc">Delete the current conversation from the server and start a new thread.</div>
-                  </div>
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={() => {
-                      onClearConversation()
-                      onClose()
-                    }}
-                  >
-                    Clear Conversation
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── DOCUMENTS TAB ── */}
-            {activeTab === 'documents' && (
-              <div className="settings-pane">
-                <div className="setting-row header-row">
-                  <div className="setting-info">
-                    <div className="setting-desc">Review and manage parsed document index chunks in Vector Store.</div>
-                  </div>
-                  <button className="btn btn-primary" style={{ background: 'var(--error)' }} onClick={handleClearAll} disabled={docs.length === 0}>
-                    Clear All Files
-                  </button>
-                </div>
-                
-                <div className="docs-table-wrapper">
-                  {isLoadingDocs ? (
-                    <div className="modal-loading"><span className="spinner" /></div>
-                  ) : docs.length === 0 ? (
-                    <div className="modal-empty">No documents in vector store.</div>
-                  ) : (
-                    <table className="docs-table">
-                      <thead>
-                        <tr>
-                          <th>Filename</th>
-                          <th>Size</th>
-                          <th>Chunks</th>
-                          <th>Ingested On</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {docs.map((d, i) => (
-                          <tr key={i}>
-                            <td title={d.filename}>{d.filename}</td>
-                            <td>{formatSize(d.size_bytes)}</td>
-                            <td>{d.chunks}</td>
-                            <td>{formatDate(d.uploaded_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── HEALTH TAB ── */}
-            {activeTab === 'health' && (
-              <div className="settings-pane">
-                <div className="metrics-grid">
-                  <div className="metric-card">
-                    <div className="metric-label">System Status</div>
-                    <div className="metric-val" style={{ color: health?.status === 'ok' ? 'var(--success)' : 'var(--error)' }}>
-                      {health?.status === 'ok' ? 'Active 🟢' : 'Offline 🔴'}
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-label">Uptime</div>
-                    <div className="metric-val">{health?.uptime_seconds ? `${health.uptime_seconds.toFixed(1)}s` : 'Unknown'}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </main>
+    <Dialog title="Settings" onClose={onClose} width="660px">
+      <div className="s-tabs">
+        <Lens label="Settings section" options={TABS} value={activeTab} onChange={setActiveTab} />
       </div>
-    </div>
+
+      {activeTab === 'general' && (
+        <div className="s-row">
+          <div>
+            <b>Clear conversation</b>
+            <span>Delete the current conversation from the server and start a new thread.</span>
+          </div>
+          <button
+            type="button"
+            className="p-btn p-btn--tonal"
+            onClick={() => {
+              onClearConversation()
+              onClose()
+            }}
+          >
+            Clear conversation
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'documents' && (
+        <>
+          {isLoadingDocs ? (
+            <p className="s-empty" role="status"><i className="p-beam" aria-hidden="true" /></p>
+          ) : docs.length === 0 ? (
+            <p className="s-empty">No documents in your library.</p>
+          ) : (
+            <div className="s-table-wrap">
+              <table className="s-table">
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Size</th>
+                    <th>Passages</th>
+                    <th>Added</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {docs.map((d) => (
+                    <tr key={d.id ?? d.filename}>
+                      <td title={d.filename}>{d.filename}</td>
+                      <td className="p-mono">{formatSize(d.size_bytes)}</td>
+                      <td className="p-mono">{d.chunks}</td>
+                      <td>{formatDate(d.uploaded_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="s-row">
+            <div>
+              <b>Delete all documents</b>
+              <span>Removes every document and its passages from your library. This cannot be undone.</span>
+            </div>
+            <HoldButton onConfirm={handleClearAll} disabled={docs.length === 0}>Hold to delete all</HoldButton>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'health' && (
+        <div className="s-metrics">
+          <div className="s-metric" data-tone={health?.status === 'ok' ? 'ok' : healthFailed ? 'bad' : undefined}>
+            <b>{health?.status === 'ok' ? 'Running' : healthFailed ? 'Unreachable' : 'Checking'}</b>
+            <span>Backend</span>
+          </div>
+          <div className="s-metric">
+            <b>{formatUptime(health?.uptime_seconds)}</b>
+            <span>Since last start</span>
+          </div>
+          <div className="s-metric">
+            <b>{health?.version ?? 'Unknown'}</b>
+            <span>API version</span>
+          </div>
+        </div>
+      )}
+    </Dialog>
   )
 }

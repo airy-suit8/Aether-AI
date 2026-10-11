@@ -5,27 +5,34 @@ import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import { sendChat, sendChatStream, uploadDocument, getDocuments, clearSession } from '../../services/api'
 import { useAuth } from '../../services/AuthContext'
-import DotPattern from '../reactbits/DotPattern'
-import './ChatLayout.css'
+import { AmbientField, Lens } from '../../design/prism'
+
+const THEMES = [
+  { value: 'system', label: 'System' },
+  { value: 'dark', label: 'Dark' },
+]
+
+const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 901px)').matches : true)
 
 /**
- * ChatLayout — The main chat workspace with sidebar, message area, and composer.
- * Manages all chat state, modes, sessions, and document lists.
+ * ChatLayout — The main chat workspace with the library rail, the conversation and the composer.
+ * Manages all chat state, the answer mode, sessions, and document lists.
  */
-export default function ChatLayout({ onNavigateHome, addToast }) {
+export default function ChatLayout({ onNavigateHome, addToast, theme = 'system', onTheme = () => {} }) {
   const { logout } = useAuth()
-  
+
   // Messages
   const [messages, setMessages] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [streamingPhase, setStreamingPhase] = useState('')
 
-  // Modes
-  const [agentMode, setAgentMode] = useState(false)
-  const [langchainMode, setLangchainMode] = useState(false)
+  // One answer mode at a time, plus whether to stream
+  const [mode, setMode] = useState('default') // default | hybrid | agent | langchain
   const [streamingMode, setStreamingMode] = useState(true)
-  const [hybridMode, setHybridMode] = useState(false)
+  const agentMode = mode === 'agent'
+  const langchainMode = mode === 'langchain'
+  const hybridMode = mode === 'hybrid'
 
   // Session
   const [sessionId, setSessionId] = useState(() => `session_${Date.now()}`)
@@ -34,13 +41,12 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
   const [documents, setDocuments] = useState([])
 
   // UI state
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(isWide)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
 
-  const chatEndRef = useRef(null)
-
-  // Remove useEffect for localStorage
+  const streamRef = useRef(null)
+  const abortRef = useRef(null)
 
   const refreshDocuments = useCallback(async () => {
     try {
@@ -56,10 +62,16 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
     refreshDocuments()
   }, [refreshDocuments])
 
-  // Auto-scroll
+  // A new message always scrolls into view; streamed text only follows if the reader is already at the bottom
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingText])
+    const el = streamRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages])
+
+  useEffect(() => {
+    const el = streamRef.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight
+  }, [streamingText])
 
   // ── Handle sending a message ──────────────────────────────────────────
   const handleSend = useCallback(async (question) => {
@@ -75,12 +87,14 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
     setIsLoading(true)
     setStreamingText('')
 
-    const mode = agentMode ? 'agent' : langchainMode ? 'langchain' : 'original'
+    const controller = new AbortController()
+    abortRef.current = controller
+    const sentMode = agentMode ? 'agent' : langchainMode ? 'langchain' : hybridMode ? 'hybrid' : 'default'
 
     try {
       if (streamingMode && !agentMode) {
         // Streaming path
-        setStreamingPhase('Searching documents...')
+        setStreamingPhase('Searching your documents')
         let fullText = ''
 
         await sendChatStream({
@@ -89,6 +103,7 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
           useAgent: agentMode,
           useLangchain: langchainMode,
           useHybrid: hybridMode,
+          signal: controller.signal,
           onToken: (token) => {
             setStreamingPhase('')
             fullText += token
@@ -102,25 +117,26 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
               sources: data.sources || [],
               confidence: data.confidence || 0,
               toolUsed: data.tool_used || null,
-              mode,
+              mode: sentMode,
               timestamp: new Date().toISOString(),
             }
             setMessages(prev => [...prev, aiMessage])
           },
           // Server error event, dropped connection, or missing 'done': show it, keep no partial answer
           onError: (err) => {
-            addToast(err.message || 'Stream failed', 'error')
+            if (err.name !== 'AbortError') addToast(err.message || 'Stream failed', 'error')
           },
         })
       } else {
         // Non-streaming path
-        setStreamingPhase(agentMode ? 'Agent reasoning...' : 'Processing...')
+        setStreamingPhase(agentMode ? 'The agent is working' : 'Reading your documents')
         const result = await sendChat({
           question,
           sessionId,
           useAgent: agentMode,
           useLangchain: langchainMode,
           useHybrid: hybridMode,
+          signal: controller.signal,
         })
 
         const aiMessage = {
@@ -130,27 +146,33 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
           sources: result.sources || [],
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
-          mode,
+          mode: sentMode,
           timestamp: new Date().toISOString(),
         }
         setMessages(prev => [...prev, aiMessage])
       }
     } catch (err) {
-      addToast(err.message || 'Failed to get response', 'error')
+      if (err.name !== 'AbortError') addToast(err.message || 'Failed to get response', 'error')
     } finally {
       // Always unlock the composer, whatever happened above
+      abortRef.current = null
       setStreamingText('')
       setStreamingPhase('')
       setIsLoading(false)
     }
   }, [isLoading, sessionId, agentMode, langchainMode, streamingMode, hybridMode, addToast])
 
+  // Stop reading the reply. The server may still finish and save its turn; that is fixed with the API work.
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
+
   // ── Handle file upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file) => {
     setUploadProgress({ filename: file.name, status: 'uploading' })
     try {
       const result = await uploadDocument(file)
-      addToast(`✓ ${result.message}`, 'success')
+      addToast(result.message, 'success')
       setUploadProgress(null)
       refreshDocuments()
     } catch (err) {
@@ -161,9 +183,10 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
 
   // ── New thread ────────────────────────────────────────────────────────
   const handleNewThread = useCallback(async () => {
+    abortRef.current?.abort()
     try {
       await clearSession(sessionId)
-    } catch (e) {
+    } catch {
       // Silent — may fail if no session exists yet
     }
     const newId = `session_${Date.now()}`
@@ -174,87 +197,84 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
   }, [sessionId, addToast])
 
   const handleLogout = useCallback(() => {
+    abortRef.current?.abort()
     logout()
     onNavigateHome()
   }, [logout, onNavigateHome])
 
+  const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), [])
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  const fieldState = isLoading ? (streamingText ? 'streaming' : 'retrieving') : 'idle'
+
   return (
-    <div className="chat-layout">
-      {/* Sidebar */}
+    <div className="x-shell" data-rail={sidebarOpen ? 'open' : 'closed'}>
+      <AmbientField state={fieldState} />
+
       <Sidebar
         isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        onToggle={toggleSidebar}
         documents={documents}
         onUpload={handleUpload}
         uploadProgress={uploadProgress}
         onNewThread={handleNewThread}
-        onOpenSettings={() => setSettingsOpen(true)}
-        sessionId={sessionId}
+        onOpenSettings={openSettings}
         onNavigateHome={onNavigateHome}
-        agentMode={agentMode}
-        langchainMode={langchainMode}
-        streamingMode={streamingMode}
       />
+      <button type="button" className="x-scrim" aria-label="Close the library" onClick={toggleSidebar} />
 
-      {/* Main workspace */}
-      <main className={`chat-workspace ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
-        <DotPattern width={20} height={20} cx={1} cy={1} cr={1} />
-        {/* Header */}
-        <header className="workspace-header glass-strong">
-          <div className="header-left">
-            <button className="btn btn-ghost btn-icon sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              ☰
-            </button>
-            <div className="session-info">
-              <span className="session-label">Session</span>
-              <span className="session-id">{sessionId.replace('session_', '').slice(0, 8)}</span>
-            </div>
-          </div>
-          <div className="header-badges">
-            {agentMode && <div className="badge badge-accent">🤖 Agent</div>}
-            {langchainMode && <div className="badge badge-info">⛓️ LangChain</div>}
-            {streamingMode && <div className="badge badge-success">⚡ Stream</div>}
-            {hybridMode && <div className="badge badge-warning">🔀 Hybrid</div>}
-          </div>
-          <div className="header-right">
-            <button className="btn btn-ghost btn-sm" onClick={handleNewThread}>
-              ✦ New Thread
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={handleLogout} style={{ color: 'var(--accent-400)' }}>
-              Log Out
-            </button>
-          </div>
+      <main className="x-main">
+        <header className="x-top">
+          <button
+            type="button"
+            className="p-icon-btn"
+            aria-label={sidebarOpen ? 'Hide the library' : 'Show the library'}
+            aria-expanded={sidebarOpen}
+            onClick={toggleSidebar}
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <rect x="2.5" y="3.5" width="15" height="13" rx="3" stroke="currentColor" strokeWidth="1.6" />
+              <path d="M7.5 3.5v13" stroke="currentColor" strokeWidth="1.6" />
+            </svg>
+          </button>
+          <span className="x-top__thread">
+            <span className="p-eyebrow">Thread</span>
+            <span className="p-mono">{sessionId.slice(-6)}</span>
+          </span>
+          <Lens label="Theme" options={THEMES} value={theme} onChange={onTheme} />
+          {/* The rail has its own New thread; this one appears only while the rail is hidden */}
+          {!sidebarOpen && (
+            <button type="button" className="p-btn p-btn--tonal" onClick={handleNewThread}>New thread</button>
+          )}
+          <button type="button" className="p-btn" onClick={handleLogout}>Sign out</button>
         </header>
 
-        {/* Chat area */}
         <ChatWindow
           messages={messages}
           streamingText={streamingText}
           streamingPhase={streamingPhase}
           isLoading={isLoading}
-          chatEndRef={chatEndRef}
+          streamRef={streamRef}
+          hasDocuments={documents.length > 0}
+          onSuggest={handleSend}
         />
 
-        {/* Composer */}
         <ChatComposer
           onSend={handleSend}
+          onStop={handleStop}
           isLoading={isLoading}
-          agentMode={agentMode}
-          langchainMode={langchainMode}
-          streamingMode={streamingMode}
-          hybridMode={hybridMode}
-          onToggleAgent={() => setAgentMode(!agentMode)}
-          onToggleLangchain={() => setLangchainMode(!langchainMode)}
-          onToggleStreaming={() => setStreamingMode(!streamingMode)}
-          onToggleHybrid={() => setHybridMode(!hybridMode)}
+          mode={mode}
+          onMode={setMode}
+          streaming={streamingMode}
+          onStreaming={setStreamingMode}
           onUpload={handleUpload}
         />
       </main>
 
-      {/* Settings modal */}
       {settingsOpen && (
         <SettingsModal
-          onClose={() => setSettingsOpen(false)}
+          onClose={closeSettings}
           addToast={addToast}
           onDocumentsChanged={refreshDocuments}
           onClearConversation={handleNewThread}

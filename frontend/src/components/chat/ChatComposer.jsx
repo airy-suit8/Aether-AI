@@ -1,127 +1,55 @@
-import React, { useState, useRef } from 'react'
-import './ChatComposer.css'
+import React, { useRef } from 'react'
+import { Aperture, Lens, Switch } from '../../design/prism'
 
-export default function ChatComposer({
-  onSend,
-  isLoading,
-  agentMode,
-  langchainMode,
-  streamingMode,
-  hybridMode,
-  onToggleAgent,
-  onToggleLangchain,
-  onToggleStreaming,
-  onToggleHybrid,
-  onUpload
-}) {
-  const [text, setText] = useState('')
+const MODES = [
+  { value: 'default', label: 'Default' },
+  { value: 'hybrid', label: 'Hybrid' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'langchain', label: 'LangChain' },
+]
+
+const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
+
+/**
+ * ChatComposer — the dock: one answer mode, whether to stream, and the Aperture to ask through.
+ */
+export default function ChatComposer({ onSend, onStop, isLoading, mode, onMode, streaming, onStreaming, onUpload }) {
   const fileInputRef = useRef(null)
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
-  const handleSend = () => {
-    if (text.trim() && !isLoading) {
-      onSend(text)
-      setText('')
-    }
-  }
 
   const handleFileChange = (e) => {
     const file = e.target.files[0]
-    if (file) {
-      onUpload(file)
-      e.target.value = ''
-    }
+    if (file) onUpload(file)
+    e.target.value = ''
   }
 
   return (
-    <div className="composer-wrapper">
-      <div className="composer-container glass-strong">
-        
-        {/* Input Area */}
-        <div className="composer-input-row">
-          <textarea
-            className="composer-textarea"
-            placeholder="Ask anything about your private knowledge..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={1}
-            style={{
-              height: text ? `${Math.min(120, Math.max(24, text.split('\n').length * 24))}px` : '24px'
-            }}
-          />
-        </div>
-
-        {/* Actions Row */}
-        <div className="composer-actions-row">
-          
-          <div className="composer-toggles">
-            <button 
-              className={`toggle-btn ${agentMode ? 'active' : ''}`}
-              onClick={onToggleAgent}
-              title="Agent Mode (ReAct Reasoning)"
-            >
-              🤖 Agent
-            </button>
-            <button 
-              className={`toggle-btn ${langchainMode ? 'active' : ''}`}
-              onClick={onToggleLangchain}
-              title="LangChain LCEL Mode"
-            >
-              ⛓️ LangChain
-            </button>
-            <button 
-              className={`toggle-btn ${streamingMode ? 'active' : ''}`}
-              onClick={onToggleStreaming}
-              disabled={agentMode} // Agents typically don't stream well token-by-token
-              title={agentMode ? "Streaming disabled in Agent Mode" : "Stream Response"}
-            >
-              ⚡ Stream
-            </button>
-            <button 
-              className={`toggle-btn ${hybridMode ? 'active' : ''}`}
-              onClick={onToggleHybrid}
-              disabled={agentMode || langchainMode}
-              title="Hybrid Search (BM25 + Vector)"
-            >
-              🔀 Hybrid
-            </button>
-          </div>
-
-          <div className="composer-primary-actions">
-            <button 
-              className="btn btn-ghost btn-icon composer-attach"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach Document"
-            >
-              📎
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls"
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
-            
-            <button 
-              className="btn btn-primary btn-icon composer-send"
-              onClick={handleSend}
-              disabled={!text.trim() || isLoading}
-            >
-              {isLoading ? <span className="spinner spinner-sm" /> : '↑'}
-            </button>
-          </div>
-
-        </div>
+    <div className="x-dock">
+      <div className="x-dock__modes">
+        <Lens label="Answer mode" options={MODES} value={mode} onChange={onMode} />
+        <Switch
+          label="Stream"
+          checked={streaming && mode !== 'agent'}
+          onChange={onStreaming}
+          disabled={mode === 'agent'}
+          title={mode === 'agent' ? 'The agent answers in one piece' : 'Show the answer as it is written'}
+        />
       </div>
+      <Aperture
+        busy={isLoading}
+        onSend={onSend}
+        onStop={onStop}
+        placeholder="Ask anything about your documents"
+        leading={
+          <>
+            <button type="button" className="p-icon-btn" aria-label="Attach a document" onClick={() => fileInputRef.current?.click()}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+            <input ref={fileInputRef} type="file" accept={ACCEPT} hidden onChange={handleFileChange} />
+          </>
+        }
+      />
     </div>
   )
 }

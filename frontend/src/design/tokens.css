@@ -79,7 +79,7 @@
   --p-shadow-1: light-dark(rgb(60 64 67 / 0.1), rgb(0 0 0 / 0.4));
   --p-shadow-2: light-dark(rgb(60 64 67 / 0.22), rgb(0 0 0 / 0.55));
   --p-lift: 0 1px 2px var(--p-shadow-1), 0 12px 32px -12px var(--p-shadow-2);
-  --p-field-alpha: light-dark(0.1, 0.16);
+  --p-field-alpha: light-dark(0.08, 0.12);
   --p-thumb: light-dark(#ffffff, #50545a);
 
   /* ── Type ────────────────────────────────────────────────────────────── */

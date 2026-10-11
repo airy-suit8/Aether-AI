@@ -109,9 +109,10 @@ export async function uploadDocument(file) {
 /**
  * Send a chat message (non-streaming)
  */
-export async function sendChat({ question, sessionId = 'default', useAgent = false, useLangchain = false, useHybrid = false }) {
+export async function sendChat({ question, sessionId = 'default', useAgent = false, useLangchain = false, useHybrid = false, signal }) {
   const res = await fetch(`${BASE_URL}/chat`, {
     method: 'POST',
+    signal,
     headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       question,
@@ -129,10 +130,11 @@ export async function sendChat({ question, sessionId = 'default', useAgent = fal
 /**
  * Send a chat message with SSE streaming
  */
-export async function sendChatStream({ question, sessionId = 'default', useAgent = false, useLangchain = false, useHybrid = false, onToken, onDone, onError }) {
+export async function sendChatStream({ question, sessionId = 'default', useAgent = false, useLangchain = false, useHybrid = false, signal, onToken, onDone, onError }) {
   try {
     const res = await fetch(`${BASE_URL}/chat/stream`, {
       method: 'POST',
+      signal,
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         question,

@@ -1,88 +1,92 @@
-import React from 'react'
+import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import SourceCard from './SourceCard'
-import ConfidenceBadge from './ConfidenceBadge'
-import './MessageBubble.css'
+import { ClarityRing, SourceCard } from '../../design/prism'
+
+// Model output is untrusted: no remote images (they can leak text in a URL), and links open elsewhere
+const MARKDOWN = {
+  img: () => null,
+  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+}
+
+// Similarity at or above this reads as grounded. From the first real run: relevant passages
+// scored 0.67 to 0.80 and an unrelated question 0.50. To be calibrated on a dataset in Sprint 4.
+const GROUNDED_AT = 0.6
+
+function clarityOf(message) {
+  if (!message.sources?.length) return message.toolUsed ? null : { state: 'refused', value: 0 }
+  const value = Math.max(0, Math.min(1, message.confidence || 0))
+  return { state: value >= GROUNDED_AT ? 'grounded' : 'uncertain', value }
+}
 
 /**
- * MessageBubble — Renders a single chat message (user or assistant)
- * Handles markdown rendering, tool use indication, confidence scoring, and source citations.
+ * MessageBubble — one message. A question is a heading; an answer carries its clarity,
+ * its text and, in the margin, the passages it came from.
  */
 export default function MessageBubble({ message, isStreaming = false }) {
-  const isUser = message.role === 'user'
-  
-  if (isUser) {
+  const [active, setActive] = useState(null)
+  const [open, setOpen] = useState(null)
+
+  if (message.role === 'user') {
+    return <h2 className="x-question">{message.content}</h2>
+  }
+
+  if (isStreaming) {
     return (
-      <div className="message-wrapper message-user slide-in-right">
-        <div className="message-avatar user-avatar-msg">U</div>
-        <div className="message-content-box">
-          <div className="message-text">{message.content}</div>
+      <article className="x-exchange" aria-busy="true">
+        <div>
+          <div className="x-status">
+            <span className="x-status__working" role="status">
+              <i className="p-beam" aria-hidden="true" />
+              {message.streamingPhase || 'Writing'}
+            </span>
+          </div>
+          <p className="p-answer">
+            {(message.content.match(/\s*\S+\s*/g) ?? []).map((word, index) => (
+              <span key={index} className="p-word">{word}</span>
+            ))}
+          </p>
         </div>
-      </div>
+      </article>
     )
   }
 
-  // Assistant Message
+  const clarity = clarityOf(message)
+  const sources = message.sources ?? []
+
   return (
-    <div className={`message-wrapper message-ai ${isStreaming && !message.content ? 'pulse' : 'slide-in-left'}`}>
-      <div className="message-avatar ai-avatar-msg">✦</div>
-      <div className="message-content-box">
-        
-        {/* Streaming / Reasoning Phase */}
-        {isStreaming && message.streamingPhase && (
-          <div className="message-phase">
-            <span className="spinner spinner-sm" />
-            {message.streamingPhase}
-          </div>
-        )}
-
-        {/* Tool usage indicator (Agent Mode) */}
-        {message.toolUsed && (
-          <div className="message-tool">
-            <span className="tool-icon">🛠️</span>
-            Used Tool: <strong>{message.toolUsed}</strong>
-          </div>
-        )}
-
-        {/* Content (Markdown) */}
-        <div className="message-text markdown-content">
-          {message.content ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
-          ) : (
-            isStreaming && !message.streamingPhase && (
-              <div className="typing-indicator">
-                <div className="typing-dot" />
-                <div className="typing-dot" />
-                <div className="typing-dot" />
-              </div>
-            )
-          )}
+    <article className="x-exchange">
+      <div>
+        <div className="x-status">
+          {clarity && <ClarityRing value={clarity.value} state={clarity.state} />}
+          {message.toolUsed && <span className="x-tool p-mono">tool · {message.toolUsed}</span>}
+          {message.mode && <span className="p-mono">{message.mode} mode</span>}
         </div>
-
-        {/* Sources & Confidence (Only render when complete and available) */}
-        {!isStreaming && (message.sources?.length > 0 || message.confidence > 0) && (
-          <div className="message-metadata fade-in">
-            {message.confidence > 0 && (
-              <ConfidenceBadge score={message.confidence} />
-            )}
-            
-            {message.sources?.length > 0 && (
-              <div className="sources-container">
-                <div className="sources-label">Sources</div>
-                <div className="sources-grid">
-                  {message.sources.map((src, idx) => (
-                    <SourceCard key={idx} source={src} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
+        <div className="p-answer">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN}>
+            {message.content}
+          </ReactMarkdown>
+        </div>
       </div>
-    </div>
+
+      {sources.length > 0 && (
+        <aside className="x-margin">
+          <p className="p-eyebrow">Sources</p>
+          {sources.map((source, index) => (
+            <SourceCard
+              key={index}
+              n={index + 1}
+              source={source}
+              order={index}
+              dispersing
+              active={active === index + 1}
+              open={open === index + 1}
+              onActivate={setActive}
+              onToggle={() => setOpen(open === index + 1 ? null : index + 1)}
+            />
+          ))}
+        </aside>
+      )}
+    </article>
   )
 }
