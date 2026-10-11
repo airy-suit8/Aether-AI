@@ -27,11 +27,15 @@ export default function SourceCard({ source }) {
       <div className="source-card-header">
         <div className="source-card-icon">{getIcon(source.source)}</div>
         <div className="source-card-title">{source.source || 'Unknown Source'}</div>
+        <div className="source-card-meta">
+          {source.page != null && source.page !== '?' && <span>p. {source.page}</span>}
+          {typeof source.score === 'number' && <span title="Relevance score">{source.score.toFixed(2)}</span>}
+        </div>
         <div className="source-card-expand">{expanded ? '−' : '+'}</div>
       </div>
       {expanded && (
         <div className="source-card-content">
-          {sanitizeContent(source.content)}
+          {sanitizeContent(source.snippet) || 'No preview available.'}
         </div>
       )}
     </div>
