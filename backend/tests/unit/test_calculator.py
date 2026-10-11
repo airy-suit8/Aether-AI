@@ -45,3 +45,35 @@ def test_moderate_power_still_works():
 
 def test_division_by_zero():
     assert calc("1 / 0") == "Error: Division by zero."
+
+
+@pytest.mark.parametrize("expression,expected", [
+    ("-3 + +5", "-3 + +5 = 2"),
+    ("7 // 2", "7 // 2 = 3"),
+    ("7 % 4", "7 % 4 = 3"),
+    ("2 × 3 ÷ 4", "2 × 3 ÷ 4 = 1.5"),
+    ("round(2.567, 2)", "round(2.567, 2) = 2.57"),
+    ("abs(-4)", "abs(-4) = 4"),
+    ("2 * pi", "2 * pi = 6.28318530717959"),
+    ("log10(1000)", "log10(1000) = 3"),
+    ("0.1 + 0.2", "0.1 + 0.2 = 0.3"),
+])
+def test_more_operators_and_functions(expression, expected):
+    assert calc(expression) == expected
+
+
+@pytest.mark.parametrize("expression,message", [
+    ("'a' + 1", "Unsupported constant"),
+    ("1 << 2", "Unsupported operator: LShift"),
+    ("~5", "Unsupported unary operator: Invert"),
+    ("exp(1)", "Unsupported function: exp"),
+    ("__import__('os')", "Unsupported function: __import__"),
+    ("y + 1", "Unknown variable: y"),
+    ("sqrt", "Unknown variable: sqrt"),
+    ("[1, 2]", "Unsupported expression type: List"),
+    ("2 +", "Error evaluating"),
+])
+def test_anything_but_plain_math_is_refused(expression, message):
+    result = calc(expression)
+    assert result.startswith("Error"), result
+    assert message in result
