@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { usePointerLight } from './usePointerLight'
 import { sourceHue } from './spectrum'
 import './tokens.css'
@@ -171,20 +171,25 @@ export function Cite({ n, active = false, onActivate, innerRef }) {
   )
 }
 
-/** Evidence in the margin. Shows the file, the page, the similarity score and the passage. */
-export function SourceCard({ n, source, active = false, onActivate, innerRef, order = 0, dispersing = false }) {
+/**
+ * Evidence in the margin. Shows the file, the page, the similarity score and the passage.
+ * Hover or focus lights it (onActivate); a click can pin it open (open + onToggle).
+ */
+export function SourceCard({ n, source, active = false, open = false, onActivate, onToggle, innerRef, order = 0, dispersing = false }) {
+  const score = typeof source.score === 'number' ? source.score : 0
   return (
     <button
       ref={innerRef}
       type="button"
       className={`p-pane p-source${dispersing ? ' p-disperse' : ''}`}
-      data-active={active}
-      style={{ '--hue': sourceHue(n), '--score': source.score, '--k': order }}
-      aria-pressed={active}
-      onPointerEnter={() => onActivate(n)}
-      onPointerLeave={() => onActivate(null)}
-      onFocus={() => onActivate(n)}
-      onBlur={() => onActivate(null)}
+      data-active={active || open}
+      style={{ '--hue': sourceHue(n), '--score': Math.max(0, Math.min(1, score)), '--k': order }}
+      aria-expanded={active || open}
+      onClick={onToggle}
+      onPointerEnter={() => onActivate?.(n)}
+      onPointerLeave={() => onActivate?.(null)}
+      onFocus={() => onActivate?.(n)}
+      onBlur={() => onActivate?.(null)}
     >
       <span className="p-source__edge" aria-hidden="true" />
       <span className="p-source__head">
@@ -192,12 +197,165 @@ export function SourceCard({ n, source, active = false, onActivate, innerRef, or
         <span className="p-source__name" title={source.source}>{source.source}</span>
       </span>
       <span className="p-source__meta p-mono">
-        <span>p. {source.page}</span>
+        {source.page != null && source.page !== '?' && <span>p. {source.page}</span>}
         <span className="p-source__bar" aria-hidden="true"><i /></span>
-        <span aria-label={`similarity ${source.score.toFixed(2)}`}>{source.score.toFixed(2)}</span>
+        <span title="Similarity to your question">{score.toFixed(2)}</span>
       </span>
-      <span className="p-source__text">{source.snippet}</span>
+      {source.snippet && <span className="p-source__text">{source.snippet}</span>}
     </button>
+  )
+}
+
+/** A switch whose knob is a point of light. */
+export function Switch({ label, checked, onChange, disabled = false, title }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      className="p-switch"
+      aria-checked={checked}
+      disabled={disabled}
+      title={title}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="p-switch__track" aria-hidden="true" />
+      {label}
+    </button>
+  )
+}
+
+/** A text field: the label lifts on focus and the line beneath it splits into the spectrum. */
+export function Field({ label, hint, error, value, onChange, type = 'text', ...rest }) {
+  const id = useId()
+  const note = error || hint
+  return (
+    <div className="p-field-wrap">
+      <label className="p-input" data-invalid={Boolean(error)}>
+        <input
+          type={type}
+          value={value}
+          placeholder=" "
+          aria-invalid={Boolean(error)}
+          aria-describedby={note ? `${id}-note` : undefined}
+          onChange={(event) => onChange(event.target.value)}
+          {...rest}
+        />
+        <span>{label}</span>
+      </label>
+      {note && (
+        <p id={`${id}-note`} className="p-hint" data-tone={error ? 'bad' : undefined} role={error ? 'alert' : undefined}>
+          {note}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** For actions that cannot be undone: nothing happens unless the press is held. */
+export function HoldButton({ onConfirm, holdMs = 1200, disabled = false, children }) {
+  const [holding, setHolding] = useState(false)
+  const timer = useRef(0)
+
+  const cancel = () => {
+    window.clearTimeout(timer.current)
+    setHolding(false)
+  }
+
+  const start = () => {
+    if (disabled || holding) return
+    setHolding(true)
+    timer.current = window.setTimeout(() => {
+      setHolding(false)
+      onConfirm()
+    }, holdMs)
+  }
+
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  return (
+    <button
+      type="button"
+      className="p-btn p-hold"
+      data-holding={holding}
+      style={{ '--hold-ms': `${holdMs}ms` }}
+      disabled={disabled}
+      onPointerDown={start}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onBlur={cancel}
+      onKeyDown={(event) => {
+        if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) start()
+      }}
+      onKeyUp={cancel}
+    >
+      <span>{children}</span>
+    </button>
+  )
+}
+
+/** A modal sheet of glass. Escape and a click outside close it; Tab stays inside it. */
+export function Dialog({ title, onClose, width, children }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const node = ref.current
+    const previous = document.activeElement
+    const focusables = () => [...node.querySelectorAll('a[href], button:not(:disabled), input, select, textarea, [tabindex="0"]')]
+    ;(node.querySelector('input, select, textarea') ?? node).focus()
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusables()
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      if (previous instanceof HTMLElement) previous.focus()
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="p-scrim"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={ref}
+        className="p-pane p-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        style={width ? { '--dialog-w': width } : undefined}
+      >
+        <header className="p-dialog__head">
+          <h2>{title}</h2>
+          <button type="button" className="p-icon-btn" aria-label="Close" onClick={onClose}>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="m4.5 4.5 9 9m0-9-9 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
   )
 }
 

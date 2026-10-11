@@ -1,9 +1,14 @@
-import React, { useRef, useCallback } from 'react'
+import React, { useRef, useCallback, useState } from 'react'
 import { useAuth } from '../../services/AuthContext'
-import './Sidebar.css'
+import { PrismMark } from '../../design/prism'
+
+const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
+
+const KINDS = { pdf: 'PDF', docx: 'DOC', txt: 'TXT', md: 'MD', markdown: 'MD', csv: 'CSV', xlsx: 'XLS', xls: 'XLS' }
+const kindOf = (filename) => KINDS[filename.split('.').pop().toLowerCase()] || 'FILE'
 
 /**
- * Sidebar — Navigation panel with branding, doc upload, file list, and settings.
+ * Sidebar — the library rail: brand, new thread, document drop zone, the user's documents, settings.
  */
 export default function Sidebar({
   isOpen,
@@ -13,137 +18,102 @@ export default function Sidebar({
   uploadProgress,
   onNewThread,
   onOpenSettings,
-  sessionId,
   onNavigateHome,
-  agentMode,
-  langchainMode,
-  streamingMode,
 }) {
   const fileInputRef = useRef(null)
+  const [dragOver, setDragOver] = useState(false)
   const { username } = useAuth()
 
-  const handleFileChange = useCallback((e) => {
-    const file = e.target.files[0]
-    if (file) {
-      onUpload(file)
-      e.target.value = ''
+  // Several files are ingested one after another, so each gets its own progress and result
+  const uploadAll = useCallback(async (fileList) => {
+    for (const file of Array.from(fileList)) {
+      await onUpload(file)
     }
   }, [onUpload])
 
+  const handleFileChange = useCallback((e) => {
+    const files = e.target.files
+    if (files?.length) uploadAll(files)
+    e.target.value = ''
+  }, [uploadAll])
+
   const handleDrop = useCallback((e) => {
     e.preventDefault()
-    e.currentTarget.classList.remove('drag-over')
-    const file = e.dataTransfer.files[0]
-    if (file) onUpload(file)
-  }, [onUpload])
-
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault()
-    e.currentTarget.classList.add('drag-over')
-  }, [])
-
-  const handleDragLeave = useCallback((e) => {
-    e.currentTarget.classList.remove('drag-over')
-  }, [])
+    setDragOver(false)
+    if (e.dataTransfer.files?.length) uploadAll(e.dataTransfer.files)
+  }, [uploadAll])
 
   return (
-    <aside className={`sidebar glass-strong ${isOpen ? 'open' : 'closed'}`}>
-      {/* Brand header */}
-      <div className="sidebar-header">
-        <div className="sidebar-brand" onClick={onNavigateHome} style={{ cursor: 'pointer' }}>
-          <div className="sidebar-brand-icon">✦</div>
-          <div className="sidebar-brand-text">
-            <span className="sidebar-brand-name">Aether AI</span>
-            <span className="sidebar-brand-version">v3.0</span>
-          </div>
-        </div>
-        <button className="btn btn-ghost btn-icon sidebar-close" onClick={onToggle}>
-          ◁
+    <aside className="p-pane x-rail" aria-label="Library" aria-hidden={!isOpen}>
+      <div className="x-rail__head">
+        <button type="button" className="x-brand" onClick={onNavigateHome} title="Back to the start page">
+          <PrismMark /> Aether
+        </button>
+        <button type="button" className="p-icon-btn" aria-label="Hide the library" onClick={onToggle}>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path d="M11 4 6 9l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
 
-      {/* New thread button */}
-      <div className="sidebar-new-thread">
-        <button className="btn btn-primary new-thread-btn" onClick={onNewThread}>
-          ✦ New Thread
-        </button>
-      </div>
+      <button type="button" className="p-btn p-btn--tonal" onClick={onNewThread}>New thread</button>
 
-      {/* Upload zone */}
-      <div className="sidebar-section">
-        <div className="sidebar-label">Document Uploader</div>
-        <div
-          className="upload-zone"
+      <div>
+        <button
+          type="button"
+          className="x-drop"
+          data-over={dragOver}
+          disabled={Boolean(uploadProgress)}
           onClick={() => fileInputRef.current?.click()}
           onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
         >
           {uploadProgress ? (
-            <div className="upload-progress">
-              <div className="spinner spinner-sm" />
-              <span className="upload-progress-text">Ingesting {uploadProgress.filename}...</span>
-            </div>
+            <>
+              <b>Reading {uploadProgress.filename}</b>
+              <i className="p-beam" aria-hidden="true" />
+              <span>Splitting it into passages</span>
+            </>
           ) : (
             <>
-              <div className="upload-icon">📤</div>
-              <div className="upload-label">Drop file or click to upload</div>
-              <div className="upload-hint">PDF, DOCX, TXT, MD • Max 50MB</div>
+              <b>Add a document</b>
+              <span>Drop files here, or click to choose</span>
+              <span>PDF, Word, text, CSV, Excel · 50 MB max</span>
             </>
           )}
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.txt,.md,.markdown,.docx"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-        />
+        </button>
+        <input ref={fileInputRef} type="file" accept={ACCEPT} multiple hidden onChange={handleFileChange} />
       </div>
 
-      {/* Document list */}
-      <div className="sidebar-section sidebar-docs-section">
-        <div className="sidebar-label">
-          Ingested Files
-          <span className="sidebar-count">{documents.length}</span>
-        </div>
-        <div className="sidebar-docs-list">
-          {documents.length === 0 ? (
-            <div className="sidebar-empty">No documents yet</div>
-          ) : (
-            documents.map((doc, i) => (
-              <div key={i} className="sidebar-doc-item">
-                <span className="doc-icon">
-                  {doc.endsWith('.pdf') ? '📕' : doc.endsWith('.docx') ? '📘' : doc.endsWith('.md') || doc.endsWith('.markdown') ? '📝' : '📄'}
-                </span>
-                <span className="doc-name" title={doc}>{doc}</span>
-              </div>
-            ))
-          )}
-        </div>
+      <div className="x-library">
+        <p className="p-eyebrow">
+          <span>Library</span>
+          <span>{documents.length}</span>
+        </p>
+        {documents.length === 0 ? (
+          <p className="x-docs__empty">No documents yet</p>
+        ) : (
+          <ul className="x-docs">
+            {documents.map((doc) => (
+              <li key={doc} className="x-doc">
+                <span className="x-doc__kind" aria-hidden="true">{kindOf(doc)}</span>
+                <span className="x-doc__name" title={doc}>{doc}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      {/* Mode indicators */}
-      <div className="sidebar-section">
-        <div className="sidebar-label">Active Modes</div>
-        <div className="sidebar-modes">
-          <div className={`mode-pill ${agentMode ? 'active' : ''}`}>🤖 Agent</div>
-          <div className={`mode-pill ${langchainMode ? 'active' : ''}`}>⛓️ LangChain</div>
-          <div className={`mode-pill ${streamingMode ? 'active' : ''}`}>⚡ Stream</div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="sidebar-footer">
-        <div className="sidebar-user">
-          <div className="user-avatar">{(username || '?').charAt(0).toUpperCase()}</div>
-          <div className="user-info">
-            <div className="user-name">{username || 'Signed in'}</div>
-            <div className="user-email">Signed in</div>
-          </div>
-        </div>
-        <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} data-tooltip="Settings">
-          ⚙️
+      <div className="x-user">
+        <span className="x-avatar" aria-hidden="true">{(username || '?').charAt(0).toUpperCase()}</span>
+        <span className="x-user__name">{username || 'Signed in'}</span>
+        <button type="button" className="p-icon-btn" aria-label="Settings" onClick={onOpenSettings}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M3 6h7m4 0h3M3 14h3m4 0h7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            <circle cx="12" cy="6" r="2" stroke="currentColor" strokeWidth="1.7" />
+            <circle cx="8" cy="14" r="2" stroke="currentColor" strokeWidth="1.7" />
+          </svg>
         </button>
       </div>
     </aside>

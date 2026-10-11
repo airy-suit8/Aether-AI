@@ -1,0 +1,78 @@
+/* Layout of the self-playing bench (DemoBench.jsx). */
+
+.demo-stage {
+  padding: clamp(20px, 3.4vw, 44px);
+  border-radius: var(--p-r-4);
+}
+
+.demo-bench {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: clamp(32px, 7vw, 104px);
+  align-items: start;
+  min-height: 330px;
+}
+
+.demo-question {
+  max-width: 22ch;
+  margin: 0 0 16px;
+  font-size: var(--p-text-xl);
+  font-weight: 580;
+  font-stretch: 94%;
+  line-height: 1.16;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.demo-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  min-height: 34px;
+  margin-bottom: 14px;
+  color: var(--p-ink-3);
+}
+
+.demo-retrieving {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--p-text-sm);
+  font-weight: 560;
+  color: var(--p-ink-2);
+}
+
+.demo-margin {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.demo-margin .p-eyebrow { margin: 6px 0 2px; }
+
+.demo-dock {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid var(--p-edge);
+}
+
+.demo-dock .p-aperture { justify-self: stretch; }
+
+.demo-replay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.demo-replay .p-eyebrow { margin-right: 8px; }
+
+@media (max-width: 860px) {
+  .demo-bench { grid-template-columns: minmax(0, 1fr); gap: 24px; min-height: 0; }
+}

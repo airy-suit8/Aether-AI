@@ -1,8 +1,10 @@
 # Prism — the Aether AI design language
 
-Status: first build, 11 October 2026. The tokens, the material and the core components exist and can be seen in the design lab. The app's real screens still use the old styles; applying Prism to them is the next step.
+Status: 11 October 2026. Prism is applied to every screen of the app: the start page, the sign-in sheet, the workspace (library rail, conversation, composer) and settings. The old stylesheets are gone. All of it lives on the branch `design/prism` until Sprint 2 is merged.
 
-**See it:** run `start.bat`, then open `http://localhost:5173/design-lab.html`. Use the System / Light / Dark control at the top right, and the "Play a case" buttons under the composer.
+**See it:** run `start.bat`, then open `http://localhost:5173/` for the app or `http://localhost:5173/design-lab.html` for every component on one page. The theme control offers System and Dark.
+
+![The workspace in the dark theme, with an answer and its source](docs/design/prism-workspace-dark.png)
 
 ![The bench in the dark theme, with the second source active](docs/design/prism-bench-dark.png)
 
@@ -57,6 +59,13 @@ One material, optical glass: a translucent pane with a hairline edge. A highligh
 | `Cite` | `prism.jsx` | A citation marker in the hue of its source |
 | `SourceCard` | `prism.jsx` | Evidence in the margin: file, page, score and passage |
 | `Threads` | `prism.jsx` | Lines of light from each citation to its source, routed through the gutter |
+| `Switch` | `prism.jsx` | A toggle whose knob is a point of light |
+| `Field` | `prism.jsx` | A text field: the label lifts on focus and the line under it splits into the spectrum |
+| `HoldButton` | `prism.jsx` | For actions that cannot be undone: nothing happens unless the press is held |
+| `Dialog` | `prism.jsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards |
+| `DemoBench` | `DemoBench.jsx` | The self-playing demonstration used on the start page and in the lab |
+
+Some interaction ideas (the light-point toggle, the floating-label field, hold to confirm) were prompted by browsing the open-source gallery at uiverse.io. They were written from scratch in this language; no code was copied.
 
 Two moments are choreographed. **Development:** streamed words arrive blurred and settle into focus. **Dispersion:** when an answer completes, its source cards leave it one by one and the threads draw after they land.
 
@@ -75,6 +84,7 @@ The answer sits on the left and its evidence in the right margin, like notes in 
 
 ## What comes next
 
-1. Apply Prism to the real screens: shell, chat, composer, evidence, landing, sign-in, settings.
-2. A pass for keyboard use, contrast and phone layout on those screens.
-3. Per-sentence source colour. This needs the backend to report which source supports which claim (Sprint 4); until then an answer links to its sources as a whole.
+1. Merge with the Sprint 2 test suite: two assertions in its chat test describe the old markup (the mode control is now a radio group, and a source card shows a preview of its passage).
+2. A full keyboard and screen-reader pass. Focus handling, labels and Escape are built in, but so far it has been exercised with a pointer and by script.
+3. Per-sentence source colour and threads in the real chat. This needs the backend to report which source supports which claim (Sprint 4); until then an answer links to its sources as a whole.
+4. Stop only ends the reply on the screen; the server may still finish it. Cancelling on the server belongs with the API work in Sprint 5.
