@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets — never commit; copy backend/.env.example to backend/.env
+.env
+.env.*
+!.env.example
+
+# Runtime data: user table, conversations, vectors, logs
+backend/aether.db*
+backend/vector_store/
+backend/logs/
+data/
+logs/
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Editor and tooling
+.vscode/
+.idea/
+*.DS_Store
+.playwright-mcp/

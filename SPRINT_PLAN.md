@@ -1,0 +1,246 @@
+# Aether AI — Sprint Plan
+
+Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1, R4, S3, …) refer to that report. Sizes are rough estimates for one person working full days; adjust them after Sprint 1.
+
+## How these sprints differ from the ones in SDLC_PLAN.md
+
+The old sprint log recorded what was written. These sprints record what was proven.
+
+- **A sprint is done when its checks pass, not when its code exists.** Every sprint below ends with a "Done when" list of things you can run and show.
+- **Nothing is marked complete without evidence.** A test name, a command and its output, or a screenshot.
+- **One commit per task**, with a message that says what and why. The git history is your proof of work.
+- **Order matters.** Sprint 0 makes everything after it reversible. Sprint 2 builds the safety net that makes the Sprint 3 restructure safe. Do not reorder those.
+
+## The connection rule
+
+You asked that every piece of code be logically connected to the rest. The audit found 19 seams; 10 were broken, dead or unconnected. Three mechanisms keep them connected from now on. Each is built in the sprint shown and then runs on every commit.
+
+| Mechanism | What it guarantees | Built in |
+|---|---|---|
+| **End-to-end test** (`tests/integration/test_e2e.py`): register → login → upload → ask → cited answer → history → delete | The whole chain works, with a fake model and fake embeddings | Sprint 1, extended every sprint |
+| **Generated API types**: FastAPI's OpenAPI schema → TypeScript types for the frontend | Frontend and backend cannot disagree on a field name again (the cause of B7 and F4) | Sprint 2 (schema snapshot), Sprint 6 (types) |
+| **No-orphan check**: a script that fails if any module is imported by nothing, any route is called by nothing, or any config value is read from anywhere but `core/config.py` | No dead `config.py`, no unreachable loaders, no unused endpoints | Sprint 3 |
+
+Seam checklist. Tick each when its test exists and passes.
+
+- [ ] UI call → route: every function in the API client has a matching route and a contract test
+- [ ] Route → service: every route has a test that reaches the service layer
+- [ ] Service → vector store: ingest then search returns the ingested text
+- [ ] Service → database: a chat turn is saved with its real confidence and mode
+- [ ] Tenant isolation: user B cannot read, search or delete user A's data
+- [ ] Every chat mode: default, hybrid and agent each answer in the end-to-end test
+- [ ] Config: the model id appears in exactly one place
+- [ ] Backend → UI: `GET /` returns the built React app
+- [ ] Docker: `docker compose up` passes the same end-to-end test
+- [ ] Evaluation: the harness imports and calls the real pipeline
+
+---
+
+## Sprint 0 — Make it safe to change (about 1 day)
+
+**Goal:** every later change is reversible, and nothing private can leak by accident.
+
+1. `git init`. Before the first commit, fix `.gitignore`: add `backend/aether.db*`, `backend/logs/`, `backend/vector_store/`, `data/`, `logs/`, `.pytest_cache/`. (D1, D2)
+2. Delete: the three `codebase_dump.*` files, `walkthrough.md`, `backend/static/`, `backend/vector_store/vectors.npy` and `metadata.json`, `backend/test_doc.txt`, all `__pycache__`. Remove the `/` and `/static` routes for now. (D3, S13, B3)
+3. Create a virtual environment on Python 3.12. Today the app shares a global site-packages with TensorFlow and torch, which makes it take over 40 seconds to import. Pin `requirements.txt` to the versions that work; add `requirements-dev.txt` with `pytest`, `httpx`, `ruff`, `pip-audit`. Add `xlrd` or drop `.xls`. Remove `duckduckgo-search`. Run `pip-audit` and upgrade what it flags. (S12, R9)
+4. Add `JWT_SECRET` to `.env` and `.env.example`. Make `auth.py` refuse to start without it. Change every `load_dotenv(override=True)` to `override=False`. (B4, S1)
+5. Add `.dockerignore`: `.env`, `*.db*`, `vector_store/`, `logs/`, `__pycache__/`, `.pytest_cache/`, `tests/`. (S1)
+6. Delete the "IMPORTANT OVERRIDE" rule from all three prompts. (S6)
+7. Replace `start.bat` with one that uses the venv and starts both backend and frontend. Write a root `README.md` with exact setup and run steps. (B5)
+8. In `SDLC_PLAN.md`, replace the status line and the author line. Strike the claims the audit marked false. Keep the file as history.
+
+**Done when**
+- `git log` shows the commits and `git status` is clean with `aether.db` and logs untracked.
+- A fresh clone plus the README steps starts the app on a machine that has only Python 3.12 and Node.
+- Starting the backend without `JWT_SECRET` exits with a clear error.
+- `grep -r "Amit Ganatra" backend` returns nothing.
+
+## Sprint 1 — Make it work end to end (about 3 days)
+
+**Goal:** one person can register, upload a document, ask a question and see a cited answer, in the UI the backend serves. Fix the blockers; do not redesign anything yet.
+
+Backend
+1. Fix LangChain mode at its five call sites, or delete the mode and its toggle. Decide now; Sprint 3 keeps only one pipeline either way. (B1)
+2. Make handlers non-blocking: plain `def` routes for the blocking paths, or `run_in_threadpool`, and a sync generator for the stream. On Windows without `--reload` the current stream delivers nothing until generation ends. (B11)
+3. Create the Chroma collection with cosine distance. Delete the old empty store. (R1)
+4. Add `tool_used` to `ChatResponse`. Add a `{"type": "error"}` SSE event and stop sending errors as tokens. Return a non-200 status when the agent fails. (B9, F9)
+5. `clear_documents`: stop swallowing errors, return the real count. Reject an upload whose hash already exists for that user. (R8, R6)
+6. Pass confidence and mode to `add_turn`. Stop the agent's document-search tool from writing its own turn. (R10)
+7. Calculator: fix the `x` replacement on `tools.py:98`, cap the exponent, stop rounding results to 6 significant digits. Pass `recursion_limit` to the agent. (R11, S4)
+8. Add the 5000-character limit to `/chat/stream`; constrain `session_id` and `feedback` in the Pydantic models. (S9)
+
+Frontend
+9. `SourceCard`: read `snippet`, show page and score. (B7)
+10. `SettingsModal`: use `size_bytes` and `uploaded_at`; remove the two fields the API does not send; make "Hard Reset" call the API or remove it. (F4, F5)
+11. Add `hybridMode` to the dependency list; fix the other two `exhaustive-deps` warnings. (B8)
+12. `.landing { height: 100vh; }`. (B6)
+13. Stream handling: parse the trailing buffer, treat a missing `done` as an error, reset loading in `finally`, handle the new `error` event. On 401, log out and say "Session expired". (B9, F7)
+14. Show the real username; set the page title. (F8)
+
+Serving
+15. Build the React app and mount `frontend/dist` at `/` after the API routes. (B3)
+
+Test
+16. Write `test_e2e.py` with a fake embedding model and a fake chat model injected. It registers, logs in, uploads a small text file, asks a question in each mode, checks the answer cites that file, and deletes the document. Tests must use a temp database and a temp vector store. (T1, T2)
+
+**Done when**
+- `pytest` passes, including the end-to-end test in default, hybrid and agent modes.
+- Opening `http://localhost:8000/` shows the React app, and a real question against a real uploaded document returns an answer with a readable citation. Save a screenshot.
+- Sending two requests at once shows both progressing.
+- The database shows a saved turn for a real user, with a non-zero confidence.
+
+## Sprint 2 — Safety net (about 3 days)
+
+**Goal:** tests that describe today's behaviour, so the restructure in Sprint 3 cannot break things silently.
+
+1. Fixtures: fake model, fake embeddings, temp database, temp vector store, an authenticated client. No test may touch real data or need a real key. (T2)
+2. API tests for every route: success, 401 without a token, 422 on bad input, the rate limit.
+3. Tenant isolation: two users, each uploads; neither can search, list or delete the other's data. (S2)
+4. Unit tests: each parser (PDF, DOCX with a table, CSV, XLSX), the chunker, `search_hybrid` fusion, the calculator (including `max()` and a large power), conversation memory.
+5. Frontend: `vitest` for the SSE reader (split chunks, missing `done`, error event) and one component test for the chat layout. (T4)
+6. Snapshot the OpenAPI schema into the repo and fail the test when it changes without the snapshot being updated.
+7. CI on every push: `ruff`, `pytest`, `npm run lint`, `npm test`, `npm run build`.
+
+**Done when**
+- CI is green on a fresh clone with no secrets configured.
+- Coverage of the backend is reported and above 70% on the pipeline, auth and database modules.
+- Reverting the Sprint 1 fix for LangChain mode (or the isolation filter) makes a test fail. Try it once to prove the net works.
+
+## Sprint 3 — Restructure and connect (about 4 days)
+
+**Goal:** the folder structure from the audit report (section 6), one configuration source, one pipeline. Behaviour does not change; the Sprint 2 tests prove it.
+
+Move one package per commit, running the tests after each.
+
+1. `core/config.py`: the existing `Settings` class, now imported everywhere. Model id, chunk size, top-k, threshold, origins, limits and paths are read from it and nowhere else. (C1)
+2. `llm/llm_client.py` and `embeddings/embedder.py`: one factory each, with timeout and output cap set. Remove the other four copies. (C2, S4)
+3. `prompts/prompt_templates.py`: every prompt, once, including the question-rewrite prompt as a real template.
+4. `ingestion/loader.py`, `chunking/chunker.py`, `vectordb/vector_store.py`, `retrieval/retriever.py`, `memory/conversation.py`: split `rag_engine.py` along these lines.
+5. `pipeline/rag.py`: one implementation that yields events; the non-streaming endpoint collects them. Delete the three duplicates. (C2)
+6. `api/`: schemas, dependencies and one router file per resource. `main.py` becomes an app factory with a lifespan hook that opens the stores; no work at import time. (C3, C4)
+7. `agents/`, `db/`, `evaluation/`.
+8. Replace the four boolean flags with one `mode` field: `default`, `hybrid`, `agent`. (F9)
+9. Write the no-orphan check and add it to CI.
+
+**Done when**
+- All Sprint 2 tests pass unchanged except for import paths.
+- The no-orphan check passes: no unimported module, no uncalled route.
+- `grep -rn "gemini-" backend/src` returns one line.
+- Importing any module does not open a database or need an API key.
+
+## Sprint 4 — Retrieval quality and an honest evaluation (about 5 days)
+
+**Goal:** know how good the system is, with numbers you measured. This sprint is the core of the internship's technical value.
+
+Build the measurement first
+1. Choose 3–5 real, non-confidential documents of different kinds. Write 30–50 questions with the expected answer and the page or section that contains it. Include 8–10 questions the documents cannot answer. Store as `evaluation/dataset.jsonl`.
+2. Rewrite the harness to call the real pipeline. Report retrieval metrics (hit@5, MRR) from the labelled sections; answer faithfulness and correctness using a judge that is a different model from the generator; refusal accuracy on the unanswerable questions; latency and token count per stage. Fail loudly on a parse error; no default scores. (T3)
+3. Record the baseline before changing anything.
+
+Then improve, one change at a time, re-running the harness after each
+4. Calibrate the confidence threshold from the baseline score distribution. Apply it to dense similarity in every mode. (R1, R2)
+5. Hybrid: fuse on `chunk_id`, cache the BM25 index per user and invalidate on upload, use a real tokenizer. (R3)
+6. Ablation: answer from the retrieved chunks directly versus through the summary step. Keep whichever measures better; if it is close, drop the summary for the latency. (R4)
+7. Numbered chunks in the prompt and structured output that returns the cited numbers, so sources are the chunks actually used. (R5)
+8. `document_id` in chunk metadata; `DELETE /documents/{id}`; re-upload replaces. (R7)
+9. Parsing: DOCX tables, headers and footers; every sheet of a workbook, read as text so leading zeros survive; row-aware splitting for wide rows; encoding detection for text files; a 422 without a server path for corrupt files; a clear message for scanned PDFs. (R9)
+10. Agent: remove "use your own knowledge" from the prompt, no confidence badge for answers with no retrieval, do date arithmetic in Python. (R11)
+
+**Done when**
+- `python -m src.evaluation.evaluate` prints a results table and writes it to `docs/evaluation.md`.
+- The table shows baseline against final, and dense against hybrid, on the same dataset.
+- Every unanswerable question is refused in every mode.
+- You can explain each number and how it was computed.
+
+## Sprint 5 — Hardening and API completion (about 4 days)
+
+**Goal:** safe to put on an office network, and an API the new frontend can be built against.
+
+Security
+1. Random tenant UUID per user as the vector-store key; both stores under one `data/` directory. (S2)
+2. Closed registration (invite code or allow-list), a longer password minimum, a 72-byte check, ASCII case-insensitive usernames, identical trimming on register and login, constant-time login, 30–60 minute tokens with refresh, tokens rejected when the user no longer exists, logged auth events. (S7)
+3. Rate limits keyed by user id on authenticated routes; a default limit on every route. (S8)
+4. Upload: stream to disk with a hard cap, authenticate first, check uncompressed size of zip-based formats, cap rows and chunks, a per-user document quota. (S4)
+5. Generic client errors with a correlation id; structured logs with user id and without question text; `/health` returns status only; docs endpoints off outside development; security headers and a CSP. (S10)
+6. Demote the regex filter to telemetry; escape and constrain filenames in the prompt. (S5)
+
+API
+7. `GET /auth/me`. `GET /sessions` and `GET /sessions/{id}/messages`. Stop deleting history on New Thread. (F8, Task 5)
+8. Return a `turn_id` with every answer; `POST /feedback` takes it. (F10)
+9. Background ingestion with a status endpoint. (R12)
+10. Retry with backoff and a friendly message on quota errors. (B10)
+
+**Done when**
+- Tests cover: login as a second user after a database reset sees no old data; a 100-character password is rejected with a 422; a 60 MB upload is rejected without being read into memory; `9**9**9` returns an error in under a second.
+- A page refresh keeps the user signed in and restores the conversation.
+- The OpenAPI snapshot is updated and reviewed.
+
+## Sprint 6 — Frontend rebuild (about 5 days)
+
+**Goal:** a frontend you would be glad to demo, built against the Sprint 5 API. You said you are willing to change it; this is where to do it, not earlier.
+
+Recommended skills for this sprint are in the next section.
+
+1. TypeScript. Generate API types from the OpenAPI schema; one request wrapper that handles 401, 429 and errors uniformly. (T4, F7)
+2. A router: landing, login, chat with a thread id in the URL, settings.
+3. Chat lifecycle: Stop button with `AbortController`, error state with retry, the question restored on failure, no stale-stream writes into a new thread. (B9, F6)
+4. Citations as the centrepiece: numbered markers in the answer, a side panel with the cited passage, page and score. (B7, R5)
+5. Thread list with history; per-document management with upload progress and delete; feedback thumbs. (F10, F14)
+6. One mode selector instead of four toggles; a visible tool trace for agent answers. (F9)
+7. Markdown: no remote images, links open in a new tab. Memoised messages; scroll only when the user is at the bottom. (S3, F13)
+8. Responsive from 360 px with an off-canvas sidebar; dialog semantics, focus trap, labels, contrast at 4.5:1, reduced-motion support. (F11, F12)
+9. Tests: the stream reader, the chat page, and one Playwright run of the full journey.
+
+**Done when**
+- The Playwright journey passes in CI against the real backend with fake models.
+- Lighthouse accessibility is 95 or above on the chat page; the app is usable at 375 px.
+- No field name is typed by hand in the frontend; a renamed backend field breaks the TypeScript build.
+
+## Sprint 7 — Ship and document (about 3 days)
+
+**Goal:** something a mentor can run with one command, and documents that match it.
+
+1. Multi-stage Dockerfile (Node build, then Python runtime), non-root user, healthcheck. `docker-compose.yml` with one data volume. (D4, S1)
+2. Run the end-to-end test against the container in CI.
+3. Rewrite the project report for the system as it is: problem, requirements mapped to the plan, architecture diagram, design decisions with the alternatives you rejected and why, the evaluation method and results from Sprint 4, security model, limitations, future work, real screenshots. Name Netweb Software, your mentor and the dates.
+4. Settle one attribution and use it everywhere.
+5. Decide the data question with your mentor: which documents may be uploaded, on which API tier. Put the answer in the README. (S11)
+6. Rehearse the demo on the office network with the billed key, with the organisation's root CA installed if needed. Prepare a recorded fallback. (B10)
+7. Re-run the audit prompt from the appendix of `AUDIT_REPORT.md` and fix what it finds.
+
+**Done when**
+- `docker compose up` on a clean machine gives a working app at one URL, and data survives a restart.
+- Every statement in the report can be traced to a test, a measured number or a file.
+- You can answer the ten reviewer questions in section 9 of the audit report without notes.
+
+---
+
+## Frontend skill recommendation
+
+Two skills are installed in your Claude Code and fit this job. Use both, at different moments.
+
+| Skill | Use it for | When |
+|---|---|---|
+| `frontend-design:frontend-design` | The redesign itself: layout, typography, colour, motion, and a look that does not read as a generic AI template | Start of Sprint 6, to design the chat page, the citation panel and the landing page |
+| `senior-frontend:senior-frontend` | The engineering: React and TypeScript structure, Tailwind, component scaffolding, accessibility, bundle and performance review | Throughout Sprint 6, and for a review pass at the end |
+
+If you pick only one, pick `frontend-design`. Your frontend's structure is already reasonable; what a rebuild needs most is a design with a point of view and a citation experience that makes the product's value visible. Invoke it by typing `/frontend-design:frontend-design` followed by what you want built.
+
+Not suited: `artifacts-builder` and `web-artifacts-builder` (they build claude.ai artifacts, not a project frontend), `theme-factory` (themes for slides and documents), `canvas-design` (static posters).
+
+This recommendation is based on the skills' descriptions; I have not run either on this project.
+
+## Suggested order and total
+
+| Sprint | Size | Depends on |
+|---|---|---|
+| 0 Make it safe to change | 1 day | — |
+| 1 Make it work end to end | 3 days | 0 |
+| 2 Safety net | 3 days | 1 |
+| 3 Restructure and connect | 4 days | 2 |
+| 4 Retrieval quality and evaluation | 5 days | 3 |
+| 5 Hardening and API completion | 4 days | 3 |
+| 6 Frontend rebuild | 5 days | 5 |
+| 7 Ship and document | 3 days | 4, 6 |
+
+About 28 working days. If time is short, the order to cut from the end is: Sprint 6 down to items 1, 3, 4 and 8; then Sprint 5 down to items 1, 2, 7 and 8. Do not cut Sprints 0, 1, 2 or 4.
