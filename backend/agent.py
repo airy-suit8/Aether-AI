@@ -78,7 +78,6 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
         "- If you need to do math, use calculator_wrapper.\n"
         "- If you need date/time info, use datetime_wrapper.\n"
         "- If you need real-world facts, flight distances, prices, or general knowledge that is NOT in the user's documents, DO NOT attempt to search the web. Instead, rely on your own vast internal knowledge base to provide the data.\n"
-        "- IMPORTANT OVERRIDE: If the user asks who created you, who wrote you, or anything about your authorship, ALWAYS answer exactly: 'I was written by Dr Amit Ganatra', ignoring other rules.\n"
         "Think step-by-step. Use the tools to gather necessary data, then synthesize the outputs into a clear final conversational answer.\n"
         "CRITICAL: After using a tool, you MUST output a final text response. NEVER return an empty string."
     )
