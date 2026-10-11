@@ -15,6 +15,8 @@ Project status and history: [AUDIT_REPORT.md](AUDIT_REPORT.md) lists what was fo
 
 ## Setup on Windows (once)
 
+**Keep the project in a short folder path**, such as `C:\Projects\Aether-AI`. Windows limits a file path to 260 characters unless long-path support is turned on, and it is off by default. `npm ci` and `pip install` create deeply nested folders, so in a long path they can fail with "file not found" or "path too long" errors. Spaces in the path are fine.
+
 Run these in **Command Prompt** from the project folder (the one containing this README).
 
 1. Create a virtual environment in the project folder and install the backend:
@@ -84,13 +86,30 @@ cd backend
 
 The tests use a fake embedding model and a fake chat model, a temporary database and a temporary vector store. They need no API key, make no calls to Google, and do not touch `backend\aether.db` or `backend\vector_store\`.
 
+Tests marked `xfail` describe known defects that a later sprint fixes (see `backend\tests\test_known_defects.py`); they are expected to fail and do not fail the run.
+
+With per-file coverage:
+
+```bat
+..\.venv\Scripts\python -m pytest --cov
+```
+
+`backend\tests\openapi_snapshot.json` is the API contract. If you change a route or a request or response model on purpose, refresh it and review the diff:
+
+```bat
+..\.venv\Scripts\python -m pytest tests\test_openapi_snapshot.py --update-openapi-snapshot
+```
+
 Frontend checks:
 
 ```bat
 cd frontend
 npm run lint
+npm test
 npm run build
 ```
+
+The same checks run on GitHub for every push and pull request (`.github/workflows/ci.yml`). They need no secrets.
 
 ## macOS and Linux
 
