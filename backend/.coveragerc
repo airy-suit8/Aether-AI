@@ -1,0 +1,8 @@
+# Coverage of the application code, for:  python -m pytest --cov
+[run]
+source = .
+omit =
+    tests/*
+
+[report]
+show_missing = True
