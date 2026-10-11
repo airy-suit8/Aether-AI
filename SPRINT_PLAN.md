@@ -8,9 +8,11 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 |---|---|---|
 | 0 Make it safe to change | Done, merged 11 Oct 2026 (PR #1) | See below |
 | 1 Make it work end to end | Done, merged 11 Oct 2026 (PR #1) | See below |
-| 2 Safety net | Done on branch `claude/sprint-2`, pull request into `main` awaiting the owner's review | See below |
+| 2 Safety net | Done, merged 12 Oct 2026 | See below |
+| Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
 | 3 Restructure and connect | Next | |
-| 4 to 6 | Not started | |
+| 4 and 5 | Not started | |
+| 6 Frontend rebuild | Visual redesign done early; engineering items remain | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
@@ -27,7 +29,9 @@ What that real run showed, to act on in later sprints:
 - **It is slow:** about 23 s per answer and 27 s to the first streamed token, from two model calls in sequence. Sprint 4 item 6 decides whether the summary step stays.
 - **An exact match scores 1.0000002**, which makes LangChain print a warning containing the chunk text. Clamp scores to 0..1 in Sprint 4.
 
-Evidence for Sprint 2, checked in the cloud session on Linux (not yet on the owner's Windows machine):
+Sprint 2 and the redesign were merged as one, and the combined code was checked on the owner's Windows machine first: `ruff` clean; `pytest` 283 passed and 21 xfailed with 90% coverage (every core module at 92% or above); `npm ci`, lint (0 errors), `npm test` 26 passed, and build. Two assertions in `ChatLayout.test.jsx` were updated for the new interface: the answer mode is a radio group, and a source card shows its passage and pins open on click. The redesign itself was checked in a real browser against a backend running fake models: sign-up, upload, ask, sources, settings, dark, light and 390 px.
+
+Evidence for Sprint 2, from the cloud session on Linux:
 
 - `python -m pytest`: 283 passed, 21 xfailed, with no API key. The same result in a fresh Python 3.12 virtual environment built only from `requirements-dev.txt` with neither `GOOGLE_API_KEY` nor `JWT_SECRET` set.
 - `ruff check .`: all checks passed (rules E4, E7, E9 and F, set in `backend/ruff.toml`).
@@ -229,6 +233,8 @@ API
 ## Sprint 6 — Frontend rebuild (about 5 days)
 
 **Goal:** a frontend you would be glad to demo, built against the Sprint 5 API. You said you are willing to change it; this is where to do it, not earlier.
+
+Done early, on 11 October 2026: the visual redesign. Every screen now uses the Prism design language (see [DESIGN.md](DESIGN.md)); the old stylesheets are gone. That work also covered, for the current API, part of item 3 (Stop on the client), item 6 (one mode selector), item 7 (no remote images, links in a new tab, scroll only at the bottom) and most of item 8 (responsive layout, dialog semantics, labels, reduced motion). What remains below is the engineering: TypeScript and generated types, a router, history and threads, feedback, per-claim citations, the keyboard and screen-reader pass, and the Playwright journey. Any new UI must follow DESIGN.md.
 
 Recommended skills for this sprint are in the next section.
 
