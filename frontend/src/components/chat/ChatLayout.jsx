@@ -260,6 +260,7 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
           onClose={() => setSettingsOpen(false)}
           addToast={addToast}
           onDocumentsChanged={refreshDocuments}
+          onClearConversation={handleNewThread}
         />
       )}
     </div>

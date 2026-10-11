@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { getDocumentsDetailed, deleteAllDocuments, getHealth } from '../../services/api'
 import './SettingsModal.css'
 
-export default function SettingsModal({ onClose, addToast, onDocumentsChanged }) {
+export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation }) {
   const [activeTab, setActiveTab] = useState('general')
   const [docs, setDocs] = useState([])
   const [health, setHealth] = useState(null)
@@ -101,17 +101,17 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged })
               <div className="settings-pane">
                 <div className="setting-row">
                   <div className="setting-info">
-                    <div className="setting-label">Clear All Conversations</div>
-                    <div className="setting-desc">Wipe out current session memory and restart context.</div>
+                    <div className="setting-label">Clear Conversation</div>
+                    <div className="setting-desc">Delete the current conversation from the server and start a new thread.</div>
                   </div>
                   <button 
                     className="btn btn-secondary" 
                     onClick={() => {
-                      localStorage.removeItem('aether_session_id')
-                      window.location.reload()
+                      onClearConversation()
+                      onClose()
                     }}
                   >
-                    Hard Reset
+                    Clear Conversation
                   </button>
                 </div>
               </div>
@@ -148,9 +148,9 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged })
                         {docs.map((d, i) => (
                           <tr key={i}>
                             <td title={d.filename}>{d.filename}</td>
-                            <td>{formatSize(d.size)}</td>
+                            <td>{formatSize(d.size_bytes)}</td>
                             <td>{d.chunks}</td>
-                            <td>{formatDate(d.ingested_at)}</td>
+                            <td>{formatDate(d.uploaded_at)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -166,21 +166,13 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged })
                 <div className="metrics-grid">
                   <div className="metric-card">
                     <div className="metric-label">System Status</div>
-                    <div className="metric-val" style={{ color: 'var(--success)' }}>
+                    <div className="metric-val" style={{ color: health?.status === 'ok' ? 'var(--success)' : 'var(--error)' }}>
                       {health?.status === 'ok' ? 'Active 🟢' : 'Offline 🔴'}
                     </div>
                   </div>
                   <div className="metric-card">
                     <div className="metric-label">Uptime</div>
                     <div className="metric-val">{health?.uptime_seconds ? `${health.uptime_seconds.toFixed(1)}s` : 'Unknown'}</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-label">Vector Store</div>
-                    <div className="metric-val">{health?.vector_store_status || 'Unknown'}</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-label">DB Status</div>
-                    <div className="metric-val">{health?.db_status || 'Unknown'}</div>
                   </div>
                 </div>
               </div>
