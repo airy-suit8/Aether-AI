@@ -17,6 +17,15 @@ from rag_engine import query_rag
 
 load_dotenv(override=False)
 
+
+def _get_llm() -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model="gemini-3.5-flash",
+        google_api_key=os.environ["GOOGLE_API_KEY"],
+        temperature=0.0,
+    )
+
+
 def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     """
     Agent Decision Layer — uses an Execution Loop (ReAct / Tool Calling).
@@ -66,11 +75,7 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
         document_search_wrapper
     ]
     
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
-        temperature=0.0,
-    )
+    llm = _get_llm()
     
     system_prompt = (
         "You are the Aether AI Knowledge Assistant. You can chain multiple tools together to answer complex user questions.\n"
@@ -95,24 +100,21 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
         messages.append(AIMessage(content=turn["answer"]))
     messages.append(HumanMessage(content=question))
     
-    try:
-        # Run the multi-step execution loop
-        result = agent.invoke({"messages": messages})
-        
-        # Extract the final answer from the LLM
-        final_answer = result["messages"][-1].content
-        
-        # Fallback: Sometimes Gemini fails to synthesize a final string after a tool call.
-        # If the final text is empty, check if the previous message was a ToolMessage and use its raw output.
-        if not final_answer.strip() and len(result["messages"]) > 1:
-            prev_msg = result["messages"][-2]
-            if getattr(prev_msg, "type", "") == "tool":
-                final_answer = f"The result is: {prev_msg.content}"
-            else:
-                final_answer = "I executed the tool but encountered an issue formatting the final answer."
-                
-    except Exception as e:
-        final_answer = f"Error during agent execution: {str(e)}"
+    # Run the multi-step execution loop. Errors propagate to the API, which reports
+    # them as errors instead of saving and showing them as an answer.
+    result = agent.invoke({"messages": messages})
+    
+    # Extract the final answer from the LLM (.text joins content blocks into one string)
+    final_answer = result["messages"][-1].text
+    
+    # Fallback: Sometimes Gemini fails to synthesize a final string after a tool call.
+    # If the final text is empty, check if the previous message was a ToolMessage and use its raw output.
+    if not final_answer.strip() and len(result["messages"]) > 1:
+        prev_msg = result["messages"][-2]
+        if getattr(prev_msg, "type", "") == "tool":
+            final_answer = f"The result is: {prev_msg.text}"
+        else:
+            final_answer = "I executed the tool but encountered an issue formatting the final answer."
         
     # Deduplicate sources if the agent called document_search multiple times
     unique_sources = []
