@@ -5,22 +5,25 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
+  const [username, setUsername] = useState(null);
 
   // Derived — no separate state needed
   const isAuthenticated = !!token;
 
-  const login = useCallback((newToken) => {
+  const login = useCallback((newToken, newUsername) => {
     setToken(newToken);
+    setUsername(newUsername);
     setApiToken(newToken);
   }, []);
 
   const logout = useCallback(() => {
     setToken(null);
+    setUsername(null);
     setApiToken(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ token, username, isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

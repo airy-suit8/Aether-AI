@@ -1,4 +1,5 @@
 import React, { useRef, useCallback } from 'react'
+import { useAuth } from '../../services/AuthContext'
 import './Sidebar.css'
 
 /**
@@ -19,6 +20,7 @@ export default function Sidebar({
   streamingMode,
 }) {
   const fileInputRef = useRef(null)
+  const { username } = useAuth()
 
   const handleFileChange = useCallback((e) => {
     const file = e.target.files[0]
@@ -134,10 +136,10 @@ export default function Sidebar({
       {/* Footer */}
       <div className="sidebar-footer">
         <div className="sidebar-user">
-          <div className="user-avatar">U</div>
+          <div className="user-avatar">{(username || '?').charAt(0).toUpperCase()}</div>
           <div className="user-info">
-            <div className="user-name">Developer</div>
-            <div className="user-email">user@aether.ai</div>
+            <div className="user-name">{username || 'Signed in'}</div>
+            <div className="user-email">Signed in</div>
           </div>
         </div>
         <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} data-tooltip="Settings">
