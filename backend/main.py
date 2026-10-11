@@ -128,11 +128,15 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+# Route handlers are plain `def` on purpose: they call blocking code (Gemini, Chroma,
+# SQLite, bcrypt), and FastAPI runs `def` handlers in a thread pool, so one slow
+# request does not stall every other request.
+
 # ── Authentication ────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/auth/register", tags=["Auth"])
 @limiter.limit("5/minute")
-async def register(user: UserRegister, request: Request):
+def register(user: UserRegister, request: Request):
     if get_user_by_username(user.username):
         raise HTTPException(status_code=400, detail="Username already registered")
     hashed_password = get_password_hash(user.password)
@@ -141,7 +145,7 @@ async def register(user: UserRegister, request: Request):
 
 @app.post("/api/v1/auth/login", response_model=Token, tags=["Auth"])
 @limiter.limit("10/minute")
-async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     user = get_user_by_username(form_data.username)
     if not user or not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(
@@ -159,7 +163,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 # ── Health Check ──────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/health", tags=["System"])
-async def health_check():
+def health_check():
     """Health check endpoint for monitoring and load balancers."""
     uptime = (datetime.now() - _start_time).total_seconds()
     doc_stats = get_document_stats()
@@ -177,7 +181,7 @@ async def health_check():
 
 @app.post("/api/v1/upload", response_model=UploadResponse, tags=["Documents"])
 @limiter.limit("10/minute")
-async def upload_document(request: Request, file: UploadFile = File(...), user_id: int = Depends(get_current_user)):
+def upload_document(request: Request, file: UploadFile = File(...), user_id: int = Depends(get_current_user)):
     """Upload and ingest a PDF or text/markdown document."""
     filename = file.filename or "unknown"
     ext = Path(filename).suffix.lower()
@@ -192,7 +196,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), user_i
 
     # Read and validate file content
     try:
-        content = await file.read()
+        content = file.file.read()
     except Exception as e:
         error_logger.error(f"UPLOAD READ FAILED | file={filename} | error={str(e)}")
         raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {str(e)}")
@@ -268,7 +272,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), user_i
 
 @app.post("/api/v1/chat", response_model=ChatResponse, tags=["Chat"])
 @limiter.limit("30/minute")
-async def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
+def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Ask a question — answers are grounded in uploaded documents."""
     if not chat_request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -311,7 +315,7 @@ async def chat(request: Request, chat_request: ChatRequest, user_id: int = Depen
 
 
 @app.post("/api/v1/feedback", tags=["Chat"])
-async def submit_feedback(feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
+def submit_feedback(feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
     """Submit thumbs up (1) or thumbs down (-1) for the most recent message in the session."""
     try:
         update_conversation_feedback(user_id, feedback_request.session_id, feedback_request.feedback)
@@ -326,7 +330,7 @@ async def submit_feedback(feedback_request: FeedbackRequest, user_id: int = Depe
 
 @app.post("/api/v1/chat/stream", tags=["Chat"])
 @limiter.limit("30/minute")
-async def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
+def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Streaming endpoint — returns the answer token-by-token using SSE."""
     if not chat_request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -337,7 +341,9 @@ async def chat_stream(request: Request, chat_request: ChatRequest, user_id: int 
 
     import json
 
-    async def generate_stream():
+    # A plain generator: Starlette runs it in a worker thread, so a slow model
+    # call does not block the event loop and tokens are sent as they arrive.
+    def generate_stream():
         try:
             if chat_request.use_agent:
                 # Agent doesn't have a streaming LCEL pipeline in this architecture yet, fallback to fake streaming
@@ -369,7 +375,7 @@ async def chat_stream(request: Request, chat_request: ChatRequest, user_id: int 
 # ── Session ───────────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/session/clear", tags=["Session"])
-async def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
+def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Clear conversation memory for a session."""
     clear_session(user_id, chat_request.session_id)
     request_logger.info(f"SESSION CLEARED | session={chat_request.session_id}")
@@ -379,7 +385,7 @@ async def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(g
 # ── Documents ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/documents", tags=["Documents"])
-async def get_documents(user_id: int = Depends(get_current_user)):
+def get_documents(user_id: int = Depends(get_current_user)):
     """List all ingested document filenames."""
     try:
         docs = list_documents(user_id)
@@ -390,7 +396,7 @@ async def get_documents(user_id: int = Depends(get_current_user)):
 
 
 @app.get("/api/v1/documents/detailed", tags=["Documents"])
-async def get_documents_detailed(user_id: int = Depends(get_current_user)):
+def get_documents_detailed(user_id: int = Depends(get_current_user)):
     """List detailed information of all ingested documents."""
     try:
         docs = get_all_documents_detailed(user_id)
@@ -401,7 +407,7 @@ async def get_documents_detailed(user_id: int = Depends(get_current_user)):
 
 
 @app.delete("/api/v1/documents", tags=["Documents"])
-async def delete_documents(user_id: int = Depends(get_current_user)):
+def delete_documents(user_id: int = Depends(get_current_user)):
     """Clear all documents from the vector store for the user."""
     try:
         result = clear_documents(user_id)
