@@ -241,7 +241,7 @@ def _retrieve_and_format(user_id: int, question: str, session_id: str) -> Dict[s
     Returns a dict with formatted context, raw results, scores, and confidence.
     """
     # Contextualize the question for vector search if there's history
-    history = _memory.format_history(session_id)
+    history = _memory.format_history(user_id, session_id)
     search_query = question
     
     if history != "(No previous conversation)":
@@ -331,7 +331,7 @@ def query_rag_langchain(user_id: int, question: str, session_id: str = "default"
     })
 
     # ── Step 3: Generate — Task 15 LCEL syntax (prompt | model | parser) ──────
-    chat_history = _memory.format_history(session_id)
+    chat_history = _memory.format_history(user_id, session_id)
 
     generate_chain = RAG_PROMPT | llm | StrOutputParser()
 
@@ -358,7 +358,7 @@ def query_rag_langchain(user_id: int, question: str, session_id: str = "default"
             })
 
     # Store turn in memory
-    _memory.add_turn(session_id, question, answer)
+    _memory.add_turn(user_id, session_id, question, answer)
 
     return RAGResponse(
         answer=answer,
@@ -392,7 +392,7 @@ def query_rag_langchain_stream(user_id: int, question: str, session_id: str = "d
         "question": question,
     })
 
-    chat_history = _memory.format_history(session_id)
+    chat_history = _memory.format_history(user_id, session_id)
     generate_chain = RAG_PROMPT | llm | StrOutputParser()
 
     answer_text = ""
@@ -419,5 +419,5 @@ def query_rag_langchain_stream(user_id: int, question: str, session_id: str = "d
                 "score": round(r["score"], 3),
             })
 
-    _memory.add_turn(session_id, question, answer_text)
+    _memory.add_turn(user_id, session_id, question, answer_text)
     yield {"type": "done", "sources": sources, "confidence": retrieval["confidence"]}
