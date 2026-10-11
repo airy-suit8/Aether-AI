@@ -16,6 +16,7 @@ import tempfile
 import traceback
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,6 +89,7 @@ class ChatResponse(BaseModel):
     sources: list
     confidence: float = 0.0
     session_id: str = "default"
+    tool_used: Optional[str] = None  # agent mode: which tools answered
 
 class FeedbackRequest(BaseModel):
     session_id: str
@@ -311,6 +313,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         sources=result["sources"],
         confidence=result.get("confidence", 0.0),
         session_id=chat_request.session_id,
+        tool_used=result.get("tool_used"),
     )
 
 
@@ -361,9 +364,9 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
                 for chunk in query_rag_stream(user_id, chat_request.question, session_id=chat_request.session_id, use_hybrid=chat_request.use_hybrid):
                     yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:
-            error_logger.error(f"STREAM FAILED | mode={mode} | error={str(e)}")
-            yield f"data: {json.dumps({'type': 'token', 'content': f'An error occurred: {str(e)}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'sources': [], 'confidence': 0.0})}\n\n"
+            error_logger.error(f"STREAM FAILED | mode={mode} | error={str(e)}\n{traceback.format_exc()}")
+            # A separate event type, so the UI shows an error instead of keeping it as an answer
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The answer could not be generated. Please try again.'})}\n\n"
 
     return StreamingResponse(
         generate_stream(),
