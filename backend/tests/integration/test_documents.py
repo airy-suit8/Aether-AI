@@ -1,7 +1,5 @@
 """Document lifecycle: duplicates are rejected, delete reports what it deleted (R6, R8)."""
 
-import pytest
-
 import rag_engine
 from helpers import DOC_TEXT, upload_text
 
