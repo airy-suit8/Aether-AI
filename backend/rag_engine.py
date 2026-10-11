@@ -31,7 +31,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from pydantic import BaseModel, Field
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 STORE_DIR     = Path(os.environ.get("AETHER_VECTOR_STORE_DIR", Path(__file__).parent / "vector_store"))

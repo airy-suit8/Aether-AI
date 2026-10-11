@@ -8,19 +8,15 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-# JWT_SECRET MUST be set in .env for production. No fallback — fail loudly.
+# JWT_SECRET MUST be set in .env. No fallback — fail loudly.
 _raw_secret = os.environ.get("JWT_SECRET")
-if not _raw_secret:
-    import secrets
-    _raw_secret = secrets.token_urlsafe(64)
-    import logging
-    logging.getLogger("auth").warning(
-        "JWT_SECRET not set in environment. Generated a random ephemeral secret. "
-        "All tokens will be invalidated on server restart. "
-        "Set JWT_SECRET in .env for persistent sessions."
+if not _raw_secret or _raw_secret == "replace_with_a_long_random_string":
+    raise RuntimeError(
+        "JWT_SECRET is not set. Add it to backend/.env (see backend/.env.example). "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
     )
 
 SECRET_KEY: str = _raw_secret

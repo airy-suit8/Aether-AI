@@ -15,7 +15,7 @@ from langgraph.prebuilt import create_react_agent
 from tools import calculator, datetime_tool
 from rag_engine import query_rag
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     """

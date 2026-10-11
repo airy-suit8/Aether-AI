@@ -20,7 +20,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 def get_eval_llm():
     return ChatGoogleGenerativeAI(

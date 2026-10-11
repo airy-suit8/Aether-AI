@@ -45,7 +45,7 @@ from rag_engine import (
     MEMORY_MAX_TURNS,
 )
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 
 # ── Gemini clients (same models as original) ─────────────────────────────────
