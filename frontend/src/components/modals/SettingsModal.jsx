@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { getDocumentsDetailed, deleteAllDocuments, getHealth } from '../../services/api'
 import './SettingsModal.css'
 
@@ -8,19 +8,13 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
   const [health, setHealth] = useState(null)
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
 
-  // Load detailed docs when opening Documents tab
-  useEffect(() => {
-    if (activeTab === 'documents') {
-      loadDetailedDocs()
-    }
-  }, [activeTab])
 
   // Load health data on mount
   useEffect(() => {
     getHealth().then(setHealth).catch(() => {})
   }, [])
 
-  const loadDetailedDocs = async () => {
+  const loadDetailedDocs = useCallback(async () => {
     setIsLoadingDocs(true)
     try {
       const data = await getDocumentsDetailed()
@@ -30,7 +24,14 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
     } finally {
       setIsLoadingDocs(false)
     }
-  }
+  }, [addToast])
+
+  // Load detailed docs when opening Documents tab
+  useEffect(() => {
+    if (activeTab === 'documents') {
+      loadDetailedDocs()
+    }
+  }, [activeTab, loadDetailedDocs])
 
   const handleClearAll = async () => {
     if (confirm('Are you sure you want to delete all indexed documents from the vector store?')) {
