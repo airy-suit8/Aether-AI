@@ -8,8 +8,9 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 |---|---|---|
 | 0 Make it safe to change | Done, merged 11 Oct 2026 (PR #1) | See below |
 | 1 Make it work end to end | Done, merged 11 Oct 2026 (PR #1) | See below |
-| 2 Safety net | Next | |
-| 3 to 6 | Not started | |
+| 2 Safety net | Done on branch `sprint-2`, pull request into `main` awaiting the owner's review | See below |
+| 3 Restructure and connect | Next | |
+| 4 to 6 | Not started | |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
@@ -25,6 +26,21 @@ What that real run showed, to act on in later sprints:
 - **A refused answer still lists five sources and a 49% confidence.** Fix with the calibration.
 - **It is slow:** about 23 s per answer and 27 s to the first streamed token, from two model calls in sequence. Sprint 4 item 6 decides whether the summary step stays.
 - **An exact match scores 1.0000002**, which makes LangChain print a warning containing the chunk text. Clamp scores to 0..1 in Sprint 4.
+
+Evidence for Sprint 2, checked on Linux (not yet on the owner's Windows machine):
+
+- `python -m pytest`: 283 passed, 21 xfailed, with no API key. The same result in a fresh Python 3.12 virtual environment built only from `requirements-dev.txt` with neither `GOOGLE_API_KEY` nor `JWT_SECRET` set.
+- `ruff check .`: all checks passed (rules E4, E7, E9 and F, set in `backend/ruff.toml`).
+- Coverage (`python -m pytest --cov`): rag_engine 99%, rag_langchain 92%, agent 98%, tools 99%, auth 93%, database 100%, main 99%; total 90%. CI fails if any of these seven drops below 70%.
+- Frontend: `npm ci`, `npm run lint` (0 errors), `npm test` (26 passed) and `npm run build` pass on Node 22 and Node 24. `npm audit`: 0 vulnerabilities.
+- The net works: with the Sprint 1 LangChain `user_id` fix reverted, 10 tests fail; with the `user_id` filter removed from the dense vector search, 14 tests fail. Both changes were then restored.
+- Known defects are strict xfails in `backend/tests/test_known_defects.py`, each naming its finding id. The fixing sprint removes the mark.
+
+What Sprint 2 found, to act on later:
+
+- **LangChain PDF pages start at 0** (new): `load_document_langchain` keeps PyPDFLoader's 0-based `page`, so it would cite "p. 0". The loader is not reachable from the API today (`ingest_document_langchain` had no caller once its unused import was removed), so this is for the Sprint 3 no-orphan decision. Strict xfail.
+- **A corrupt PDF gives 500 without a path; a corrupt DOCX gives 500 with the temp path.** The audit said both leak the path. Strict xfail for both (R9).
+- **Requests that fail validation never reach the rate limiter**, so 422s do not count towards a limit. Harmless for login today (no password is checked); keep it in mind for Sprint 5 item 3.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
@@ -47,11 +63,11 @@ You asked that every piece of code be logically connected to the rest. The audit
 
 Seam checklist. Tick each when its test exists and passes.
 
-- [ ] UI call → route: every function in the API client has a matching route and a contract test
+- [x] UI call → route: every function in the API client has a matching route and a contract test (`frontend/src/services/api.contract.test.js` checks each call against `backend/tests/openapi_snapshot.json`)
 - [x] Route → service: every route has a test that reaches the service layer
 - [x] Service → vector store: ingest then search returns the ingested text
 - [x] Service → database: a chat turn is saved with its real confidence and mode
-- [x] Tenant isolation: user B cannot read, search or delete user A's data
+- [x] Tenant isolation: user B cannot read, search or delete user A's data (both directions, including history and feedback, since Sprint 2)
 - [x] Every chat mode: default, hybrid and agent each answer in the end-to-end test
 - [ ] Config: the model id appears in exactly one place
 - [x] Backend → UI: `GET /` returns the built React app
