@@ -62,6 +62,19 @@ cd frontend
 npm run dev
 ```
 
+### One server instead of two
+
+The backend also serves the built React app at **http://localhost:8000/** (the API stays under `/api/v1/`). Build it once, then start only the backend:
+
+```bat
+cd frontend
+npm run build
+cd ..\backend
+..\.venv\Scripts\python -m uvicorn main:app --port 8000
+```
+
+Rebuild and restart the backend after changing frontend code. Without a build, `http://localhost:8000/` shows a page explaining these two options.
+
 ## Run the tests
 
 ```bat
