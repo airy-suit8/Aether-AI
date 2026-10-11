@@ -64,14 +64,16 @@ describe('ChatLayout', () => {
     const bold = await screen.findByText('every 90 days')
     expect(bold.tagName).toBe('STRONG')
 
-    // One source card with file, page and score; the snippet opens on click
+    // One source card in the margin with file, page, score and the passage; a click pins it open
     const card = screen.getByText('Sources').parentElement
     expect(within(card).getByText('zephyr_manual.txt')).toBeTruthy()
     expect(within(card).getByText('p. 1')).toBeTruthy()
     expect(within(card).getByText('0.83')).toBeTruthy()
-    expect(within(card).queryByText(SOURCE.snippet)).toBeNull()
-    await user.click(within(card).getByText('zephyr_manual.txt'))
     expect(within(card).getByText(SOURCE.snippet)).toBeTruthy()
+    const source = within(card).getByRole('button')
+    expect(source.getAttribute('aria-expanded')).toBe('false')
+    await user.click(source)
+    expect(source.getAttribute('aria-expanded')).toBe('true')
 
     // The composer is usable again
     expect(screen.getByPlaceholderText(/ask anything/i).disabled).toBe(false)
@@ -91,11 +93,12 @@ describe('ChatLayout', () => {
     expect(screen.getByPlaceholderText(/ask anything/i).disabled).toBe(false)
   })
 
-  it('passes the Hybrid toggle to the request', async () => {
+  it('passes the Hybrid mode to the request', async () => {
     vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone({ sources: [], confidence: 0 }))
     renderChat()
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /hybrid/i }))
+    // The answer mode is one radio group now, not four toggle buttons
+    await user.click(screen.getByRole('radio', { name: /hybrid/i }))
     await ask('Hybrid please')
     expect(api.sendChatStream.mock.calls[0][0].useHybrid).toBe(true)
   })
