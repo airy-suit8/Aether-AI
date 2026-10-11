@@ -130,11 +130,7 @@ def test_xlsx_reads_the_first_sheet(tmp_path):
 def test_xls_rows_become_labelled_lines(tmp_path):
     path = make_xls(tmp_path / "legacy.xls", ROWS)
     docs = load(path)
-    lines = docs[0].page_content.split("\n")
-    assert len(lines) == 3
-    # Quantities are checked in test_known_defects.py: .xls stores every number as a float (R9)
-    assert lines[0].startswith("Part: Bolt, Qty: 5") and lines[0].endswith(", Bin: A1")
-    assert lines[2].startswith("Part: Washer, Qty: 30")
+    assert docs[0].page_content.split("\n") == _expected_lines()
     assert docs[0].metadata == {"source": "legacy.xls", "page": 1, "type": "xls"}
 
 
