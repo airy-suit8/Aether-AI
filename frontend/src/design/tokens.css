@@ -1,0 +1,116 @@
+/*
+ * Prism design tokens.
+ *
+ * Colour follows Google's role system: neutral surfaces stacked by tone, one primary,
+ * and status colours that never appear without an icon or a label.
+ * Everything is scoped to .prism, so the tokens cannot leak into older screens.
+ * light-dark() picks a value from the active colour scheme; data-theme forces one.
+ */
+
+@font-face {
+  font-family: "Mona Sans";
+  src: url("./fonts/MonaSans-latin-var.woff2") format("woff2");
+  font-weight: 200 900;
+  font-stretch: 75% 125%;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Martian Mono";
+  src: url("./fonts/MartianMono-latin-var.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+/* Registered so the spectral rim can animate its angle. */
+@property --p-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.prism {
+  color-scheme: light dark;
+
+  /* ── Surfaces: tone, not shadow, carries elevation ───────────────────── */
+  --p-bg: light-dark(#f8fafd, #131314);
+  --p-surface: light-dark(#ffffff, #1e1f20);
+  --p-surface-2: light-dark(#f0f4f9, #282a2c);
+  --p-surface-3: light-dark(#e9eef6, #333537);
+  --p-surface-4: light-dark(#dde3ea, #3c4043);
+
+  /* ── Ink: three emphasis levels, all at least 4.5:1 on --p-bg ────────── */
+  --p-ink: light-dark(#1f1f1f, #e3e3e3);
+  --p-ink-2: light-dark(#444746, #c4c7c5);
+  --p-ink-3: light-dark(#5f6368, #9aa0a6);
+  --p-outline: light-dark(#c4c7c5, #444746);
+  --p-outline-strong: light-dark(#747775, #8e918f);
+
+  /* ── Primary: the one colour that means "act" ────────────────────────── */
+  --p-primary: light-dark(#1a73e8, #8ab4f8);
+  --p-primary-ink: light-dark(#0b57d0, #a8c7fa);
+  --p-on-primary: light-dark(#ffffff, #062e6f);
+  --p-primary-soft: light-dark(#d3e3fd, #1f3760);
+  --p-on-primary-soft: light-dark(#041e49, #d3e3fd);
+
+  /* ── Status: grounded, uncertain, refused or failed ──────────────────── */
+  --p-ok: light-dark(#146c2e, #6dd58c);
+  --p-ok-soft: light-dark(#c4eed0, #0f5223);
+  --p-warn: light-dark(#8a5a00, #ffd467);
+  --p-warn-soft: light-dark(#ffefc9, #5c4300);
+  --p-bad: light-dark(#b3261e, #f2b8b5);
+  --p-bad-soft: light-dark(#f9dedc, #8c1d18);
+
+  /* ── Spectrum: one hue per source, equal lightness and chroma so no source
+        looks more important than another ─────────────────────────────────── */
+  --p-s1: light-dark(oklch(0.56 0.19 265), oklch(0.80 0.12 265));
+  --p-s2: light-dark(oklch(0.56 0.12 215), oklch(0.80 0.10 215));
+  --p-s3: light-dark(oklch(0.56 0.14 155), oklch(0.80 0.13 155));
+  --p-s4: light-dark(oklch(0.56 0.13 75), oklch(0.80 0.13 85));
+  --p-s5: light-dark(oklch(0.56 0.19 20), oklch(0.80 0.12 20));
+
+  /* ── Optical glass ───────────────────────────────────────────────────── */
+  --p-glass: light-dark(rgb(255 255 255 / 0.62), rgb(40 42 44 / 0.52));
+  --p-glass-strong: light-dark(rgb(255 255 255 / 0.86), rgb(40 42 44 / 0.82));
+  --p-edge: light-dark(rgb(31 31 31 / 0.09), rgb(255 255 255 / 0.09));
+  --p-edge-hi: light-dark(rgb(26 115 232 / 0.75), rgb(255 255 255 / 0.85));
+  --p-glint: light-dark(rgb(26 115 232 / 0.07), rgb(255 255 255 / 0.07));
+  /* light-dark() only takes colours, so the shadow geometry is shared and the colours switch */
+  --p-shadow-1: light-dark(rgb(60 64 67 / 0.1), rgb(0 0 0 / 0.4));
+  --p-shadow-2: light-dark(rgb(60 64 67 / 0.22), rgb(0 0 0 / 0.55));
+  --p-lift: 0 1px 2px var(--p-shadow-1), 0 12px 32px -12px var(--p-shadow-2);
+  --p-field-alpha: light-dark(0.1, 0.16);
+  --p-thumb: light-dark(#ffffff, #50545a);
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
+  --p-font: "Mona Sans", "Segoe UI Variable", system-ui, sans-serif;
+  --p-mono: "Martian Mono", ui-monospace, "Cascadia Mono", monospace;
+  --p-text-xs: 0.6875rem;
+  --p-text-sm: 0.8125rem;
+  --p-text-md: 1rem;
+  --p-text-lg: 1.25rem;
+  --p-text-xl: 1.75rem;
+  --p-text-2xl: clamp(2.6rem, 6.4vw, 5rem);
+
+  /* ── Shape ───────────────────────────────────────────────────────────── */
+  --p-r-1: 8px;
+  --p-r-2: 12px;
+  --p-r-3: 18px;
+  --p-r-4: 28px;
+  --p-pill: 999px;
+
+  /* ── Motion: springs, not fades ──────────────────────────────────────── */
+  --p-spring: linear(
+    0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077,
+    1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%,
+    1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%,
+    0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1
+  );
+  --p-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --p-dur-1: 160ms;
+  --p-dur-2: 320ms;
+  --p-dur-3: 640ms;
+}
+
+.prism[data-theme="light"] { color-scheme: light; }
+.prism[data-theme="dark"] { color-scheme: dark; }

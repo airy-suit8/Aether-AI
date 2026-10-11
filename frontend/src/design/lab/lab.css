@@ -1,0 +1,255 @@
+/* Layout for the design lab page only. Components and materials live in ../prism.css. */
+
+.lab {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 20px clamp(16px, 4vw, 40px) 120px;
+}
+
+.lab-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lab-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--p-text-lg);
+  font-weight: 640;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+}
+
+.lab-top__tag { margin-right: auto; }
+
+/* ── Hero: the headline's weight and width follow the pointer across the page ── */
+
+.lab-hero {
+  padding: clamp(56px, 10vw, 128px) 0 clamp(36px, 6vw, 72px);
+}
+
+.lab-title {
+  margin: 16px 0 22px;
+  font-size: var(--p-text-2xl);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  word-spacing: 0.1em;
+  font-weight: 400;
+  font-variation-settings:
+    "wght" calc(260 + var(--px, 0.5) * 300),
+    "wdth" calc(84 + var(--px, 0.5) * 36);
+  text-wrap: balance;
+}
+
+/* The one place the spectrum is used as decoration: the word that names it. */
+.lab-title em {
+  font-style: normal;
+  color: transparent;
+  background: linear-gradient(90deg, var(--p-s1), var(--p-s2), var(--p-s3), var(--p-s4), var(--p-s5));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.lab-lede {
+  max-width: 52ch;
+  margin: 0;
+  font-size: var(--p-text-lg);
+  line-height: 1.5;
+  color: var(--p-ink-2);
+  text-wrap: pretty;
+}
+
+/* ── The bench: answer on the left, evidence in the margin, composer below ─── */
+
+.lab-stage {
+  padding: clamp(20px, 3.4vw, 44px);
+  border-radius: var(--p-r-4);
+}
+
+.lab-bench {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: clamp(32px, 7vw, 104px);
+  align-items: start;
+  min-height: 330px;
+}
+
+.lab-question {
+  max-width: 22ch;
+  margin: 0 0 16px;
+  font-size: var(--p-text-xl);
+  font-weight: 580;
+  font-stretch: 94%;
+  line-height: 1.16;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.lab-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  min-height: 34px;
+  margin-bottom: 14px;
+  color: var(--p-ink-3);
+}
+
+.lab-retrieving {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--p-text-sm);
+  font-weight: 560;
+  color: var(--p-ink-2);
+}
+
+/* White light on the left, splitting into the spectrum as it travels. */
+.lab-beam {
+  width: 120px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--p-ink) 0 34%, var(--p-s1) 44%, var(--p-s2), var(--p-s3), var(--p-s4), var(--p-s5) 100%);
+  background-size: 220% 100%;
+  animation: lab-sweep 1.3s linear infinite;
+}
+
+@keyframes lab-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
+}
+
+.lab-margin {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.lab-margin .p-eyebrow { margin: 6px 0 2px; }
+
+.lab-dock {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid var(--p-edge);
+}
+
+.lab-dock .p-aperture { justify-self: stretch; }
+
+.lab-replay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lab-replay .p-eyebrow { margin-right: 8px; }
+
+/* ── Specimen sections ─────────────────────────────────────────────────────── */
+
+.lab-section { margin-top: clamp(64px, 10vw, 128px); }
+
+.lab-section h2 {
+  max-width: 26ch;
+  margin: 10px 0 28px;
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+  font-weight: 560;
+  font-stretch: 96%;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.lab-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.lab-swatch {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 112px;
+  padding: 14px;
+  border-radius: var(--p-r-3);
+  color: var(--on, var(--p-ink));
+  background: var(--c);
+  box-shadow: inset 0 0 0 1px var(--p-edge);
+}
+
+.lab-swatch b { font-size: var(--p-text-sm); font-weight: 640; }
+.lab-swatch span { font-size: var(--p-text-xs); opacity: 0.86; }
+
+.lab-spectrum {
+  display: flex;
+  height: 56px;
+  margin-top: 10px;
+  border-radius: var(--p-pill);
+  overflow: hidden;
+}
+
+.lab-spectrum i {
+  flex: 1;
+  background: var(--c);
+  transition: flex var(--p-dur-3) var(--p-spring);
+}
+
+.lab-spectrum i:hover { flex: 2.6; }
+
+.lab-note {
+  margin: 12px 0 0;
+  font-size: var(--p-text-sm);
+  color: var(--p-ink-3);
+}
+
+.lab-type {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: clamp(24px, 5vw, 64px);
+  align-items: end;
+}
+
+.lab-specimen {
+  margin: 0;
+  font-size: clamp(4.5rem, 15vw, 11rem);
+  line-height: 0.86;
+  letter-spacing: -0.05em;
+  font-weight: 250;
+  font-stretch: 125%;
+  cursor: default;
+  transition: font-weight 900ms var(--p-spring), font-stretch 900ms var(--p-spring), letter-spacing 900ms var(--p-out);
+}
+
+.lab-specimen:hover,
+.lab-specimen:focus-visible {
+  font-weight: 800;
+  font-stretch: 75%;
+  letter-spacing: -0.02em;
+}
+
+.lab-type__side { display: grid; gap: 14px; color: var(--p-ink-2); }
+.lab-type__side p { margin: 0; max-width: 44ch; }
+
+.lab-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 22px;
+}
+
+/* ── Narrow screens: the margin moves under the answer and the threads rest ── */
+
+@media (max-width: 860px) {
+  .lab-bench { grid-template-columns: minmax(0, 1fr); gap: 24px; min-height: 0; }
+  .lab-type { grid-template-columns: minmax(0, 1fr); }
+  .lab-top__tag { display: none; }
+  .lab-brand { margin-right: auto; }
+}

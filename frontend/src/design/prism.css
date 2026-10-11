@@ -1,0 +1,549 @@
+/*
+ * Prism: materials and components. Tokens live in tokens.css.
+ * One material (optical glass), one primary colour, and light used only where it means something.
+ */
+
+.prism {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  font-family: var(--p-font);
+  font-size: var(--p-text-md);
+  line-height: 1.5;
+  color: var(--p-ink);
+  background: var(--p-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.prism *,
+.prism *::before,
+.prism *::after {
+  box-sizing: border-box;
+}
+
+.prism :focus-visible {
+  outline: 2px solid var(--p-primary);
+  outline-offset: 2px;
+}
+
+.p-mono {
+  font-family: var(--p-mono);
+  font-size: var(--p-text-xs);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.p-eyebrow {
+  font-family: var(--p-mono);
+  font-size: var(--p-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--p-ink-3);
+}
+
+/* ── Ambient field: slow light behind everything; it tightens while retrieving ── */
+
+.p-field {
+  --p-energy: 0;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--p-bg);
+}
+
+.p-field[data-state="retrieving"] { --p-energy: 1; }
+.p-field[data-state="streaming"] { --p-energy: 0.55; }
+
+.p-field i {
+  position: absolute;
+  width: 58vmax;
+  height: 58vmax;
+  border-radius: 50%;
+  /* A gradient, not a blur filter, and no idle animation: the glass above re-blurs whatever
+     moves behind it, so the field only moves when the state changes. */
+  background: radial-gradient(closest-side, var(--c), transparent);
+  opacity: calc(var(--p-field-alpha) * (1 + var(--p-energy) * 0.8));
+  scale: calc(1 - var(--p-energy) * 0.18);
+  transition: opacity 1.4s var(--p-out), scale 1.4s var(--p-out);
+}
+
+/* Kept to the corners, so the light never sits behind text. */
+.p-field i:nth-child(1) { --c: var(--p-s1); left: -24vmax; top: -34vmax; }
+.p-field i:nth-child(2) { --c: var(--p-s2); right: -30vmax; top: -6vmax; }
+.p-field i:nth-child(3) { --c: var(--p-s4); right: -16vmax; bottom: -40vmax; }
+
+/* Fine grain keeps the gradients from banding and gives the glass something to blur. */
+.p-field::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+}
+
+/* ── Pane: optical glass whose edge catches the pointer ─────────────────────── */
+
+.p-pane {
+  --p-lit: 0;
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--p-r-3);
+  background: var(--p-glass);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  backdrop-filter: blur(28px) saturate(1.5);
+  box-shadow: var(--p-lift), inset 0 0 0 1px var(--p-edge);
+}
+
+/* The lit edge: a 1px ring painted by a gradient that follows --mx/--my. */
+.p-pane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  border-radius: inherit;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, -30%), var(--p-edge-hi), transparent 68%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: var(--p-lit);
+  transition: opacity var(--p-dur-2) var(--p-out);
+  pointer-events: none;
+}
+
+/* The glint: a soft pool of light inside the pane, under the content. */
+.p-pane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), var(--p-glint), transparent 62%);
+  opacity: var(--p-lit);
+  transition: opacity var(--p-dur-2) var(--p-out);
+  pointer-events: none;
+}
+
+.p-pane:hover,
+.p-pane:focus-within {
+  --p-lit: 1;
+}
+
+/* Live: the only place the full spectrum appears, and only while the model is working. */
+.p-live {
+  --p-lit: 1;
+  box-shadow:
+    var(--p-lift),
+    0 0 44px -10px color-mix(in oklab, var(--p-s1) 55%, transparent);
+}
+
+.p-live::before {
+  padding: 1.5px;
+  background: conic-gradient(from var(--p-angle), var(--p-s1), var(--p-s2), var(--p-s3), var(--p-s4), var(--p-s5), var(--p-s1));
+  animation: p-spin 3.6s linear infinite;
+}
+
+@keyframes p-spin {
+  to { --p-angle: 360deg; }
+}
+
+/* ── Buttons: Google-style state layers over a quiet base ───────────────────── */
+
+.p-btn,
+.p-icon-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  font: inherit;
+  font-size: var(--p-text-sm);
+  font-weight: 560;
+  color: var(--p-ink-2);
+  background: none;
+  cursor: pointer;
+  border-radius: var(--p-pill);
+  transition: color var(--p-dur-1), font-weight var(--p-dur-2) var(--p-out), scale var(--p-dur-2) var(--p-spring);
+}
+
+.p-btn { grid-auto-flow: column; gap: 8px; min-height: 40px; padding: 0 18px; }
+.p-icon-btn { width: 44px; height: 44px; flex: none; }
+
+.p-btn::after,
+.p-icon-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--p-dur-1);
+}
+
+.p-btn:hover::after, .p-icon-btn:hover::after { opacity: 0.08; }
+.p-btn:active::after, .p-icon-btn:active::after { opacity: 0.14; }
+.p-btn:hover, .p-icon-btn:hover { color: var(--p-ink); }
+.p-btn:active, .p-icon-btn:active { scale: 0.96; }
+.p-btn:disabled, .p-icon-btn:disabled { opacity: 0.38; cursor: default; }
+
+.p-btn--filled {
+  color: var(--p-on-primary);
+  background: var(--p-primary);
+}
+.p-btn--filled:hover { color: var(--p-on-primary); font-weight: 640; }
+
+.p-btn--tonal {
+  color: var(--p-on-primary-soft);
+  background: var(--p-primary-soft);
+}
+.p-btn--tonal:hover { color: var(--p-on-primary-soft); }
+
+/* ── Lens: one sliding control instead of a row of toggles ──────────────────── */
+
+.p-lens {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: var(--p-pill);
+  background: var(--p-surface-3);
+}
+
+.p-lens__thumb {
+  position: absolute;
+  inset: 3px auto 3px 3px;
+  width: calc((100% - 6px) / var(--n));
+  border-radius: var(--p-pill);
+  background: var(--p-thumb);
+  box-shadow: 0 1px 3px var(--p-shadow-2);
+  translate: calc(var(--i) * 100%) 0;
+  transition: translate var(--p-dur-3) var(--p-spring);
+}
+
+.p-lens button {
+  position: relative;
+  z-index: 1;
+  min-height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--p-pill);
+  font: inherit;
+  font-size: var(--p-text-sm);
+  font-weight: 480;
+  color: var(--p-ink-2);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--p-dur-2), font-weight var(--p-dur-2) var(--p-out);
+}
+
+.p-lens button[aria-checked="true"] {
+  color: var(--p-ink);
+  font-weight: 640;
+}
+
+/* ── Aperture: the composer. It opens when you focus it and glows while it works ── */
+
+.p-aperture {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
+  gap: 4px;
+  width: min(100%, 680px);
+  margin-inline: auto;
+  padding: 6px;
+  border-radius: var(--p-r-4);
+  background: var(--p-glass-strong);
+  transition: width var(--p-dur-3) var(--p-spring), box-shadow var(--p-dur-2) var(--p-out);
+}
+
+.p-aperture:focus-within {
+  width: min(100%, 760px);
+}
+
+.p-aperture textarea {
+  field-sizing: content;
+  min-height: 44px;
+  max-height: 200px;
+  padding: 10px 6px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  font: inherit;
+  line-height: 1.5;
+  color: var(--p-ink);
+  background: none;
+}
+
+.p-aperture textarea::placeholder { color: var(--p-ink-3); }
+
+/* Send morphs into Stop: the circle squares off and the glyphs trade places. */
+.p-send {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--p-on-primary);
+  background: var(--p-primary);
+  cursor: pointer;
+  transition: border-radius var(--p-dur-3) var(--p-spring), scale var(--p-dur-2) var(--p-spring), background var(--p-dur-2);
+}
+
+.p-send:hover { scale: 1.06; }
+.p-send:active { scale: 0.94; }
+.p-send:disabled { background: var(--p-surface-4); color: var(--p-ink-3); cursor: default; scale: 1; }
+.p-send[data-busy="true"] { border-radius: 15px; background: var(--p-ink); color: var(--p-bg); }
+
+.p-send svg {
+  grid-area: 1 / 1;
+  transition: scale var(--p-dur-3) var(--p-spring), opacity var(--p-dur-1);
+}
+
+.p-send svg:nth-child(2) { scale: 0; opacity: 0; }
+.p-send[data-busy="true"] svg:nth-child(1) { scale: 0; opacity: 0; }
+.p-send[data-busy="true"] svg:nth-child(2) { scale: 1; opacity: 1; }
+
+/* ── Clarity ring: confidence shown as optical clarity, never as colour alone ── */
+
+.p-clarity {
+  --v: 0;
+  --tone: var(--p-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--p-text-sm);
+  font-weight: 560;
+  color: var(--p-ink-2);
+}
+
+.p-clarity[data-state="grounded"] { --tone: var(--p-ok); }
+.p-clarity[data-state="uncertain"] { --tone: var(--p-warn); }
+.p-clarity[data-state="refused"] { --tone: var(--p-ink-3); }
+
+.p-clarity svg { width: 30px; height: 30px; flex: none; rotate: -90deg; overflow: visible; }
+.p-clarity circle { fill: none; stroke-width: 3; }
+.p-clarity .track { stroke: var(--p-surface-4); }
+.p-clarity .arc {
+  stroke: var(--tone);
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--v));
+  transition: stroke-dashoffset 900ms var(--p-out), stroke var(--p-dur-2);
+}
+/* The halo is sharp when the answer is grounded and diffuse when it is not. */
+.p-clarity .halo {
+  stroke: var(--tone);
+  stroke-width: 5;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--v));
+  opacity: 0.45;
+  filter: blur(calc(1.5px + (1 - var(--v)) * 5px));
+  transition: stroke-dashoffset 900ms var(--p-out), filter 900ms var(--p-out);
+}
+.p-clarity[data-state="refused"] .track { stroke-dasharray: 0.03 0.03; }
+.p-clarity b { font-weight: 640; color: var(--p-ink); }
+
+/* ── Answer: text develops like a print; citations are small sources of light ── */
+
+.p-answer {
+  max-width: 62ch;
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  color: var(--p-ink);
+  text-wrap: pretty;
+}
+
+.p-word {
+  display: inline-block;
+  white-space: pre;
+  animation: p-develop 620ms var(--p-out) both;
+}
+
+@keyframes p-develop {
+  from { opacity: 0; filter: blur(7px); translate: 0 4px; }
+  to { opacity: 1; filter: blur(0); translate: 0 0; }
+}
+
+.p-cite {
+  --hue: var(--p-s1);
+  position: relative;
+  top: -0.35em;
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-inline: 3px 1px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--p-pill);
+  font-family: var(--p-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--hue);
+  background: color-mix(in oklab, var(--hue) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--hue) 34%, transparent);
+  cursor: pointer;
+  transition: background var(--p-dur-2), color var(--p-dur-2), box-shadow var(--p-dur-2), scale var(--p-dur-2) var(--p-spring);
+}
+
+.p-cite:hover,
+.p-cite[data-active="true"] {
+  color: var(--p-bg);
+  background: var(--hue);
+  box-shadow: 0 0 18px -2px var(--hue);
+  scale: 1.14;
+}
+
+/* ── Source card: evidence in the margin, edged with its own hue ────────────── */
+
+.p-source {
+  --hue: var(--p-s1);
+  --score: 0;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px 14px 20px;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--p-r-3);
+  transition: translate var(--p-dur-3) var(--p-spring), box-shadow var(--p-dur-2) var(--p-out);
+}
+
+/* The hue edge sits inside the pane, clipped to its radius. */
+.p-source > .p-source__edge {
+  position: absolute;
+  inset: 10px auto 10px 8px;
+  width: 3px;
+  border-radius: var(--p-pill);
+  background: var(--hue);
+  box-shadow: 0 0 14px 0 color-mix(in oklab, var(--hue) 70%, transparent);
+  opacity: 0.75;
+  transition: opacity var(--p-dur-2), inset var(--p-dur-3) var(--p-spring);
+}
+
+.p-source[data-active="true"] {
+  --p-lit: 1;
+  translate: -8px 0;
+  box-shadow: var(--p-lift), inset 0 0 0 1px color-mix(in oklab, var(--hue) 45%, transparent), 0 0 36px -12px var(--hue);
+}
+
+.p-source[data-active="true"] > .p-source__edge { opacity: 1; inset: 6px auto 6px 8px; }
+
+.p-source__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.p-source__n {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  font-family: var(--p-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--p-bg);
+  background: var(--hue);
+}
+.p-source__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--p-text-sm);
+  font-weight: 620;
+}
+.p-source__meta { display: flex; align-items: center; gap: 10px; color: var(--p-ink-3); }
+.p-source__bar { flex: 1; height: 3px; border-radius: var(--p-pill); background: var(--p-surface-4); overflow: hidden; }
+.p-source__bar i { display: block; height: 100%; width: calc(var(--score) * 100%); border-radius: inherit; background: var(--hue); }
+.p-source__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--p-text-sm);
+  line-height: 1.55;
+  color: var(--p-ink-2);
+}
+.p-source[data-active="true"] .p-source__text { -webkit-line-clamp: 8; line-clamp: 8; }
+
+/* Dispersion: when an answer completes, its sources leave it one by one. */
+.p-disperse {
+  animation: p-disperse 760ms var(--p-spring) both;
+  animation-delay: calc(var(--k, 0) * 110ms);
+}
+
+@keyframes p-disperse {
+  from { opacity: 0; translate: -56px 0; scale: 0.94; filter: blur(6px); }
+  to { opacity: 1; translate: 0 0; scale: 1; filter: blur(0); }
+}
+
+/* ── Threads: lines of light from a claim to its evidence ───────────────────── */
+
+.p-threads {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.p-threads path {
+  fill: none;
+  stroke: var(--hue);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  opacity: 0.28;
+  transition: opacity var(--p-dur-2), stroke-width var(--p-dur-2);
+  animation: p-draw 900ms var(--p-out) both;
+  animation-delay: calc(var(--k, 0) * 110ms);
+}
+
+.p-threads path[data-active="true"] {
+  opacity: 1;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 5px var(--hue));
+}
+
+.p-threads[data-dim="true"] path:not([data-active="true"]) { opacity: 0.1; }
+
+@keyframes p-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Preferences: honour them without losing the hierarchy ──────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .prism *,
+  .prism *::before,
+  .prism *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .p-live::before { animation: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .p-pane, .p-aperture {
+    background: var(--p-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
