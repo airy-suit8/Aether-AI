@@ -1,0 +1,104 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MessageBubble.css — Obsidian v4.0 Messages
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.message-wrapper {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+  animation: msgSlideIn 0.3s var(--ease-smooth) both;
+  will-change: transform, opacity;
+}
+
+@keyframes msgSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message-user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+.user-avatar-msg {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.ai-avatar-msg {
+  background: var(--gradient-accent);
+  color: white;
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.message-content-box {
+  max-width: 75%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-user .message-content-box {
+  align-items: flex-end;
+}
+
+.message-user .message-text {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: 12px 18px;
+  border-radius: 20px 20px 4px 20px;
+  border: 1px solid var(--border-default);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.message-ai .message-text {
+  background: transparent;
+  color: var(--text-primary);
+  padding: 4px 0;
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.message-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* ── Streaming Indicator ───────────────────────────────────────────────── */
+.streaming-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.streaming-phase {
+  font-size: 0.72rem;
+  color: var(--accent-400);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
