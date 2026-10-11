@@ -5,13 +5,16 @@ Task 10: Date-Time Tool (current date/time, day computations)
 """
 
 import ast
+import os
 import operator
 import math
 import re
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
 from langchain_core.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 
 # ── Task 9: Calculator Tool ──────────────────────────────────────────────────
@@ -127,11 +130,6 @@ def calculator(expression: str) -> str:
     except Exception as e:
         return f"Error evaluating '{expression}': {str(e)}"
 
-
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-import os
 
 # ── Task 10: Date-Time Tool ──────────────────────────────────────────────────
 

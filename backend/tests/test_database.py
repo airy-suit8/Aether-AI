@@ -1,4 +1,3 @@
-import pytest
 from database import (
     create_user, get_user_by_username,
     save_document_record, get_all_documents_detailed, clear_user_documents,

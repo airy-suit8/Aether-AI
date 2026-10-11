@@ -12,7 +12,7 @@ import os
 import uuid
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -30,6 +30,14 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from pydantic import BaseModel, Field
+
+from database import (
+    save_conversation,
+    get_conversation_history,
+    clear_conversation as db_clear_conversation,
+    clear_user_documents,
+    get_all_documents_detailed as _db_get_all_documents_detailed,
+)
 
 load_dotenv(override=False)
 
@@ -373,14 +381,6 @@ def ingest_document(user_id: int, file_path: str, filename: str) -> Dict[str, An
     return {"filename": filename, "pages": len(raw_docs), "chunks": len(chunks)}
 
 # ── Task 4: Conversation Memory (SQLite-backed) ──────────────────────────────
-
-from database import (
-    save_conversation,
-    get_conversation_history,
-    clear_conversation as db_clear_conversation,
-    clear_user_documents,
-    get_all_documents_detailed as _db_get_all_documents_detailed,
-)
 
 class ConversationMemory:
     """

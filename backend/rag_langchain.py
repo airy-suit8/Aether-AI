@@ -12,7 +12,6 @@ Tasks covered:
 """
 
 import os
-import re
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any
@@ -30,7 +29,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGener
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 
 # Reuse the existing vector store and memory — no duplication
 from rag_engine import (
@@ -42,7 +40,6 @@ from rag_engine import (
     TOP_K,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
-    MEMORY_MAX_TURNS,
 )
 
 load_dotenv(override=False)

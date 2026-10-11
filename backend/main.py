@@ -32,7 +32,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from rag_engine import ingest_document, query_rag, query_rag_stream, list_documents, clear_documents, clear_session
-from rag_langchain import query_rag_langchain, query_rag_langchain_stream, ingest_document_langchain
+from rag_langchain import query_rag_langchain, query_rag_langchain_stream
 from agent import run_agent
 
 # Task 16: Logging
