@@ -18,6 +18,11 @@ from rag_engine import query_rag
 load_dotenv(override=False)
 
 
+# Maximum LangGraph steps per question (each tool call takes two). LangGraph's default is
+# 10,000, so a model that keeps calling tools would run, and bill, almost without limit.
+AGENT_RECURSION_LIMIT = 12
+
+
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
         model="gemini-3.5-flash",
@@ -103,7 +108,7 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     
     # Run the multi-step execution loop. Errors propagate to the API, which reports
     # them as errors instead of saving and showing them as an answer.
-    result = agent.invoke({"messages": messages})
+    result = agent.invoke({"messages": messages}, config={"recursion_limit": AGENT_RECURSION_LIMIT})
     
     # Extract the final answer from the LLM (.text joins content blocks into one string)
     final_answer = result["messages"][-1].text

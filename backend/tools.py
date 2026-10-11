@@ -7,6 +7,7 @@ Task 10: Date-Time Tool (current date/time, day computations)
 import ast
 import operator
 import math
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -14,6 +15,19 @@ from langchain_core.tools import tool
 
 
 # ── Task 9: Calculator Tool ──────────────────────────────────────────────────
+
+# Largest power result the calculator will compute, in bits (about 3,000 decimal digits).
+# Without a cap, "9**9**9" never finishes and holds the GIL.
+MAX_POWER_BITS = 10_000
+
+
+def _checked_pow(base, exponent):
+    """Power with a size cap on integer results."""
+    if isinstance(base, int) and isinstance(exponent, int) and abs(base) > 1:
+        if base.bit_length() * abs(exponent) > MAX_POWER_BITS:
+            raise ValueError("Result too large to compute")
+    return operator.pow(base, exponent)
+
 
 # Allowed operators for safe math evaluation
 _SAFE_OPERATORS = {
@@ -23,7 +37,7 @@ _SAFE_OPERATORS = {
     ast.Div: operator.truediv,
     ast.FloorDiv: operator.floordiv,
     ast.Mod: operator.mod,
-    ast.Pow: operator.pow,
+    ast.Pow: _checked_pow,
     ast.USub: operator.neg,
     ast.UAdd: operator.pos,
 }
@@ -95,17 +109,18 @@ def calculator(expression: str) -> str:
         expr = expression.strip()
         # Replace common math symbols
         expr = expr.replace("×", "*").replace("÷", "/").replace("^", "**")
-        expr = expr.replace("x", "*") if expr.count("x") == 1 and "x" not in ("max", "hex") else expr
+        # "3 x 4" or "3x4" means multiply; the x in a name like max() is left alone
+        expr = re.sub(r"(?<=[\d.)\s])[xX](?=[\s\d.(])", "*", expr)
         
         # Parse and safely evaluate
         tree = ast.parse(expr, mode="eval")
         result = _safe_eval_node(tree)
         
-        # Format nicely
-        if isinstance(result, float) and result == int(result):
+        # Format nicely: 15 significant digits hides float noise (0.1 + 0.2) without rounding real digits
+        if isinstance(result, float) and result.is_integer() and abs(result) < 1e15:
             return f"{expression} = {int(result)}"
         elif isinstance(result, float):
-            return f"{expression} = {result:.6g}"
+            return f"{expression} = {result:.15g}"
         return f"{expression} = {result}"
     except ZeroDivisionError:
         return "Error: Division by zero."
