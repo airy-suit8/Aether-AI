@@ -42,11 +42,6 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
 
   // Remove useEffect for localStorage
 
-  // Load documents on mount
-  useEffect(() => {
-    refreshDocuments()
-  }, [])
-
   const refreshDocuments = useCallback(async () => {
     try {
       const data = await getDocuments()
@@ -55,6 +50,11 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
       console.error('Failed to load documents:', e)
     }
   }, [])
+
+  // Load documents on mount
+  useEffect(() => {
+    refreshDocuments()
+  }, [refreshDocuments])
 
   // Auto-scroll
   useEffect(() => {
@@ -146,7 +146,7 @@ export default function ChatLayout({ onNavigateHome, addToast }) {
       setStreamingPhase('')
       setIsLoading(false)
     }
-  }, [isLoading, sessionId, agentMode, langchainMode, streamingMode, addToast])
+  }, [isLoading, sessionId, agentMode, langchainMode, streamingMode, hybridMode, addToast])
 
   // ── Handle file upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file) => {
