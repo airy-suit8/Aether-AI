@@ -24,11 +24,11 @@ You asked that every piece of code be logically connected to the rest. The audit
 Seam checklist. Tick each when its test exists and passes.
 
 - [ ] UI call → route: every function in the API client has a matching route and a contract test
-- [ ] Route → service: every route has a test that reaches the service layer
-- [ ] Service → vector store: ingest then search returns the ingested text
-- [ ] Service → database: a chat turn is saved with its real confidence and mode
-- [ ] Tenant isolation: user B cannot read, search or delete user A's data
-- [ ] Every chat mode: default, hybrid and agent each answer in the end-to-end test
+- [x] Route → service: every route has a test that reaches the service layer
+- [x] Service → vector store: ingest then search returns the ingested text
+- [x] Service → database: a chat turn is saved with its real confidence and mode
+- [x] Tenant isolation: user B cannot read, search or delete user A's data
+- [x] Every chat mode: default, hybrid and agent each answer in the end-to-end test
 - [ ] Config: the model id appears in exactly one place
 - [ ] Backend → UI: `GET /` returns the built React app
 - [ ] Docker: `docker compose up` passes the same end-to-end test
