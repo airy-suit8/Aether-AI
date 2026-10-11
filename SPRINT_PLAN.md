@@ -2,6 +2,30 @@
 
 Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1, R4, S3, …) refer to that report. Sizes are rough estimates for one person working full days; adjust them after Sprint 1.
 
+## Status
+
+| Sprint | State | Evidence |
+|---|---|---|
+| 0 Make it safe to change | Done, merged 11 Oct 2026 (PR #1) | See below |
+| 1 Make it work end to end | Done, merged 11 Oct 2026 (PR #1) | See below |
+| 2 Safety net | Next | |
+| 3 to 6 | Not started | |
+| 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
+
+Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
+
+- A fresh virtual environment built only from the pinned requirements installs cleanly; `pytest` gives 79 passed with no API key present.
+- `npm ci`, `npm run lint` (0 errors) and `npm run build` pass on a fresh checkout.
+- A real `uvicorn` server on Windows serves the built React app at `/`, streams tokens as they are produced (one per second in the test, not in a lump), answers `/health` in 0.23 s during a stream, and returns 429 on the tenth failed login.
+- With the real Gemini key and temp stores: a PDF uploaded as 11 chunks (cosine, 3072 dimensions); two questions were answered correctly with page citations; a Gemini 503 outage was reported through the new error event.
+
+What that real run showed, to act on in later sprints:
+
+- **The 0.3 threshold does nothing with real embeddings.** An unrelated question scored 0.50; real questions scored 0.67 to 0.80. Calibrate in Sprint 4; expect a cutoff near 0.6.
+- **A refused answer still lists five sources and a 49% confidence.** Fix with the calibration.
+- **It is slow:** about 23 s per answer and 27 s to the first streamed token, from two model calls in sequence. Sprint 4 item 6 decides whether the summary step stays.
+- **An exact match scores 1.0000002**, which makes LangChain print a warning containing the chunk text. Clamp scores to 0..1 in Sprint 4.
+
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
 The old sprint log recorded what was written. These sprints record what was proven.
@@ -30,8 +54,8 @@ Seam checklist. Tick each when its test exists and passes.
 - [x] Tenant isolation: user B cannot read, search or delete user A's data
 - [x] Every chat mode: default, hybrid and agent each answer in the end-to-end test
 - [ ] Config: the model id appears in exactly one place
-- [ ] Backend → UI: `GET /` returns the built React app
-- [ ] Docker: `docker compose up` passes the same end-to-end test
+- [x] Backend → UI: `GET /` returns the built React app
+- [ ] Docker: `docker compose up` passes the same end-to-end test (deferred with the Docker work)
 - [ ] Evaluation: the harness imports and calls the real pipeline
 
 ---
@@ -101,6 +125,15 @@ Test
 6. Snapshot the OpenAPI schema into the repo and fail the test when it changes without the snapshot being updated.
 7. CI on every push: `ruff`, `pytest`, `npm run lint`, `npm test`, `npm run build`.
 
+Notes added after Sprints 0 and 1:
+
+- Items 1 and 3 and the calculator part of item 4 were largely delivered in Sprint 1 (`tests/conftest.py`, `tests/fakes.py`, `test_e2e.py`, `test_calculator.py`). Complete them; do not rewrite them.
+- **Known defects get a test now.** Where the audit found a defect that a later sprint fixes (fusion key R3, BM25 on tiny or punctuated text R3, DOCX tables R9, first sheet only R9, non-UTF-8 text R9), write the test for the correct behaviour and mark it `xfail(strict=True)` with the finding id. The fixing sprint then removes the mark.
+- **Ruff:** the default rule set only (pyflakes and pycodestyle errors), with line length ignored. Fix what it flags in one commit. Do not turn on style rule families before the Sprint 3 restructure; they would bury that diff.
+- **Coverage:** add `pytest-cov` to `requirements-dev.txt`.
+- **Frontend advisories:** run `npm audit fix` for the three build-time advisories (nanoid, postcss, source-map-js) and confirm lint and build still pass.
+- **README:** note that Windows long-path support is off by default, so the project should live in a short folder path.
+
 **Done when**
 - CI is green on a fresh clone with no secrets configured.
 - Coverage of the backend is reported and above 70% on the pipeline, auth and database modules.
@@ -121,6 +154,7 @@ Move one package per commit, running the tests after each.
 7. `agents/`, `db/`, `evaluation/`.
 8. Replace the four boolean flags with one `mode` field: `default`, `hybrid`, `agent`. (F9)
 9. Write the no-orphan check and add it to CI.
+10. Clear the two deprecations the test run reports: `create_react_agent` has moved out of `langgraph.prebuilt`, and `langchain-community` (used for the document loaders) is being retired.
 
 **Done when**
 - All Sprint 2 tests pass unchanged except for import paths.
@@ -169,6 +203,7 @@ API
 8. Return a `turn_id` with every answer; `POST /feedback` takes it. (F10)
 9. Background ingestion with a status endpoint. (R12)
 10. Retry with backoff and a friendly message on quota errors. (B10)
+11. Re-run `pip-audit`. `chromadb` 1.5.9 had advisories with no fixed release on 11 Oct 2026; upgrade when one exists.
 
 **Done when**
 - Tests cover: login as a second user after a database reset sees no old data; a 100-character password is rejected with a 422; a 60 MB upload is rejected without being read into memory; `9**9**9` returns an error in under a second.
@@ -198,6 +233,8 @@ API
 ## Sprint 7 — Ship and document (about 3 days)
 
 **Goal:** something a mentor can run with one command, and documents that match it.
+
+Items 1 and 2 (Docker) are deferred at the owner's request, 11 Oct 2026. Do not start them until asked. The `.dockerignore` from Sprint 0 stays, so an image built by hand cannot contain secrets.
 
 1. Multi-stage Dockerfile (Node build, then Python runtime), non-root user, healthcheck. `docker-compose.yml` with one data volume. (D4, S1)
 2. Run the end-to-end test against the container in CI.
