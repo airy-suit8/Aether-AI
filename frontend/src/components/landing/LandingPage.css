@@ -4,7 +4,8 @@
 
 .landing {
   width: 100vw;
-  min-height: 100vh;
+  /* A fixed height (not min-height): #root is 100vh with overflow hidden, so the page must scroll itself */
+  height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-void);
