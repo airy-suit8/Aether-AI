@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 load_dotenv(override=True)
 
 # ── Constants ────────────────────────────────────────────────────────────────
-STORE_DIR     = Path(__file__).parent / "vector_store"
+STORE_DIR     = Path(os.environ.get("AETHER_VECTOR_STORE_DIR", Path(__file__).parent / "vector_store"))
 CHUNK_SIZE    = 1000
 CHUNK_OVERLAP = 150
 TOP_K         = 5
@@ -150,10 +150,17 @@ class ChromaVectorStoreWrapper:
     def __init__(self):
         self.persist_directory = str(STORE_DIR / "chroma_db")
         self.collection_name = "aether_collection"
-        self._init_chroma()
+        self._chroma = None
+
+    @property
+    def chroma(self) -> Chroma:
+        """Open the store on first use, so importing this module needs no API key."""
+        if self._chroma is None:
+            self._init_chroma()
+        return self._chroma
 
     def _init_chroma(self):
-        self.chroma = Chroma(
+        self._chroma = Chroma(
             collection_name=self.collection_name,
             embedding_function=_get_embeddings(),
             persist_directory=self.persist_directory
@@ -248,7 +255,7 @@ class ChromaVectorStoreWrapper:
 
 
 
-# Module-level singleton — loads from disk once on startup
+# Module-level singleton — opens the store on first use
 _store = ChromaVectorStoreWrapper()
 
 # ── Document Parsing ──────────────────────────────────────────────────────────

@@ -11,13 +11,14 @@ Each file is capped at 5MB, with 5 backup copies kept.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 # ── Create logs directory ─────────────────────────────────────────────────────
 
-LOGS_DIR = Path(__file__).parent / "logs"
+LOGS_DIR = Path(os.environ.get("AETHER_LOG_DIR", Path(__file__).parent / "logs"))
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Log format ────────────────────────────────────────────────────────────────
