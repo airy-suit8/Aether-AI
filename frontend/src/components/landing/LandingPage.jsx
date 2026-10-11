@@ -33,12 +33,12 @@ export default function LandingPage({ onStartChat }) {
     try {
       if (isLoginView) {
         const data = await login(username, password)
-        setAuth(data.access_token)
+        setAuth(data.access_token, username.trim())
         onStartChat()
       } else {
         await register(username, password)
         const data = await login(username, password)
-        setAuth(data.access_token)
+        setAuth(data.access_token, username.trim())
         onStartChat()
       }
     } catch (err) {
