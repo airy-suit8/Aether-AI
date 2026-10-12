@@ -5,11 +5,14 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.api.deps import get_current_user, limiter
 from src.api.errors import reference, server_error
-from src.api.schemas import ChatRequest, ChatResponse, FeedbackRequest, SessionList, SessionMessages, SESSION_ID_PATTERN
+from src.api.schemas import (
+    ChatRequest, ChatResponse, FeedbackRequest, Message, SessionCleared, SessionList, SessionMessages, StreamEvent,
+    SESSION_ID_PATTERN,
+)
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, request_logger
 from src.db.database import get_session_turns, get_sessions, update_conversation_feedback
@@ -59,7 +62,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
     )
 
 
-@router.post("/api/v1/feedback", tags=["Chat"])
+@router.post("/api/v1/feedback", response_model=Message, tags=["Chat"])
 def submit_feedback(request: Request, feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
     """Thumbs up (1), down (-1) or neither (0) for one answer, named by the turn_id it came with
     (F10). 404 for a turn that is not the user's."""
@@ -73,7 +76,24 @@ def submit_feedback(request: Request, feedback_request: FeedbackRequest, user_id
     return {"message": "Feedback recorded successfully."}
 
 
-@router.post("/api/v1/chat/stream", tags=["Chat"])
+class EventStream(StreamingResponse, JSONResponse):
+    """
+    Server-sent events. A class of its own so the schema lists the events under text/event-stream.
+
+    It behaves as a StreamingResponse (first in the method order). JSONResponse is a base only so
+    that FastAPI describes the stream with the events' models: for any other response class it
+    adds "type": "string" to the schema, which contradicts them.
+    """
+    media_type = "text/event-stream"
+
+
+STREAM_REPLY = {200: {
+    "model": StreamEvent,
+    "description": "Server-sent events, one per `data:` line: tokens in order, then one done or one error event.",
+}}
+
+
+@router.post("/api/v1/chat/stream", response_class=EventStream, responses=STREAM_REPLY, tags=["Chat"])
 @limiter.limit(settings.rate_limit_chat)
 def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Streaming endpoint — returns the answer token-by-token using SSE."""
@@ -106,14 +126,10 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
             # A separate event type, so the UI shows an error instead of keeping it as an answer
             yield f"data: {json.dumps({'type': 'error', 'message': message, 'reference': ref})}\n\n"
 
-    return StreamingResponse(
-        generate_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+    return EventStream(generate_stream(), headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
 
 
-@router.post("/api/v1/session/clear", tags=["Session"])
+@router.post("/api/v1/session/clear", response_model=SessionCleared, tags=["Session"])
 def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Clear conversation memory for a session."""
     clear_session(user_id, chat_request.session_id)
