@@ -246,4 +246,14 @@ describe('ChatLayout', () => {
     expect(api.clearSession).toHaveBeenCalledTimes(1)
     expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
   })
+
+  it('says "1 passage from 1 page", not "1 passages"', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 11, filename: 'note.txt', status: 'processing', replaces: false })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 11, filename: 'note.txt', status: 'ready', pages: 1, chunks: 1 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]'), new File(['hi'], 'note.txt', { type: 'text/plain' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Added note.txt: 1 passage from 1 page.', 'success'))
+  })
 })
