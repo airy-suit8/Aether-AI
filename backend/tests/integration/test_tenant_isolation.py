@@ -12,7 +12,7 @@ from src.db import database
 from src.memory import conversation
 from src.retrieval import retriever
 from src.vectordb import vector_store
-from helpers import DOC_TEXT, upload_text, ask, ask_stream
+from helpers import DOC_TEXT, upload_text, ask, ask_stream, tenant_of
 
 ALICE_DOC = ("zephyr_manual.txt", DOC_TEXT, "How often is the Zephyr turbine blade inspection?", "90 days")
 BOB_DOC = (
@@ -41,8 +41,8 @@ def _rows(user_id, session_id):
     return [dict(r) for r in rows]
 
 
-def _chunks_of(user_id):
-    return vector_store.store.chroma._collection.get(where={"user_id": user_id}, include=[])["ids"]
+def _chunks_of(tenant):
+    return vector_store.store.collection.get(where={"tenant_id": tenant}, include=[])["ids"]
 
 
 @pytest.fixture(params=["alice_owns", "bob_owns"])
@@ -50,11 +50,11 @@ def tenants(request, client, make_user):
     """Two users who each uploaded one document. Returns (owner, other) as dicts."""
     _, alice = make_user("alice")
     _, bob = make_user("bob")
-    a = {"headers": alice, "id": _user_id(alice), "doc": ALICE_DOC}
-    b = {"headers": bob, "id": _user_id(bob), "doc": BOB_DOC}
+    a = {"headers": alice, "id": _user_id(alice), "tenant": tenant_of(alice), "doc": ALICE_DOC}
+    b = {"headers": bob, "id": _user_id(bob), "tenant": tenant_of(bob), "doc": BOB_DOC}
     for t in (a, b):
         filename, text, _, _ = t["doc"]
-        assert upload_text(client, t["headers"], filename=filename, text=text).status_code == 200
+        assert upload_text(client, t["headers"], filename=filename, text=text).status_code == 202
     return (a, b) if request.param == "alice_owns" else (b, a)
 
 
@@ -90,21 +90,21 @@ def test_store_searches_are_filtered_by_user(tenants):
     # Query with the owner's exact text: the strongest possible match for the owner's chunk
     for search in (store.search, store.search_bm25, store.search_hybrid):
         for query in (owner_text, owner_question):
-            hits = search(other["id"], query, k=10)
-            assert all(h["meta"]["user_id"] == other["id"] for h in hits), search.__name__
+            hits = search(other["tenant"], query, k=10)
+            assert all(h["meta"]["tenant_id"] == other["tenant"] for h in hits), search.__name__
             assert owner_file not in [h["meta"]["source"] for h in hits], search.__name__
 
 
 def test_delete_removes_only_your_own_documents(client, tenants):
     owner, other = tenants
-    owner_chunks = _chunks_of(owner["id"])
+    owner_chunks = _chunks_of(owner["tenant"])
     assert owner_chunks
 
     r = client.delete("/api/v1/documents", headers=other["headers"])
     assert r.status_code == 200 and r.json()["deleted"] == 1
-    assert _chunks_of(other["id"]) == []
+    assert _chunks_of(other["tenant"]) == []
 
-    assert _chunks_of(owner["id"]) == owner_chunks
+    assert _chunks_of(owner["tenant"]) == owner_chunks
     assert client.get("/api/v1/documents", headers=owner["headers"]).json()["count"] == 1
     r = ask(client, owner["headers"], owner["doc"][2], session_id="after")
     assert owner["doc"][3] in r.json()["answer"]
@@ -133,17 +133,17 @@ def test_history_with_the_same_session_id_is_not_shared(client, tenants, fake_ll
 
 def test_feedback_lands_only_on_your_own_turn(client, tenants):
     owner, other = tenants
-    ask(client, owner["headers"], owner["doc"][2], session_id=SHARED)
+    owner_turn = ask(client, owner["headers"], owner["doc"][2], session_id=SHARED).json()["turn_id"]
 
-    # The other user has no turn in this session: feedback must not touch the owner's turn
-    r = client.post("/api/v1/feedback", headers=other["headers"], json={"session_id": SHARED, "feedback": -1})
-    assert r.status_code == 200
+    # The other user cannot rate the owner's turn, even knowing its id (F10)
+    r = client.post("/api/v1/feedback", headers=other["headers"], json={"turn_id": owner_turn, "feedback": -1})
+    assert r.status_code == 404
     assert _rows(owner["id"], SHARED)[0]["feedback"] == 0
 
-    # Once both have a turn, each one's feedback lands on their own
-    ask(client, other["headers"], other["doc"][2], session_id=SHARED)
-    client.post("/api/v1/feedback", headers=owner["headers"], json={"session_id": SHARED, "feedback": 1})
-    client.post("/api/v1/feedback", headers=other["headers"], json={"session_id": SHARED, "feedback": -1})
+    # Each one's feedback lands on their own turn
+    other_turn = ask(client, other["headers"], other["doc"][2], session_id=SHARED).json()["turn_id"]
+    client.post("/api/v1/feedback", headers=owner["headers"], json={"turn_id": owner_turn, "feedback": 1})
+    client.post("/api/v1/feedback", headers=other["headers"], json={"turn_id": other_turn, "feedback": -1})
     assert _rows(owner["id"], SHARED)[0]["feedback"] == 1
     assert _rows(other["id"], SHARED)[0]["feedback"] == -1
 

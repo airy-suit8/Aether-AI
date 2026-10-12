@@ -28,6 +28,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
   const [isLoginView, setIsLoginView] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -61,7 +62,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
       return problems
     }
     if (!USERNAME_RULE.test(name)) problems.username = '3 to 50 letters, digits, hyphens or underscores'
-    if (password.length < 6) problems.password = 'At least 6 characters'
+    if (password.length < 8) problems.password = 'At least 8 characters'
     else if (new TextEncoder().encode(password).length > 72) problems.password = 'Too long: keep it under 72 characters'
     return problems
   }
@@ -76,7 +77,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
 
     setIsLoading(true)
     try {
-      if (!isLoginView) await register(name, password)
+      if (!isLoginView) await register(name, password, inviteCode.trim())
       const data = await login(name, password)
       setAuth(data.access_token, name)
       onStartChat()
@@ -186,9 +187,20 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
               value={password}
               onChange={setPassword}
               error={fieldErrors.password}
-              hint={isLoginView ? undefined : 'At least 6 characters'}
+              hint={isLoginView ? undefined : 'At least 8 characters'}
               autoComplete={isLoginView ? 'current-password' : 'new-password'}
             />
+            {!isLoginView && (
+              <Field
+                label="Invite code"
+                value={inviteCode}
+                onChange={setInviteCode}
+                hint="Only if you were given one"
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+            )}
             {error && <p className="p-hint" data-tone="bad" role="alert">{error}</p>}
             <button type="submit" className="p-btn p-btn--filled" disabled={isLoading}>
               {isLoading ? 'One moment' : isLoginView ? 'Sign in' : 'Create account'}

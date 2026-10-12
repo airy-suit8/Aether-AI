@@ -42,12 +42,14 @@ def test_frontend_style_session_id_is_accepted(client, make_user):
 @pytest.mark.parametrize("value", [-2, 2, 5, 100])
 def test_feedback_outside_minus_one_to_one_is_rejected(client, make_user, value):
     _, headers = make_user("fb")
-    r = client.post("/api/v1/feedback", headers=headers, json={"session_id": "s1", "feedback": value})
+    r = client.post("/api/v1/feedback", headers=headers, json={"turn_id": 1, "feedback": value})
     assert r.status_code == 422
 
 
 @pytest.mark.parametrize("value", [-1, 0, 1])
 def test_feedback_values_accepted(client, make_user, value):
     _, headers = make_user("fbok")
-    r = client.post("/api/v1/feedback", headers=headers, json={"session_id": "s1", "feedback": value})
+    upload_text(client, headers)
+    turn_id = ask(client, headers, "How often is the Zephyr turbine blade inspection?").json()["turn_id"]
+    r = client.post("/api/v1/feedback", headers=headers, json={"turn_id": turn_id, "feedback": value})
     assert r.status_code == 200

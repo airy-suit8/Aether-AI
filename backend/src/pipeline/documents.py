@@ -3,18 +3,23 @@ pipeline/documents.py — the document side: ingest an upload, list a user's doc
 
 Ingestion is load (ingestion/) -> chunk (chunking/) -> embed and store (vectordb/). A document
 is its SQLite record plus its chunks in the vector store, tied together by the record's id,
-which every chunk carries as document_id (R7).
+which every chunk carries as document_id (R7). The chunks are filed under the owner's tenant id
+(S2); migrate_chunks_to_tenants() re-keys chunks stored before there were tenant ids.
 """
 
 from typing import Any, Dict, List, Optional
 
 from src.chunking.chunker import split_documents
+from src.core.config import settings
 from src.db.database import (
-    clear_user_documents, delete_document_record, get_all_documents_detailed, get_document,
-    save_document_record, update_document_counts,
+    clear_user_documents, delete_document_record, fail_processing_documents, get_all_documents_detailed,
+    get_document, get_document_owners, get_tenant_id, save_document_record, set_document_status,
 )
-from src.ingestion.loader import load_document
+from src.ingestion.loader import DocumentError, load_document
 from src.vectordb.vector_store import store
+
+# A document whose reading a restart cut short
+INTERRUPTED = "The server stopped before this file was read. Upload it again."
 
 
 def ingest_document(user_id: int, file_path: str, filename: str, document_id: Optional[int] = None) -> Dict[str, Any]:
@@ -24,40 +29,67 @@ def ingest_document(user_id: int, file_path: str, filename: str, document_id: Op
         raise ValueError("No text could be extracted from the document.")
 
     chunks = split_documents(raw_docs)
+    if len(chunks) > settings.max_chunks_per_document:  # S4: each chunk is an embedding call's worth of work
+        raise DocumentError(
+            f"'{filename}' is too long: it makes {len(chunks):,} passages, and one file may make "
+            f"{settings.max_chunks_per_document:,}. Split it into smaller files and upload those.")
     if document_id is not None:
         for chunk in chunks:
             chunk.metadata["document_id"] = document_id
-    store.add_documents(user_id, chunks)
+    store.add_documents(get_tenant_id(user_id), chunks)
 
     return {"filename": filename, "pages": len(raw_docs), "chunks": len(chunks)}
 
 
-def add_document(user_id: int, file_path: str, filename: str, size_bytes: int, file_hash: str) -> Dict[str, Any]:
+def accept_document(user_id: int, filename: str, size_bytes: int, file_hash: str) -> Dict[str, Any]:
     """
-    Ingest an upload as a document of its own. An earlier document with the same file name is
-    replaced, once the new one is safely stored. Returns the stats, the new "document_id" and
-    "replaced" (bool).
+    Record an upload as "processing", before it is read. Returns its "document_id", and
+    "replaces": whether a document of the same name exists (it is replaced once this one is read).
+    finish_document() then reads it, in the background (R12).
+    """
+    replaces = any(d["filename"] == filename for d in get_all_documents_detailed(user_id))
+    document_id = save_document_record(user_id, filename, 0, 0, size_bytes, file_hash, status="processing")
+    return {"document_id": document_id, "replaces": replaces}
 
-    The record is written first, to have an id for the chunks; if ingestion fails it is removed
-    again, so a failed upload leaves nothing behind.
+
+def finish_document(user_id: int, document_id: int, file_path: str, filename: str) -> Dict[str, Any]:
     """
-    earlier = [d for d in get_all_documents_detailed(user_id) if d["filename"] == filename]
-    document_id = save_document_record(user_id, filename, 0, 0, size_bytes, file_hash)
-    try:
-        result = ingest_document(user_id, file_path, filename, document_id)
-    except Exception:
-        delete_document_record(user_id, document_id)
-        raise
-    update_document_counts(user_id, document_id, result["pages"], result["chunks"])
+    Read an accepted upload into the vector store and mark it "ready"; then remove any other
+    document of the same name, which it replaces. Returns the stats and "replaced" (bool).
+    Errors propagate: the caller reports them with fail_document(), and an earlier file of the
+    same name is kept.
+    """
+    result = ingest_document(user_id, file_path, filename, document_id)
+    set_document_status(user_id, document_id, "ready", pages=result["pages"], chunks=result["chunks"])
+    earlier = [d for d in get_all_documents_detailed(user_id) if d["filename"] == filename and d["id"] != document_id]
     for old in earlier:
         delete_document(user_id, old["id"])
-    return {**result, "document_id": document_id, "replaced": bool(earlier)}
+    return {**result, "replaced": bool(earlier)}
+
+
+def fail_document(user_id: int, document_id: int, error: str) -> None:
+    """Mark an upload "failed" with a message for its owner, then remove any chunks it got as far as storing."""
+    set_document_status(user_id, document_id, "failed", error=error)
+    store.delete_document_chunks(get_tenant_id(user_id), document_id)
+
+
+def recover_interrupted_uploads() -> int:
+    """
+    At startup: a document still "processing" was being read when the server stopped. Mark it
+    failed, so its owner sees what happened, and remove any chunks it had stored. Returns how
+    many there were.
+    """
+    interrupted = fail_processing_documents(INTERRUPTED)
+    if interrupted and store.exists():
+        for doc in interrupted:
+            store.delete_document_chunks(get_tenant_id(doc["user_id"]), doc["document_id"])
+    return len(interrupted)
 
 
 def list_documents(user_id: int) -> List[str]:
-    """List distinct document filenames for a user from SQLite."""
+    """The distinct names of a user's documents that are ready to be searched."""
     docs = get_all_documents_detailed(user_id)
-    return sorted(list(set(d["filename"] for d in docs)))
+    return sorted({d["filename"] for d in docs if d["status"] == "ready"})
 
 
 def delete_document(user_id: int, document_id: int) -> Optional[Dict[str, Any]]:
@@ -66,7 +98,7 @@ def delete_document(user_id: int, document_id: int) -> Optional[Dict[str, Any]]:
     if document is None:
         return None
     # Errors propagate, and the record stays, so the list still matches the vector store
-    deleted = store.delete_document_chunks(user_id, document_id, document["filename"])
+    deleted = store.delete_document_chunks(get_tenant_id(user_id), document_id, document["filename"])
     delete_document_record(user_id, document_id)
     return {"filename": document["filename"], "deleted": deleted}
 
@@ -74,7 +106,41 @@ def delete_document(user_id: int, document_id: int) -> Optional[Dict[str, Any]]:
 def clear_documents(user_id: int) -> Dict[str, Any]:
     """Delete a user's documents from ChromaDB, then SQLite. Returns the number of chunks deleted."""
     # Errors propagate: the caller reports them, and the SQLite records stay
-    deleted = store.delete_user_chunks(user_id)
+    deleted = store.delete_user_chunks(get_tenant_id(user_id))
     # Clear from SQLite metadata only once the vectors are gone
     clear_user_documents(user_id)
     return {"status": "cleared", "deleted": deleted}
+
+
+def migrate_chunks_to_tenants() -> Dict[str, int]:
+    """
+    File the chunks stored before Sprint 5, which carry the owner's integer user_id, under that
+    user's tenant id (S2). Runs at startup; safe to run again, since a re-keyed chunk has no
+    user_id left. Returns how many chunks were re-keyed and how many were left unclaimed.
+
+    A chunk goes to a user only when that user has a document record for it: the same
+    document_id and file name or, for a chunk stored before documents had ids, the same file
+    name. A chunk no record accounts for, left behind when the database was reset, goes to no
+    one, so a new user who is given a reused id does not see it. Nothing is deleted.
+    """
+    if not store.exists():
+        return {"migrated": 0, "unclaimed": 0}
+    ids, metas = store.chunks_without_tenant()
+    if not ids:
+        return {"migrated": 0, "unclaimed": 0}
+
+    by_record, by_name = {}, {}
+    for owner in get_document_owners():
+        by_record[(owner["user_id"], owner["document_id"], owner["filename"])] = owner["tenant_id"]
+        by_name[(owner["user_id"], owner["filename"])] = owner["tenant_id"]
+
+    tenants = {}
+    for chunk_id, meta in zip(ids, metas):
+        if "document_id" in meta:
+            tenant = by_record.get((meta["user_id"], meta["document_id"], meta.get("source")))
+        else:
+            tenant = by_name.get((meta["user_id"], meta.get("source")))
+        if tenant:
+            tenants[chunk_id] = tenant
+    store.set_tenants(tenants)
+    return {"migrated": len(tenants), "unclaimed": len(ids) - len(tenants)}

@@ -3,7 +3,7 @@ import LandingPage from './components/landing/LandingPage'
 import ChatLayout from './components/chat/ChatLayout'
 import ToastContainer from './components/common/ToastContainer'
 import { useAuth } from './services/AuthContext'
-import { setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './services/api'
+import { getMe, refreshSession, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './services/api'
 import { PrismRoot } from './design/prism'
 import './design/app.css'
 
@@ -26,7 +26,8 @@ export default function App() {
   const [view, setView] = useState('landing')
   const [toasts, setToasts] = useState([])
   const [theme, setThemeState] = useState(readTheme)
-  const { isAuthenticated, logout } = useAuth()
+  const [restoring, setRestoring] = useState(true)
+  const { isAuthenticated, login, logout } = useAuth()
 
   const setTheme = useCallback((next) => {
     setThemeState(next)
@@ -54,6 +55,28 @@ export default function App() {
     setView('landing')
   }, [])
 
+  // A reload keeps the user signed in: the sign-in cookie gives a new token, /auth/me the name.
+  // Until that is known nothing is shown, so the start page does not flash before the workspace.
+  useEffect(() => {
+    let cancelled = false
+    const restore = async () => {
+      try {
+        const session = await refreshSession()
+        if (!session || cancelled) return
+        const me = await getMe()
+        if (cancelled) return
+        login(session.access_token, me.username)
+        setView('chat')
+      } catch {
+        // The server is unreachable: show the start page, signed out
+      } finally {
+        if (!cancelled) setRestoring(false)
+      }
+    }
+    restore()
+    return () => { cancelled = true }
+  }, [login])
+
   // The server rejected the token (expired, or the secret changed): log out and say why
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -66,10 +89,10 @@ export default function App() {
 
   return (
     <PrismRoot theme={theme}>
-      {(view === 'landing' || !isAuthenticated) && (
+      {!restoring && (view === 'landing' || !isAuthenticated) && (
         <LandingPage onStartChat={navigateToChat} theme={theme} onTheme={setTheme} />
       )}
-      {view === 'chat' && isAuthenticated && (
+      {!restoring && view === 'chat' && isAuthenticated && (
         <ChatLayout
           onNavigateHome={navigateToLanding}
           addToast={addToast}

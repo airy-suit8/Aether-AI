@@ -38,7 +38,9 @@ def test_stream_failure_sends_error_event_not_tokens(client, make_user, fake_llm
         status, events = ask_stream(client, headers, QUESTION, **modes)
         assert status == 200
         assert [e["type"] for e in events] == ["error"], (modes, events)
-        assert events[0]["message"]
+        # S10: a general message with a reference, not the exception's text
+        assert events[0]["message"].startswith("The answer could not be generated. Please try again. Reference: ")
+        assert events[0]["reference"] in events[0]["message"] and "model unavailable" not in events[0]["message"]
 
 
 def test_stream_done_event_includes_tool_used_in_agent_mode(client, make_user):

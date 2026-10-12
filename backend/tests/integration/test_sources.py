@@ -3,12 +3,15 @@ The sources shown with an answer (R5): none for a refusal, and, when the answer 
 numbered chunks (settings.answer_from = "chunks"), exactly the chunks it cites.
 """
 
+import uuid
+
 import pytest
 from langchain_core.messages import AIMessage
 
 from fakes import ScriptedChatModel
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 from src.core.config import settings
+from src.db.database import create_user
 from src.pipeline import rag
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
@@ -130,6 +133,7 @@ def test_cited_numbers_are_sorted_unique_and_within_range():
 
 def test_a_question_with_no_documents_is_traced_as_refused_after_retrieval_only(from_chunks):
     trace = rag.Trace()
-    result = rag.answer(990001, "anything", session_id="none", trace=trace)
+    user_id = create_user(f"nodocs_{uuid.uuid4().hex[:8]}", "hash")
+    result = rag.answer(user_id, "anything", session_id="none", trace=trace)
     assert result["answer"] == rag.NO_DOCUMENTS and trace.refused and trace.hits == []
     assert list(trace.stages) == ["retrieve"]

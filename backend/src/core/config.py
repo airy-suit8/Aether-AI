@@ -13,12 +13,17 @@ and the JWT secret when the app is built (main.create_app).
 from pathlib import Path
 from typing import List, Literal
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+# The database and the vector store live together in one folder at the project root (S2)
+DATA_DIR = BACKEND_DIR.parent / "data"
+# Where they were kept before Sprint 5; a store found there is still used (see Settings)
+OLD_DB_PATH = BACKEND_DIR / "aether.db"
+OLD_VECTOR_STORE_DIR = BACKEND_DIR / "vector_store"
 
-# Shown by /health and the OpenAPI schema. Not a tunable.
+# Shown in the OpenAPI schema. Not a tunable.
 APP_VERSION = "2.0.0"
 
 # The value .env.example ships with: treated as unset.
@@ -38,13 +43,29 @@ class Settings(BaseSettings):
     # ── Secrets (their usual names, no prefix) ────────────────────────────────
     google_api_key: str = Field(default="", validation_alias="GOOGLE_API_KEY")
     jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
-    access_token_minutes: int = 60 * 24 * 7  # 1 week
+
+    # ── Sign-in (S7) ──────────────────────────────────────────────────────────
+    # An access token is short-lived; the browser renews it with a refresh token, kept in an
+    # httpOnly cookie that page scripts cannot read, and renewed with it: signing in again is
+    # needed after a week without use.
+    access_token_minutes: int = 30
+    refresh_token_days: int = 7
+    # Send the refresh cookie over HTTPS only. Turn on once the app is served over HTTPS.
+    cookie_secure: bool = False
+    # Registration needs this code when it is set (AETHER_INVITE_CODE). Empty: anyone can register.
+    invite_code: str = ""
 
     # ── Models ────────────────────────────────────────────────────────────────
     llm_model: str = "gemini-3.5-flash"
     llm_temperature: float = 0.3
     tool_temperature: float = 0.0          # the agent and the evaluation judge
     llm_timeout_seconds: float = 120.0
+    # A model call that fails for quota (429) or availability (500, 502, 503, 504) is tried again,
+    # up to llm_max_attempts calls in all, after llm_retry_seconds, then twice that, and so on (B10).
+    # Any other failure is not retried. The Google client's own retries are off: they retried
+    # six times, which held a request for about 60 s during the Gemini outage of 12 Oct 2026.
+    llm_max_attempts: int = 3
+    llm_retry_seconds: float = 2.0
     llm_max_output_tokens: int = 8192
     embedding_model: str = "models/gemini-embedding-001"
     embedding_timeout_seconds: float = 60.0
@@ -67,23 +88,55 @@ class Settings(BaseSettings):
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
 
     # ── Server and limits ─────────────────────────────────────────────────────
+    # "production" turns off the API pages (/docs, /redoc, /openapi.json). Set it on any machine
+    # other people can reach (AETHER_ENVIRONMENT=production).
+    environment: Literal["development", "production"] = "development"
     allowed_origins: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+    # Uploads (S4): the file is streamed to disk and refused once it passes max_upload_bytes
     max_upload_bytes: int = 50 * 1024 * 1024
+    max_unpacked_bytes: int = 200 * 1024 * 1024   # a .docx or .xlsx (zip files) once unpacked
+    max_table_rows: int = 100_000                 # rows across all the sheets of a CSV or Excel file
+    max_chunks_per_document: int = 5_000
+    max_documents_per_user: int = 100
     max_question_chars: int = 5000
+    # Per signed-in user, or per address for requests without a valid token (S8)
+    rate_limit_default: str = "120/minute"   # every route without a limit of its own
     rate_limit_register: str = "5/minute"
     rate_limit_login: str = "10/minute"
     rate_limit_upload: str = "10/minute"
     rate_limit_chat: str = "30/minute"
 
     # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR) ──
-    db_path: Path = BACKEND_DIR / "aether.db"
-    vector_store_dir: Path = BACKEND_DIR / "vector_store"
+    db_path: Path = Field(default_factory=lambda: DATA_DIR / "aether.db")
+    vector_store_dir: Path = Field(default_factory=lambda: DATA_DIR / "vector_store")
     log_dir: Path = BACKEND_DIR / "logs"
+
+    _path_notes: List[str] = PrivateAttr(default_factory=list)
+
+    @model_validator(mode="after")
+    def _keep_using_stores_at_the_old_default_paths(self) -> "Settings":
+        """A store made before Sprint 5, at the old default path, is used rather than starting
+        empty, when its path was not set and nothing exists at the new default yet. Nothing is
+        moved; path_notes() says what was found, for the startup log."""
+        for field, old in (("db_path", OLD_DB_PATH), ("vector_store_dir", OLD_VECTOR_STORE_DIR)):
+            # The module names are read here, not at import, so a test can point them elsewhere
+            new = getattr(self, field)
+            if field in self.model_fields_set or new.exists() or not old.exists():
+                continue
+            setattr(self, field, old)
+            self._path_notes.append(
+                f"Using {old}, the old default path, because nothing is at the new default {new}. "
+                f"To stop this note, move it there with the backend stopped, or set AETHER_{field.upper()}.")
+        return self
+
+    def path_notes(self) -> List[str]:
+        """What the startup should log about where the stores were found."""
+        return list(self._path_notes)
 
     def require_jwt_secret(self) -> str:
         """Return the JWT secret, or stop with a clear message when it is missing."""

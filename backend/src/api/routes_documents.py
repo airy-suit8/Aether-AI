@@ -1,164 +1,269 @@
 """api/routes_documents.py — upload a document, list a user's documents, delete them."""
 
 import hashlib
+import logging
 import os
 import tempfile
 import time
-import traceback
 from pathlib import Path
+from typing import AsyncIterator, Tuple
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from starlette.formparsers import MultiPartException, MultiPartParser
 
 from src.api.deps import get_current_user, limiter
-from src.api.schemas import UploadResponse
+from src.api.errors import reference, server_error
+from src.api.schemas import DocumentStatus, UploadResponse
 from src.core.config import settings
-from src.core.logging import error_logger, upload_logger
-from src.db.database import check_duplicate_document, get_all_documents_detailed
-from src.ingestion.loader import SUPPORTED_EXTENSIONS
-from src.pipeline.documents import add_document, clear_documents, delete_document, list_documents
+from src.core.logging import error_logger, log_event, upload_logger
+from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document
+from src.ingestion.loader import SUPPORTED_EXTENSIONS, clean_filename
+from src.llm.llm_client import is_unavailable
+from src.pipeline.documents import (
+    accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
+)
 
 router = APIRouter()
 
 # Route handlers are plain `def` on purpose: they call blocking code (Gemini, Chroma,
 # SQLite, bcrypt), and FastAPI runs `def` handlers in a thread pool, so one slow
-# request does not stall every other request.
+# request does not stall every other request. The upload route is the exception: it reads
+# the request body itself, as a stream, and hands the blocking work to the thread pool.
 
-@router.post("/api/v1/upload", response_model=UploadResponse, tags=["Documents"])
+# What a multipart body adds around the file: boundaries and part headers
+MULTIPART_ALLOWANCE = 64 * 1024
+COPY_CHUNK = 1024 * 1024
+NO_FILE = "The request has no file: send it as the multipart form field \"file\"."
+
+# The route reads the body itself, so its shape is declared here for the API schema
+UPLOAD_BODY = {"requestBody": {"required": True, "content": {"multipart/form-data": {"schema": {
+    "type": "object", "required": ["file"], "title": "Upload",
+    "properties": {"file": {"type": "string", "format": "binary", "title": "File"}},
+}}}}}
+
+
+class UploadTooLarge(Exception):
+    pass
+
+
+def _too_large() -> HTTPException:
+    return HTTPException(
+        status_code=413,
+        detail=f"File too large. Maximum allowed: {settings.max_upload_bytes // (1024 * 1024)}MB.",
+    )
+
+
+async def _capped(stream: AsyncIterator[bytes], limit: int) -> AsyncIterator[bytes]:
+    """The request body, stopping with UploadTooLarge once more than limit bytes have come."""
+    received = 0
+    async for chunk in stream:
+        received += len(chunk)
+        if received > limit:
+            raise UploadTooLarge
+        yield chunk
+
+
+def _copy_to_temp_file(source, filename: str) -> Tuple[str, int, str]:
+    """Copy an upload to a temp file of its own, in chunks. Returns (path, size, sha256)."""
+    digest, size = hashlib.sha256(), 0
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix.lower()) as tmp:
+        while chunk := source.read(COPY_CHUNK):
+            size += len(chunk)
+            digest.update(chunk)
+            tmp.write(chunk)
+    return tmp.name, size, digest.hexdigest()
+
+
+async def _receive_upload(request: Request) -> Tuple[str, str, int, str]:
+    """
+    Read the multipart body's "file" part to a temp file, never holding it in memory (S4).
+    Returns (filename, temp path, size in bytes, sha256). The caller deletes the temp file.
+
+    A body declared larger than the limit is refused before any of it is read; one that turns
+    out larger (no or a false Content-Length) is refused as soon as the limit is passed. The
+    parser keeps at most 1MB of a file in memory and spools the rest to disk.
+    """
+    if not request.headers.get("content-type", "").startswith("multipart/form-data"):
+        raise HTTPException(status_code=422, detail=NO_FILE)
+    limit = settings.max_upload_bytes + MULTIPART_ALLOWANCE
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise UploadTooLarge
+    parser = MultiPartParser(request.headers, _capped(request.stream(), limit), max_files=1, max_fields=10)
+    form = await parser.parse()
+    upload = form.get("file")
+    if upload is None or isinstance(upload, str):
+        raise HTTPException(status_code=422, detail=NO_FILE)
+    filename = clean_filename(upload.filename or "")  # S5: the name is stored, listed and quoted to the model
+    try:
+        path, size, file_hash = await run_in_threadpool(_copy_to_temp_file, upload.file, filename)
+    finally:
+        await upload.close()
+    if size > settings.max_upload_bytes:  # within the multipart allowance, but over the limit
+        os.unlink(path)
+        raise UploadTooLarge
+    return filename, path, size, file_hash
+
+
+@router.post("/api/v1/upload", response_model=UploadResponse, status_code=202, tags=["Documents"],
+             openapi_extra=UPLOAD_BODY)
 @limiter.limit(settings.rate_limit_upload)
-def upload_document(request: Request, file: UploadFile = File(...), user_id: int = Depends(get_current_user)):
-    """Upload and ingest a PDF or text/markdown document."""
-    filename = file.filename or "unknown"
-    ext = Path(filename).suffix.lower()
+async def upload_document(request: Request, background_tasks: BackgroundTasks, user_id: int = Depends(get_current_user)):
+    """Upload a document: PDF, Word, text, Markdown, CSV or Excel. 202: it is accepted and read in
+    the background; GET /documents/{document_id} reports when it is ready or why it failed (R12).
 
-    # Validate file extension
+    The token is checked before any of the body is read (S4)."""
+    try:
+        filename, tmp_path, size, file_hash = await _receive_upload(request)
+    except UploadTooLarge:
+        log_event(upload_logger, "upload_rejected", user_id=user_id, reason="too_large",
+                  declared_bytes=request.headers.get("content-length"))
+        raise _too_large()
+    except MultiPartException:
+        raise HTTPException(status_code=400, detail="The upload could not be read as a file.")
+
+    handed_over = False
+    try:
+        accepted = await run_in_threadpool(_accept_upload, user_id, filename, size, file_hash)
+        # Runs after the reply is sent; it deletes the temp file when it is done
+        background_tasks.add_task(_read_in_background, user_id, accepted.document_id, tmp_path, filename,
+                                  size, reference(request))
+        handed_over = True
+        return accepted
+    finally:
+        if not handed_over and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def _accept_upload(user_id: int, filename: str, size: int, file_hash: str) -> UploadResponse:
+    """Check the received file against the rules and record it as processing. Runs in the thread pool."""
+    ext = Path(filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
-        error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=unsupported extension '{ext}'")
+        log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="type")
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(SUPPORTED_EXTENSIONS)}",
         )
 
-    # Read and validate file content
-    try:
-        content = file.file.read()
-    except Exception as e:
-        error_logger.error(f"UPLOAD READ FAILED | file={filename} | error={str(e)}")
-        raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {str(e)}")
-
-    # Check for empty uploads
-    if len(content) == 0:
-        error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=empty file (0 bytes)")
+    if size == 0:
+        log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="empty")
         raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes).")
 
-    # Check file size limit
-    if len(content) > settings.max_upload_bytes:
-        size_mb = round(len(content) / (1024 * 1024), 1)
-        error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=too large ({size_mb}MB)")
+    # A per-user quota. A file that replaces one of the same name does not add to the count.
+    library = [d for d in get_all_documents_detailed(user_id) if d["status"] != "failed"]
+    if len([d for d in library if d["filename"] != filename]) >= settings.max_documents_per_user:
+        log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="quota")
         raise HTTPException(
-            status_code=400,
-            detail=f"File too large ({size_mb}MB). Maximum allowed: {settings.max_upload_bytes // (1024*1024)}MB.",
+            status_code=409,
+            detail=f"Your library is full ({settings.max_documents_per_user} documents). Remove one to add another.",
         )
 
     # Check for duplicate uploads via file hash
-    file_hash = hashlib.sha256(content).hexdigest()
     existing = check_duplicate_document(user_id, file_hash)
     if existing:
-        upload_logger.info(f"UPLOAD DUPLICATE | user={user_id} | file={filename} | matches={existing}")
+        log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="duplicate", matches=existing)
         # Re-ingesting would store every chunk twice and crowd the top results with copies
         raise HTTPException(
             status_code=409,
             detail=f"This file is already in your library as '{existing}'.",
         )
 
-    # Save to a temp file then ingest
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        start_time = time.time()
-        # Stores the chunks and the SQLite record together, and replaces an earlier file of this name
-        result = add_document(user_id, tmp_path, filename, len(content), file_hash)
-        elapsed = round(time.time() - start_time, 2)
-
-        # Log successful upload
-        upload_logger.info(
-            f"UPLOAD OK | user={user_id} | file={filename} | pages={result['pages']} | "
-            f"chunks={result['chunks']} | time={elapsed}s | size={len(content)} bytes | replaced={result['replaced']}"
-        )
-
-    except ValueError as e:
-        # The message is written for the user; the parser's own error, if any, is its cause
-        error_logger.error(f"UPLOAD PARSE ERROR | file={filename} | error={str(e)} | cause={e.__cause__!r}")
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        error_logger.error(
-            f"UPLOAD INGESTION FAILED | file={filename} | error={str(e)}\n"
-            f"{traceback.format_exc()}"
-        )
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-    msg = f"Successfully ingested '{filename}' ({result['chunks']} chunks from {result['pages']} page(s))."
-    if result["replaced"]:
-        msg += " It replaced the earlier file of that name."
-
+    accepted = accept_document(user_id, filename, size, file_hash)
+    log_event(upload_logger, "upload_accepted", user_id=user_id, file=filename, document_id=accepted["document_id"],
+              bytes=size)
     return UploadResponse(
-        filename=result["filename"],
-        pages=result["pages"],
-        chunks=result["chunks"],
-        message=msg,
-        document_id=result["document_id"],
-        replaced=result["replaced"],
+        document_id=accepted["document_id"],
+        filename=filename,
+        replaces=accepted["replaces"],
+        message=f"Reading '{filename}'.",
     )
 
 
+def _read_in_background(user_id: int, document_id: int, tmp_path: str, filename: str, size: int, ref: str) -> None:
+    """Read an accepted upload into the vector store, then delete its temp file (R12).
+
+    FastAPI runs it after the 202 is sent, in the thread pool. Whatever happens, the document
+    ends "ready" or "failed", and a failure's message is one its owner can read: the parser's
+    own error, which can name a server path, and any other exception go only to the log.
+    """
+    start_time = time.time()
+    try:
+        result = finish_document(user_id, document_id, tmp_path, filename)
+        log_event(upload_logger, "upload_ok", user_id=user_id, file=filename, document_id=document_id,
+                  pages=result["pages"], chunks=result["chunks"], bytes=size,
+                  seconds=round(time.time() - start_time, 2), replaced=result["replaced"])
+    except ValueError as e:
+        # DocumentError, or no text to extract: the message is written for the user
+        log_event(error_logger, "upload_unreadable", level=logging.WARNING, user_id=user_id, file=filename,
+                  document_id=document_id, cause=repr(e.__cause__))
+        fail_document(user_id, document_id, str(e))
+    except Exception as e:
+        if is_unavailable(e):  # the embedding service was over its quota or unavailable (B10)
+            log_event(error_logger, "upload_model_unavailable", level=logging.WARNING, user_id=user_id,
+                      file=filename, document_id=document_id)
+            fail_document(user_id, document_id, "The AI service was busy or over its usage limit while reading "
+                          "this file. Please upload it again in a minute.")
+            return
+        log_event(error_logger, "upload_failed", level=logging.ERROR, exc_info=True, user_id=user_id,
+                  file=filename, document_id=document_id)
+        fail_document(user_id, document_id,
+                      f"Something went wrong on the server while reading this file. Please try again. Reference: {ref}")
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 @router.get("/api/v1/documents", tags=["Documents"])
-def get_documents(user_id: int = Depends(get_current_user)):
+def get_documents(request: Request, user_id: int = Depends(get_current_user)):
     """List all ingested document filenames."""
     try:
         docs = list_documents(user_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT LIST FAILED | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise server_error(request, "document_list_failed", user_id=user_id)
     return {"documents": docs, "count": len(docs)}
 
 
 @router.get("/api/v1/documents/detailed", tags=["Documents"])
-def get_documents_detailed(user_id: int = Depends(get_current_user)):
+def get_documents_detailed(request: Request, user_id: int = Depends(get_current_user)):
     """List detailed information of all ingested documents."""
     try:
         docs = get_all_documents_detailed(user_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT DETAILED LIST FAILED | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise server_error(request, "document_list_failed", user_id=user_id)
     return {"documents": docs, "count": len(docs)}
 
 
+@router.get("/api/v1/documents/{document_id}", response_model=DocumentStatus, tags=["Documents"])
+def get_one_document(document_id: int, user_id: int = Depends(get_current_user)):
+    """One document and how reading it went: "processing", then "ready" or "failed" with an error
+    (R12). 404 for an id that is not yours. Declared after /documents/detailed, which it would
+    otherwise shadow."""
+    document = get_document(user_id, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="No such document.")
+    return document
+
+
 @router.delete("/api/v1/documents/{document_id}", tags=["Documents"])
-def delete_one_document(document_id: int, user_id: int = Depends(get_current_user)):
+def delete_one_document(request: Request, document_id: int, user_id: int = Depends(get_current_user)):
     """Delete one document, by the id the detailed list gives it. 404 for an id that is not yours."""
     try:
         result = delete_document(user_id, document_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT DELETE FAILED | document={document_id} | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise server_error(request, "document_delete_failed", user_id=user_id, document_id=document_id)
     if result is None:
         raise HTTPException(status_code=404, detail="No such document.")
-    upload_logger.info(f"DOCUMENT DELETED | user={user_id} | file={result['filename']} | deleted={result['deleted']} chunks")
+    log_event(upload_logger, "document_deleted", user_id=user_id, document_id=document_id, chunks=result["deleted"])
     return {"message": f"Deleted '{result['filename']}' ({result['deleted']} chunks).", **result}
 
 
 @router.delete("/api/v1/documents", tags=["Documents"])
-def delete_documents(user_id: int = Depends(get_current_user)):
+def delete_documents(request: Request, user_id: int = Depends(get_current_user)):
     """Clear all documents from the vector store for the user."""
     try:
         result = clear_documents(user_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT CLEAR FAILED | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    upload_logger.info(f"DOCUMENTS CLEARED | deleted={result['deleted']} chunks")
+    except Exception:
+        raise server_error(request, "document_clear_failed", user_id=user_id)
+    log_event(upload_logger, "documents_cleared", user_id=user_id, chunks=result["deleted"])
     return {"message": f"Cleared {result['deleted']} chunks from the vector store.", **result}

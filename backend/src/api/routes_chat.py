@@ -1,17 +1,19 @@
 """api/routes_chat.py — ask a question (plain or streamed), feedback, and clearing a session."""
 
 import json
+import logging
 import time
-import traceback
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 
 from src.api.deps import get_current_user, limiter
-from src.api.schemas import ChatRequest, ChatResponse, FeedbackRequest
+from src.api.errors import reference, server_error
+from src.api.schemas import ChatRequest, ChatResponse, FeedbackRequest, SessionList, SessionMessages, SESSION_ID_PATTERN
 from src.core.config import settings
-from src.core.logging import error_logger, request_logger
-from src.db.database import update_conversation_feedback
+from src.core.logging import error_logger, log_event, request_logger
+from src.db.database import get_session_turns, get_sessions, update_conversation_feedback
+from src.llm.llm_client import MODEL_BUSY, is_unavailable
 from src.memory.conversation import clear_session
 from src.pipeline import rag
 
@@ -37,20 +39,15 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
     try:
         result = rag.answer(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode)
     except Exception as e:
-        error_logger.error(
-            f"CHAT FAILED | mode={mode} | session={chat_request.session_id} | "
-            f"question={chat_request.question[:100]} | error={str(e)}\n"
-            f"{traceback.format_exc()}"
-        )
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+        if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
+            log_event(error_logger, "chat_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
+            raise HTTPException(status_code=503, detail=MODEL_BUSY)
+        raise server_error(request, "chat_failed", user_id=user_id, mode=mode, session=chat_request.session_id)
 
-    elapsed = round(time.time() - start_time, 2)
-
-    request_logger.info(
-        f"CHAT OK | mode={mode} | session={chat_request.session_id} | "
-        f"question={chat_request.question[:80]} | confidence={result.get('confidence', 0)} | "
-        f"sources={len(result.get('sources', []))} | time={elapsed}s"
-    )
+    # The question's length is logged, never its text (S10)
+    log_event(request_logger, "chat_ok", user_id=user_id, mode=mode, session=chat_request.session_id,
+              question_chars=len(chat_request.question), confidence=result.get("confidence"),
+              sources=len(result.get("sources", [])), seconds=round(time.time() - start_time, 2))
 
     return ChatResponse(
         answer=result["answer"],
@@ -58,19 +55,22 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         confidence=result.get("confidence", 0.0),
         session_id=chat_request.session_id,
         tool_used=result.get("tool_used"),
+        turn_id=result.get("turn_id"),
     )
 
 
 @router.post("/api/v1/feedback", tags=["Chat"])
-def submit_feedback(feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
-    """Submit thumbs up (1) or thumbs down (-1) for the most recent message in the session."""
+def submit_feedback(request: Request, feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
+    """Thumbs up (1), down (-1) or neither (0) for one answer, named by the turn_id it came with
+    (F10). 404 for a turn that is not the user's."""
     try:
-        update_conversation_feedback(user_id, feedback_request.session_id, feedback_request.feedback)
-        request_logger.info(f"FEEDBACK LOGGED | session={feedback_request.session_id} | value={feedback_request.feedback}")
-        return {"message": "Feedback recorded successfully."}
-    except Exception as e:
-        error_logger.error(f"FEEDBACK FAILED | session={feedback_request.session_id} | error={str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to record feedback: {str(e)}")
+        found = update_conversation_feedback(user_id, feedback_request.turn_id, feedback_request.feedback)
+    except Exception:
+        raise server_error(request, "feedback_failed", user_id=user_id, turn_id=feedback_request.turn_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="No such answer.")
+    log_event(request_logger, "feedback", user_id=user_id, turn_id=feedback_request.turn_id, value=feedback_request.feedback)
+    return {"message": "Feedback recorded successfully."}
 
 
 @router.post("/api/v1/chat/stream", tags=["Chat"])
@@ -84,19 +84,27 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
         raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
     mode = chat_request.mode
-
-    request_logger.info(f"STREAM REQUEST | mode={mode} | question={chat_request.question[:80]}")
+    session = chat_request.session_id
+    log_event(request_logger, "stream_request", user_id=user_id, mode=mode, session=session,
+              question_chars=len(chat_request.question))
+    ref = reference(request)
 
     # A plain generator: Starlette runs it in a worker thread, so a slow model
     # call does not block the event loop and tokens are sent as they arrive.
     def generate_stream():
         try:
-            for event in rag.events(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode):
+            for event in rag.events(user_id, chat_request.question, session_id=session, mode=mode):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
-            error_logger.error(f"STREAM FAILED | mode={mode} | error={str(e)}\n{traceback.format_exc()}")
+            if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
+                log_event(error_logger, "stream_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
+                message = MODEL_BUSY
+            else:
+                log_event(error_logger, "stream_failed", level=logging.ERROR, exc_info=True,
+                          user_id=user_id, mode=mode, session=session)
+                message = f"The answer could not be generated. Please try again. Reference: {ref}"
             # A separate event type, so the UI shows an error instead of keeping it as an answer
-            yield f"data: {json.dumps({'type': 'error', 'message': 'The answer could not be generated. Please try again.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': message, 'reference': ref})}\n\n"
 
     return StreamingResponse(
         generate_stream(),
@@ -109,5 +117,22 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
 def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Clear conversation memory for a session."""
     clear_session(user_id, chat_request.session_id)
-    request_logger.info(f"SESSION CLEARED | session={chat_request.session_id}")
+    log_event(request_logger, "session_cleared", user_id=user_id, session=chat_request.session_id)
     return {"message": "Session cleared", "session_id": chat_request.session_id}
+
+
+# ── Conversations (Task 5, F8): listed and read back, so a reloaded page can show them again ──
+
+@router.get("/api/v1/sessions", response_model=SessionList, tags=["Session"])
+def list_sessions(user_id: int = Depends(get_current_user), limit: int = Query(50, ge=1, le=200)):
+    """The user's conversations, most recently used first, each titled by its first question."""
+    return {"sessions": get_sessions(user_id, limit)}
+
+
+@router.get("/api/v1/sessions/{session_id}/messages", response_model=SessionMessages, tags=["Session"])
+def session_messages(session_id: str = Path(max_length=100, pattern=SESSION_ID_PATTERN),
+                     user_id: int = Depends(get_current_user)):
+    """Every turn of one of the user's conversations, oldest first, with the sources and tool
+    shown with each answer. Empty for a session with no turns, or one that is not the user's."""
+    turns = [{**t, "turn_id": t["id"]} for t in get_session_turns(user_id, session_id)]
+    return {"session_id": session_id, "turns": turns}

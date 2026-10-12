@@ -36,13 +36,20 @@ async function capture(fn) {
 }
 
 const CALLS = {
-  register: () => api.register('someone', 'secret123'),
+  register: () => api.register('someone', 'secret123', 'invite-code'),
   login: () => api.login('someone', 'secret123'),
+  refreshSession: () => api.refreshSession(),
+  logout: () => api.logout(),
+  getMe: () => api.getMe(),
+  getSessions: () => api.getSessions(),
+  getSessionMessages: () => api.getSessionMessages('session_1'),
   uploadDocument: () => api.uploadDocument(new File(['hello'], 'a.txt', { type: 'text/plain' })),
   sendChat: () => api.sendChat({ question: 'q', sessionId: 's1', mode: 'hybrid' }),
   sendChatStream: () => api.sendChatStream({ question: 'q', sessionId: 's1' }),
+  sendFeedback: () => api.sendFeedback(12, -1),
   getDocuments: () => api.getDocuments(),
   getDocumentsDetailed: () => api.getDocumentsDetailed(),
+  getDocument: () => api.getDocument(7),
   deleteDocument: () => api.deleteDocument(7),
   deleteAllDocuments: () => api.deleteAllDocuments(),
   clearSession: () => api.clearSession('s1'),
