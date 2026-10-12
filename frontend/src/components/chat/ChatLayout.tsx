@@ -5,10 +5,10 @@ import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import {
-  sendChat, sendChatStream, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
+  sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages,
 } from '../../services/api'
-import type { DocumentRecord, Mode, SessionSummary, Turn } from '../../services/api'
+import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
@@ -296,6 +296,21 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     handleSend(failure.question)
   }, [failure, handleSend])
 
+  // ── Rate an answer: up, down, or 0 to take it back ────────────────────
+  // Shown at once; put back as it was if the server does not record it
+  const handleRate = useCallback(async (message: AnswerMessage, value: FeedbackValue) => {
+    if (message.turnId == null) return
+    const setFeedback = (feedback: FeedbackValue) =>
+      setMessages(prev => prev.map(m => (m.id === message.id && m.role === 'assistant' ? { ...m, feedback } : m)))
+    setFeedback(value)
+    try {
+      await sendFeedback(message.turnId, value)
+    } catch (err) {
+      setFeedback(message.feedback)
+      addToast(err instanceof Error ? err.message : 'Could not record the rating', 'error')
+    }
+  }, [addToast])
+
   // ── Handle file upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file: File) => {
     if (file.size > MAX_UPLOAD_BYTES) {
@@ -441,6 +456,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           streamRef={streamRef}
           hasDocuments={documents.length > 0}
           onSuggest={handleSend}
+          onRate={handleRate}
         />
 
         <ChatComposer
