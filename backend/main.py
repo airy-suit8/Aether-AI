@@ -39,7 +39,7 @@ from agent import run_agent
 from src.core.logging import request_logger, upload_logger, error_logger, setup_logging
 
 # SQLite persistence
-from database import (
+from src.db.database import (
     save_document_record,
     check_duplicate_document,
     get_conversation_stats,
@@ -48,6 +48,7 @@ from database import (
     update_conversation_feedback,
     get_user_by_username,
     create_user,
+    init_db,
 )
 
 from src.core.config import settings
@@ -56,6 +57,7 @@ from src.api.deps import get_current_user
 
 settings.require_jwt_secret()
 setup_logging(settings.log_dir)
+init_db()
 
 # ── Rate Limiter ──────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)

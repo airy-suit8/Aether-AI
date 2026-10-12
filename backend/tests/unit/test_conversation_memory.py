@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-import database
+from src.db import database
 import rag_engine
 from rag_engine import ConversationMemory, MEMORY_MAX_TURNS
 

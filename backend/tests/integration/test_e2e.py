@@ -9,7 +9,7 @@ a temp database and a temp vector store (see conftest.py). No API key, no networ
 import jwt
 import pytest
 
-import database
+from src.db import database
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 FILENAME = "zephyr_manual.txt"
