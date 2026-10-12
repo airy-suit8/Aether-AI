@@ -133,12 +133,15 @@ interface MessageBubbleProps {
  * its text and, in the margin, the passages it came from. An answer the server saved (it has a
  * turn id) can be rated.
  *
+ * Memoised (decision 15): while a later answer streams, the conversation re-renders with every
+ * token, and a finished message, whose props have not changed, is skipped, Markdown and all.
+ *
  * When the sources carry a number (the server's AETHER_ANSWER_FROM=chunks mode), each card is
  * numbered by it and each [n] in the answer is a Cite chip tied to card n: hovering or focusing
  * either lights both, and a chip pins its card open. Otherwise the cards are numbered in order
  * and the answer is shown as written.
  */
-export default function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate }: MessageBubbleProps) {
+function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate }: MessageBubbleProps) {
   const [active, setActive] = useState<number | null>(null)
   const [open, setOpen] = useState<number | null>(null)
   const cardRefs = useRef<Record<number, HTMLButtonElement | null>>({})
@@ -219,3 +222,5 @@ export default function MessageBubble({ message, isStreaming = false, streamingP
     </Citations.Provider>
   )
 }
+
+export default memo(MessageBubble)

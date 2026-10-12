@@ -109,6 +109,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   threadRef.current = sessionId
   const mountedRef = useRef(true)
   const loadingRef = useRef<string | null>(null)  // the thread whose turns are being loaded
+  const atBottomRef = useRef(true)                  // the reader is at the foot of the conversation
 
   useEffect(() => {
     mountedRef.current = true
@@ -171,6 +172,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     setStreamingPhase('')
     setMessages([])
     setThreadLoading(true)
+    atBottomRef.current = true  // a conversation opens at its latest turn
     let cancelled = false
     loadingRef.current = threadId
     getSessionMessages(threadId)
@@ -187,15 +189,21 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     return () => { cancelled = true }
   }, [threadId])
 
-  // A new message always scrolls into view; streamed text only follows if the reader is already at the bottom
+  // The conversation follows new text only while the reader is at the bottom: their own question
+  // always scrolls into view, but an answer arriving while they read further up does not move them
+  const followScroll = useCallback(() => {
+    const el = streamRef.current
+    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 200
+  }, [])
+
   useEffect(() => {
     const el = streamRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && (messages[messages.length - 1]?.role === 'user' || atBottomRef.current)) el.scrollTop = el.scrollHeight
   }, [messages])
 
   useEffect(() => {
     const el = streamRef.current
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
   }, [streamingText])
 
   // ── Asking: one reply at a time, tied to the thread it was asked in ──────
@@ -454,6 +462,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           isLoading={isLoading}
           threadLoading={threadLoading}
           streamRef={streamRef}
+          onScroll={followScroll}
           hasDocuments={documents.length > 0}
           onSuggest={handleSend}
           onRate={handleRate}

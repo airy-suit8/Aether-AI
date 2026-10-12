@@ -16,17 +16,18 @@ interface ChatWindowProps {
   isLoading: boolean
   threadLoading?: boolean
   streamRef: RefObject<HTMLDivElement | null>
+  onScroll?: () => void
   hasDocuments: boolean
   onSuggest: (question: string) => void
   onRate?: (message: AnswerMessage, value: FeedbackValue) => void
 }
 
-export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, threadLoading = false, streamRef, hasDocuments, onSuggest, onRate }: ChatWindowProps) {
+export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, threadLoading = false, streamRef, onScroll, hasDocuments, onSuggest, onRate }: ChatWindowProps) {
   // While a conversation is being loaded there is nothing to show yet, not even the empty state
   const isEmpty = messages.length === 0 && !streamingText && !isLoading && !threadLoading
 
   return (
-    <div className="x-stream" ref={streamRef}>
+    <div className="x-stream" ref={streamRef} onScroll={onScroll}>
       <div className="x-column" style={isEmpty ? { height: '100%' } : undefined}>
         {isEmpty ? (
           <div className="x-empty">
