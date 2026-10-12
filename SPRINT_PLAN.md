@@ -165,6 +165,21 @@ Notes added after Sprints 0 and 1:
 
 Move one package per commit, running the tests after each.
 
+Decisions already made for this sprint (do not reopen them):
+
+- **Structure, not behaviour.** The 283 backend tests and 26 frontend tests must pass at the end, changed only where an import path, a patched name or the new request shape forces it. The 21 strict xfails stay xfail.
+- **Entry point.** `backend/main.py` stays, and `python -m uvicorn main:app` run from `backend/` must keep working, because `start.bat`, the README and CI use it. The code moves under `backend/src/` in the layout from section 6 of the audit report.
+- **Config.** The existing `Settings` class moves to `core/config.py` and is the only place a tunable or a data path is read. `JWT_SECRET` stays required; environment variables still win over `.env`.
+- **Factories.** One LLM factory and one embeddings factory, each with a request timeout, and an output cap on the LLM. `tests/conftest.py` patches those two points for every mode.
+- **LangChain mode stays**, because the internship plan requires it. It becomes a second strategy inside the one pipeline that genuinely differs (a real LangChain retriever object, an LCEL chain) and shares prompts, memory, sources and the event stream. No copied code.
+- **LangChain loaders:** either wire them in behind the ingestion interface with the 0-based page fixed and tested, or remove them and say why. No unreachable code.
+- **No work at import time.** `main.py` becomes an app factory with a lifespan hook.
+- **One `mode` field** (`default`, `hybrid`, `agent`, `langchain`) replaces the four booleans. Update `api.js`, `ChatLayout.jsx`, the frontend tests, the API tests and the OpenAPI snapshot together. Streaming stays a choice of route.
+- **Deprecations:** clear them only if it can be done with pinned, audited packages and no behaviour change; otherwise explain what blocks it.
+- **No-orphan check** runs in CI. `frontend/design-lab.html` is a deliberate development-only entry point.
+- **CI:** update the per-module coverage list to the new paths, keeping the 70% floor.
+- **The interface's look does not change.** `DESIGN.md` is the rulebook; the frontend is touched only for the `mode` field.
+
 1. `core/config.py`: the existing `Settings` class, now imported everywhere. Model id, chunk size, top-k, threshold, origins, limits and paths are read from it and nowhere else. (C1)
 2. `llm/llm_client.py` and `embeddings/embedder.py`: one factory each, with timeout and output cap set. Remove the other four copies. (C2, S4)
 3. `prompts/prompt_templates.py`: every prompt, once, including the question-rewrite prompt as a real template.
