@@ -43,7 +43,17 @@ class Settings(BaseSettings):
     # ── Secrets (their usual names, no prefix) ────────────────────────────────
     google_api_key: str = Field(default="", validation_alias="GOOGLE_API_KEY")
     jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
-    access_token_minutes: int = 60 * 24 * 7  # 1 week
+
+    # ── Sign-in (S7) ──────────────────────────────────────────────────────────
+    # An access token is short-lived; the browser renews it with a refresh token, kept in an
+    # httpOnly cookie that page scripts cannot read, and renewed with it: signing in again is
+    # needed after a week without use.
+    access_token_minutes: int = 30
+    refresh_token_days: int = 7
+    # Send the refresh cookie over HTTPS only. Turn on once the app is served over HTTPS.
+    cookie_secure: bool = False
+    # Registration needs this code when it is set (AETHER_INVITE_CODE). Empty: anyone can register.
+    invite_code: str = ""
 
     # ── Models ────────────────────────────────────────────────────────────────
     llm_model: str = "gemini-3.5-flash"
