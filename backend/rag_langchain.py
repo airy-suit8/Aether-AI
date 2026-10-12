@@ -11,14 +11,9 @@ Tasks covered:
   Task 15: LCEL Refactor (prompt | model | parser)
 """
 
-import uuid
-from typing import List, Dict, Any
-
-# Task 13: LangChain Text Splitters
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from typing import Dict, Any
 
 # LangChain core
-from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 
 # Reuse the existing vector store and memory — no duplication
@@ -28,11 +23,8 @@ from rag_engine import (
     RAGResponse,
     CONFIDENCE_THRESHOLD,
     TOP_K,
-    CHUNK_SIZE,
-    CHUNK_OVERLAP,
 )
 
-from src.ingestion.loader import load_document_langchain
 from src.llm import llm_client
 from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
 
@@ -44,60 +36,6 @@ from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_P
 # ══════════════════════════════════════════════════════════════════════════════
 # Task 12: LangChain Document Loaders
 # ══════════════════════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Task 13: LangChain Text Splitters
-# ══════════════════════════════════════════════════════════════════════════════
-
-def split_documents_langchain(raw_docs: List[Document]) -> List[Document]:
-    """
-    Task 13: Use RecursiveCharacterTextSplitter as specified in the plan.
-
-    Same splitter as the original pipeline, but used here within the
-    standardized LangChain loader → splitter → embedder workflow.
-    """
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
-
-    chunks = splitter.split_documents(raw_docs)
-
-    # Enrich metadata with chunk positioning
-    total = len(chunks)
-    for i, chunk in enumerate(chunks):
-        chunk.metadata["chunk_id"] = str(uuid.uuid4())
-        chunk.metadata["chunk_index"] = i + 1
-        chunk.metadata["total_chunks"] = total
-
-    return chunks
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Ingestion (Tasks 12 + 13 combined)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def ingest_document_langchain(user_id: int, file_path: str, filename: str) -> Dict[str, Any]:
-    """
-    LangChain ingestion pipeline: Loader → Splitter → Embed → Store.
-
-    Uses the SAME vector store as the original pipeline (_store from rag_engine.py)
-    so documents are shared between both pipelines.
-    """
-    # Task 12: Load with LangChain loaders
-    raw_docs = load_document_langchain(file_path, filename)
-    if not raw_docs:
-        raise ValueError("No text could be extracted from the document.")
-
-    # Task 13: Split with LangChain splitter
-    chunks = split_documents_langchain(raw_docs)
-
-    # Embed and store (reuses existing vector store)
-    _store.add_documents(user_id, chunks)
-
-    return {"filename": filename, "pages": len(raw_docs), "chunks": len(chunks)}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Task 14 & 15: RetrievalQA Chain with LCEL
