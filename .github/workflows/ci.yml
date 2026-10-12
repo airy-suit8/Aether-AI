@@ -34,6 +34,9 @@ jobs:
       - name: Ruff
         run: ruff check .
 
+      - name: No-orphan check (unreachable modules, untested routes, config read outside core/config.py)
+        run: python -m pytest tests/test_no_orphans.py -q
+
       - name: Pytest with coverage
         run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=70
 
