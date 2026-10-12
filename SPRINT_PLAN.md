@@ -13,7 +13,7 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
 | 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `claude/confident-bell-h8c2ct`) | See below |
-| 6 Frontend rebuild | Done on the branch `claude/vigilant-dijkstra-5swgx3` (13 Oct 2026); pull request open, not yet merged | See below |
+| 6 Frontend rebuild | Done on the branch `claude/vigilant-dijkstra-5swgx3` (13 Oct 2026), PR #5, not yet merged | See below |
 | 7 Ship and document | Not started. Docker items deferred at the owner's request (11 Oct 2026). **Next**: a cloud session does items 3, 4 and 7, starting from Sprint 6's branch | See "Decisions already made" under Sprint 7 |
 | 8 Follow-ups and observability | Not started. Proposed 13 Oct 2026; for a cloud session after Sprint 7 | See Sprint 8 |
 
