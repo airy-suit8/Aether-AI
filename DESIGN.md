@@ -62,6 +62,7 @@ One material, optical glass: a translucent pane with a hairline edge. A highligh
 | `Switch` | `prism.jsx` | A toggle whose knob is a point of light |
 | `Field` | `prism.jsx` | A text field: the label lifts on focus and the line under it splits into the spectrum |
 | `HoldButton` | `prism.jsx` | For actions that cannot be undone: nothing happens unless the press is held |
+| Library row remove | `Sidebar.jsx`, `app.css` (`.x-doc__remove`) | For removing one document, in a row too small for a hold: a quiet cross that shows with the row; one click arms it ("Remove?", in the status red), a second confirms; it disarms after four seconds or when focus leaves |
 | `Dialog` | `prism.jsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards |
 | `DemoBench` | `DemoBench.jsx` | The self-playing demonstration used on the start page and in the lab |
 

@@ -226,6 +226,52 @@
         ]
       }
     },
+    "/api/v1/documents/{document_id}": {
+      "delete": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Delete One Document",
+        "description": "Delete one document, by the id the detailed list gives it. 404 for an id that is not yours.",
+        "operationId": "delete_one_document_api_v1_documents__document_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/chat": {
       "post": {
         "tags": [
@@ -638,6 +684,15 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "document_id": {
+            "type": "integer",
+            "title": "Document Id"
+          },
+          "replaced": {
+            "type": "boolean",
+            "title": "Replaced",
+            "default": false
           }
         },
         "type": "object",
@@ -645,7 +700,8 @@
           "filename",
           "pages",
           "chunks",
-          "message"
+          "message",
+          "document_id"
         ],
         "title": "UploadResponse"
       },
