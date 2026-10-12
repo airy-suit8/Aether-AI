@@ -246,6 +246,8 @@ Each user's chunks are filed under a random tenant id from their user record, no
 
 Uploaded text and questions are sent to Google's Gemini API. Do not upload confidential documents until you have agreed with your mentor which documents and which API tier are allowed.
 
+Agreed with the mentor: [OWNER: which documents may be uploaded, on which API tier, and the date agreed (finding S11)]
+
 ## Credits
 
 Built by Tirth Ganatra during an internship at Netweb Software, Vadodara, with the help of an AI coding assistant.
