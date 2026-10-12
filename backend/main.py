@@ -36,7 +36,7 @@ from rag_langchain import query_rag_langchain, query_rag_langchain_stream
 from agent import run_agent
 
 # Task 16: Logging
-from logger import request_logger, upload_logger, error_logger
+from src.core.logging import request_logger, upload_logger, error_logger, setup_logging
 
 # SQLite persistence
 from database import (
@@ -51,7 +51,11 @@ from database import (
 )
 
 from src.core.config import settings
-from auth import get_current_user, create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
+from src.core.security import create_access_token, verify_password, get_password_hash
+from src.api.deps import get_current_user
+
+settings.require_jwt_secret()
+setup_logging(settings.log_dir)
 
 # ── Rate Limiter ──────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
@@ -160,7 +164,7 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=settings.access_token_minutes)
     access_token = create_access_token(
         data={"sub": str(user["id"])}, expires_delta=access_token_expires
     )

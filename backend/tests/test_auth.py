@@ -1,4 +1,4 @@
-from auth import verify_password, get_password_hash, create_access_token
+from src.core.security import verify_password, get_password_hash, create_access_token
 
 def test_password_hashing():
     password = "supersecretpassword"

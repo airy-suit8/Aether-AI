@@ -39,7 +39,7 @@ from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402
 rag_engine._get_embeddings = lambda: HashingEmbeddings()
 
 from main import app, limiter  # noqa: E402
-from auth import get_password_hash, create_access_token  # noqa: E402
+from src.core.security import get_password_hash, create_access_token  # noqa: E402
 from database import init_db, create_user  # noqa: E402
 
 
