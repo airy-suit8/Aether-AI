@@ -1,21 +1,16 @@
 """
 agents/tools.py — LangChain Tools for the Aether AI Knowledge Assistant Agent
 Task 9:  Calculator Tool (safe math evaluation via AST)
-Task 10: Date-Time Tool (current date/time, day computations)
+Task 10: Date-Time Tool (current date/time, day computations, done in Python)
 """
 
 import ast
 import operator
 import math
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from langchain_core.tools import tool
-from langchain_core.output_parsers import StrOutputParser
-
-from src.core.config import settings
-from src.llm import llm_client
-from src.prompts.prompt_templates import DATETIME_PROMPT
 
 
 # ── Task 9: Calculator Tool ──────────────────────────────────────────────────
@@ -133,31 +128,65 @@ def calculator(expression: str) -> str:
 
 
 # ── Task 10: Date-Time Tool ──────────────────────────────────────────────────
+# The arithmetic is done here, in Python. The tool used to hand the question and the current
+# time to the model and return whatever it worked out (R11).
+
+DATE_OPERATIONS = ("now", "weekday", "days_between", "add_days")
+
+
+def _now() -> datetime:
+    return datetime.now()
+
+
+def _date(text: str, today: date) -> date:
+    """A YYYY-MM-DD date; empty, "today" or "now" is today."""
+    text = (text or "").strip().lower()
+    if text in ("", "today", "now"):
+        return today
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise ValueError(f"'{text}' is not a date. Write dates as YYYY-MM-DD, for example 2026-12-31.") from None
+
+
+def _long(day: date) -> str:
+    return f"{day:%A}, {day.day} {day:%B %Y}"
+
+
+def _days(count: int) -> str:
+    return f"{count} day" if count == 1 else f"{count} days"
+
 
 @tool
-def datetime_tool(query: str) -> str:
-    """Get current date, time, day of week, or compute days between dates.
-    
-    Handles queries like:
-    - "current date", "today", "what day is it"
-    - "current time", "what time is it"
-    - "day of week"
-    - "days until 2025-12-31"
-    - "how far is 19 june from today"
+def datetime_tool(operation: str = "now", start: str = "", end: str = "", days: int = 0) -> str:
+    """Date and time facts, computed exactly. Dates are written YYYY-MM-DD; an empty date means today.
+
+    operation:
+      "now"           the current date, weekday and time
+      "weekday"       the weekday of `start`
+      "days_between"  the number of days from `start` to `end`
+      "add_days"      the date `days` days after `start` (a negative number goes back)
     """
-    now = datetime.now()
-    current_time_str = now.strftime('%A, %B %d, %Y at %I:%M:%S %p')
-    
+    now = _now()
     try:
-        llm = llm_client.get_llm(temperature=settings.tool_temperature)
-        chain = DATETIME_PROMPT | llm | StrOutputParser()
-        return chain.invoke({
-            "current_time": current_time_str,
-            "question": query
-        }).strip()
-    except Exception as e:
-        # Fallback if LLM call fails
-        return f"Current date and time: {current_time_str}. (Error calculating difference: {str(e)})"
+        if operation == "now":
+            return f"Today is {_long(now.date())}. The time is {now:%H:%M}."
+        if operation == "weekday":
+            return f"{_date(start, now.date()).isoformat()} is a {_date(start, now.date()):%A}."
+        if operation == "days_between":
+            first, second = _date(start, now.date()), _date(end, now.date())
+            count = (second - first).days
+            if count < 0:
+                return f"{second.isoformat()} is {_days(-count)} before {first.isoformat()}."
+            return f"From {first.isoformat()} to {second.isoformat()} is {_days(count)}."
+        if operation == "add_days":
+            first = _date(start, now.date())
+            result = first + timedelta(days=days)
+            direction = f"{_days(days)} after" if days >= 0 else f"{_days(-days)} before"
+            return f"{direction} {first.isoformat()} is {_long(result)} ({result.isoformat()})."
+    except (ValueError, OverflowError) as e:
+        return f"Error: {e}"
+    return f"Error: unknown operation '{operation}'. Use one of: {', '.join(DATE_OPERATIONS)}."
 
 
 # ── Tool Registry ────────────────────────────────────────────────────────────

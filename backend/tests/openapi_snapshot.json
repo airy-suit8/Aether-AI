@@ -529,7 +529,14 @@
             "title": "Sources"
           },
           "confidence": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Confidence",
             "default": 0.0
           },

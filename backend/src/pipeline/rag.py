@@ -53,7 +53,8 @@ class RAGResponse(BaseModel):
     """Structured response from the RAG pipeline."""
     answer: str = Field(description="The answer to the user's question based on the document context")
     sources: List[Dict[str, Any]] = Field(default_factory=list, description="Source documents used")
-    confidence: float = Field(default=0.0, description="Confidence score from 0.0 to 1.0 based on retrieval similarity")
+    confidence: Optional[float] = Field(
+        default=0.0, description="Retrieval similarity, 0.0 to 1.0; None when the agent answered without searching the documents")
     tool_used: Optional[str] = Field(default=None, description="Agent mode: which tools answered")
 
 
