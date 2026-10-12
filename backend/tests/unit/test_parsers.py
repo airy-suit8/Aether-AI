@@ -1,12 +1,19 @@
 """
-Document parsers, as they behave today: the native parsers (loader.load_document, used by every
-upload by default) and the LangChain loaders (Task 12; used when settings.document_loader is
-"langchain"). Defects the audit found in these parsers are in test_known_defects.py.
+Document parsers: the native parsers (loader.load_document, used by every upload by default)
+and the LangChain loaders (Task 12; used when settings.document_loader is "langchain").
+Tests marked R9 were known defects until Sprint 4.
 """
 
-import pytest
+import tempfile
+from datetime import datetime
 
+import pytest
+from docx import Document as DocxDocument
+
+from src.core.config import settings
+from src.core.logging import error_logger
 from src.ingestion import loader
+from src.ingestion.loader import DocumentError
 from filemakers import make_docx, make_pdf, make_xls, make_xlsx
 
 ROWS = [["Part", "Qty", "Bin"], ["Bolt", 5, "A1"], ["Nut", 12, "B2"], ["Washer", 30, "C3"]]
@@ -28,8 +35,10 @@ def test_pdf_one_document_per_page_with_text(tmp_path):
     assert all(d.metadata["source"] == "manual.pdf" and d.metadata["type"] == "pdf" for d in docs)
 
 
-def test_pdf_with_no_text_gives_nothing(tmp_path):
-    assert load(make_pdf(tmp_path / "scan.pdf", ["", ""])) == []
+def test_a_pdf_with_no_text_layer_says_it_looks_like_a_scan(tmp_path):
+    # R9: a scanned PDF used to get "No text could be extracted", with no hint why
+    with pytest.raises(DocumentError, match="'scan.pdf' has no text to read: its pages look like scans"):
+        load(make_pdf(tmp_path / "scan.pdf", ["", ""]))
 
 
 # ── DOCX ──────────────────────────────────────────────────────────────────────
@@ -42,10 +51,40 @@ def test_docx_paragraphs_become_one_document(tmp_path):
     assert docs[0].metadata == {"source": "policy.docx", "page": 1, "type": "docx"}
 
 
-def test_docx_with_a_table_still_reads_its_paragraphs(tmp_path):
-    path = make_docx(tmp_path / "rates.docx", ["Rates below."], table=[["Role", "Rate"], ["Engineer", "95"]])
-    docs = load(path)
-    assert docs[0].page_content.startswith("Rates below.")
+def test_docx_tables_are_read_in_their_place(tmp_path):
+    # R9: tables were dropped; only paragraphs were read
+    doc = DocxDocument()
+    doc.add_paragraph("Rates below.")
+    table = doc.add_table(rows=2, cols=2)
+    for r, row in enumerate([["Role", "Rate"], ["Engineer", "95"]]):
+        for c, value in enumerate(row):
+            table.cell(r, c).text = value
+    doc.add_paragraph("Rates are reviewed in April.")
+    doc.save(tmp_path / "rates.docx")
+    assert load(tmp_path / "rates.docx")[0].page_content == (
+        "Rates below.\nRole | Rate\nEngineer | 95\nRates are reviewed in April.")
+
+
+def test_a_merged_table_cell_is_read_once(tmp_path):
+    doc = DocxDocument()
+    table = doc.add_table(rows=2, cols=3)
+    table.cell(0, 0).merge(table.cell(0, 2)).text = "Quarterly targets"
+    for c, value in enumerate(["North", "South", "East"]):
+        table.cell(1, c).text = value
+    doc.save(tmp_path / "merged.docx")
+    assert load(tmp_path / "merged.docx")[0].page_content == "Quarterly targets\nNorth | South | East"
+
+
+def test_docx_with_only_a_table_is_not_empty(tmp_path):
+    # R9: such a file gave no text, so the upload was refused
+    path = make_docx(tmp_path / "table_only.docx", [], table=[["Asset", "Owner"], ["Turbine 7", "Orion"]])
+    assert load(path)[0].page_content == "Asset | Owner\nTurbine 7 | Orion"
+
+
+def test_docx_header_and_footer_are_read(tmp_path):
+    # R9: headers and footers were dropped
+    path = make_docx(tmp_path / "memo.docx", ["Body text."], header="CONFIDENTIAL - Netweb", footer="Page footer note")
+    assert load(path)[0].page_content == "CONFIDENTIAL - Netweb\nBody text.\nPage footer note"
 
 
 def test_empty_docx_gives_nothing(tmp_path):
@@ -69,6 +108,27 @@ def test_whitespace_only_text_gives_nothing(tmp_path):
     path = tmp_path / "blank.txt"
     path.write_text(" \n\t\n", encoding="utf-8")
     assert load(path) == []
+
+
+@pytest.mark.parametrize("encoding", ["utf-8-sig", "utf-16", "utf-16-le-with-bom"])
+def test_text_with_a_byte_order_mark_is_decoded(tmp_path, encoding):
+    text = "Le café est fermé."
+    data = b"\xff\xfe" + text.encode("utf-16-le") if encoding == "utf-16-le-with-bom" else text.encode(encoding)
+    path = tmp_path / "bom.txt"
+    path.write_bytes(data)
+    assert load(path)[0].page_content == text  # and the mark itself is not part of the text
+
+
+@pytest.mark.parametrize("name,data", [
+    ("latin.txt", "Le café est fermé.".encode("cp1252")),
+    ("latin.csv", "Nom,Lieu\nAndré,Café\n".encode("cp1252")),
+])
+def test_text_that_is_not_utf8_is_refused_not_guessed(tmp_path, name, data):
+    # R9: such a file was read with errors="ignore", so characters were silently dropped
+    path = tmp_path / name
+    path.write_bytes(data)
+    with pytest.raises(DocumentError, match=f"'{name}' is not saved as UTF-8 text"):
+        load(path)
 
 
 def test_unsupported_extension_is_a_value_error(tmp_path):
@@ -121,9 +181,14 @@ def test_xlsx_rows_become_labelled_lines(tmp_path):
     assert docs[0].metadata == {"source": "parts.xlsx", "page": 1, "type": "xlsx"}
 
 
-def test_xlsx_reads_the_first_sheet(tmp_path):
-    path = make_xlsx(tmp_path / "book.xlsx", {"Stock": ROWS, "Suppliers": [["Name"], ["Acme"]]})
-    assert "Part: Bolt" in load(path)[0].page_content
+def test_every_sheet_of_a_workbook_is_read_under_its_name(tmp_path):
+    # R9: only the first sheet was read
+    path = make_xlsx(tmp_path / "book.xlsx", {"Stock": ROWS, "Empty": [["A"]], "Suppliers": [["Name"], ["Acme Fasteners"]]})
+    docs = load(path)
+    assert [d.page_content.split("\n")[0] for d in docs] == ["Sheet: Stock", "Sheet: Suppliers"]
+    assert docs[0].page_content.split("\n")[1:] == _expected_lines()
+    assert docs[1].page_content == "Sheet: Suppliers\nName: Acme Fasteners"
+    assert [d.metadata["page"] for d in docs] == [1, 2]
 
 
 def test_xls_rows_become_labelled_lines(tmp_path):
@@ -131,6 +196,68 @@ def test_xls_rows_become_labelled_lines(tmp_path):
     docs = load(path)
     assert docs[0].page_content.split("\n") == _expected_lines()
     assert docs[0].metadata == {"source": "legacy.xls", "page": 1, "type": "xls"}
+
+
+def test_csv_keeps_values_as_typed(tmp_path):
+    # R9: codes lost their leading zeros, and 5 became 5.0 when the column had a blank
+    path = tmp_path / "codes.csv"
+    path.write_text("Part,Code,Qty,Note\nBolt,007,5,NA\nNut,010,,1e3\n", encoding="utf-8")
+    assert load(path)[0].page_content == "Part: Bolt, Code: 007, Qty: 5, Note: NA\nPart: Nut, Code: 010, Note: 1e3"
+
+
+def test_xlsx_keeps_leading_zeros(tmp_path):
+    # R9: lost even in cells stored as text
+    path = make_xlsx(tmp_path / "codes.xlsx", {"Codes": [["Part", "Code"], ["Bolt", "007"], ["Nut", "010"]]})
+    assert load(path)[0].page_content == "Part: Bolt, Code: 007\nPart: Nut, Code: 010"
+
+
+@pytest.mark.parametrize("maker,name", [(make_xlsx, "qty.xlsx"), (make_xls, "qty.xls")])
+def test_excel_whole_numbers_stay_whole_with_blanks(tmp_path, maker, name):
+    # R9: 5 became 5.0 when the column had a blank
+    rows = [["Part", "Qty"], ["Bolt", 5], ["Nut", None]]
+    path = maker(tmp_path / name, {"Sheet": rows} if name.endswith("x") else rows)
+    assert load(path)[0].page_content == "Part: Bolt, Qty: 5\nPart: Nut"
+
+
+def test_excel_dates_and_decimals_read_as_a_person_would_write_them(tmp_path):
+    rows = [["Item", "Due", "Logged", "Rate"],
+            ["Audit", datetime(2026, 3, 5), datetime(2026, 3, 5, 14, 30), 2.5]]
+    path = make_xlsx(tmp_path / "plan.xlsx", {"Plan": rows})
+    assert load(path)[0].page_content == "Item: Audit, Due: 2026-03-05, Logged: 2026-03-05 14:30:00, Rate: 2.5"
+
+
+# ── Files that cannot be read (R9) ────────────────────────────────────────────
+
+@pytest.mark.parametrize("filename,content", [
+    ("broken.pdf", b"%PDF-1.4\nthis is not really a pdf"),
+    ("broken.docx", b"PK this is not really a zip"),
+    ("broken.xlsx", b"PK this is not really a zip"),
+    ("broken.xls", b"this is not really a workbook"),
+])
+def test_corrupt_upload_is_a_clean_422(client, make_user, filename, content):
+    # R9: these returned 500, and for DOCX the message quoted the server's temp path
+    _, headers = make_user("corrupt")
+    r = client.post("/api/v1/upload", headers=headers, files={"file": (filename, content, "application/octet-stream")})
+    assert r.status_code == 422
+    kind = filename.rsplit(".", 1)[1]
+    assert r.json()["detail"] == (
+        f"'{filename}' could not be read. It may be damaged, password-protected, or not really a {kind} file.")
+    assert tempfile.gettempdir() not in r.text
+    assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
+
+    # The parser's own error is not lost: it is in the error log, for whoever runs the server
+    for handler in error_logger.handlers:
+        handler.flush()
+    logged = [line for line in (settings.log_dir / "errors.log").read_text(encoding="utf-8").splitlines()
+              if f"UPLOAD PARSE ERROR | file={filename}" in line]
+    assert logged and "cause=" in logged[-1] and "cause=None" not in logged[-1]
+
+
+def test_a_scanned_pdf_upload_is_a_422_that_says_so(client, make_user, tmp_path):
+    _, headers = make_user("scan")
+    data = make_pdf(tmp_path / "scan.pdf", [""]).read_bytes()
+    r = client.post("/api/v1/upload", headers=headers, files={"file": ("scan.pdf", data, "application/pdf")})
+    assert r.status_code == 422 and "look like scans or photos" in r.json()["detail"]
 
 
 # ── LangChain loaders (Task 12) ───────────────────────────────────────────────
@@ -202,7 +329,17 @@ def test_langchain_unsupported_extension_is_a_value_error(tmp_path):
 
 
 def test_the_setting_chooses_the_loader(tmp_path, monkeypatch):
-    path = make_docx(tmp_path / "rates.docx", ["Rates below."], table=[["Role", "Rate"], ["Engineer", "95"]])
-    assert "Engineer" not in load(path)[0].page_content
+    path = tmp_path / "parts.csv"
+    path.write_text("Part,Bin\nBolt,007\nNut,010\n", encoding="utf-8")
+    assert [d.page_content for d in load(path)] == ["Part: Bolt, Bin: 007\nPart: Nut, Bin: 010"]  # native: rows grouped
     monkeypatch.setattr(loader.settings, "document_loader", "langchain")
-    assert "Engineer" in load(path)[0].page_content
+    assert len(load(path)) == 2                                                                   # CSVLoader: one per row
+
+
+def test_a_langchain_loader_error_is_also_a_clean_document_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(loader.settings, "document_loader", "langchain")
+    path = tmp_path / "latin.txt"
+    path.write_bytes("café".encode("cp1252"))
+    with pytest.raises(DocumentError, match="'latin.txt' could not be read") as caught:
+        load(path)
+    assert caught.value.__cause__ is not None and str(tmp_path) not in str(caught.value)

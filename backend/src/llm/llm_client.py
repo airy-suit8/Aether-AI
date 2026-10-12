@@ -14,14 +14,15 @@ from src.core.config import settings
 from src.embeddings.embedder import require_api_key
 
 
-def get_llm(temperature: Optional[float] = None) -> ChatGoogleGenerativeAI:
+def get_llm(temperature: Optional[float] = None, model: Optional[str] = None) -> ChatGoogleGenerativeAI:
     """The chat model, with a request timeout and a cap on output tokens.
 
     temperature defaults to settings.llm_temperature; tools and the agent pass
-    settings.tool_temperature.
+    settings.tool_temperature. model defaults to settings.llm_model; the evaluation passes
+    settings.judge_model, so that answers are not scored by the model that wrote them.
     """
     return ChatGoogleGenerativeAI(
-        model=settings.llm_model,
+        model=model or settings.llm_model,
         google_api_key=require_api_key(),
         temperature=settings.llm_temperature if temperature is None else temperature,
         timeout=settings.llm_timeout_seconds,

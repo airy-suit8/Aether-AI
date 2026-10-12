@@ -6,14 +6,20 @@ Two loaders sit behind one interface, load_document(), chosen by settings.docume
   langchain  Task 12: LangChain's document loaders (PyPDFLoader, Docx2txtLoader, TextLoader,
              CSVLoader); Excel files use the native pandas parser in both
 
-Both give metadata {"source", "page", "type"} with pages numbered from 1.
+Both give metadata {"source", "page", "type"} with pages numbered from 1. A file that cannot
+be read raises DocumentError, whose message is safe to show the person who uploaded it.
 """
 
+import codecs
+import io
+import math
+from datetime import datetime, time
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 import pandas as pd
 from docx import Document as DocxDoc
+from docx.table import Table
 from langchain_community.document_loaders import CSVLoader, Docx2txtLoader, PyPDFLoader, TextLoader
 from langchain_core.documents import Document
 from pypdf import PdfReader
@@ -21,6 +27,14 @@ from pypdf import PdfReader
 from src.core.config import settings
 
 SUPPORTED_EXTENSIONS = (".pdf", ".txt", ".md", ".markdown", ".docx", ".csv", ".xlsx", ".xls")
+
+# Rows of a table grouped into one Document, to keep chunk sizes manageable
+ROWS_PER_DOCUMENT = 50
+
+
+class DocumentError(ValueError):
+    """An upload that cannot be read. The message names no server path and is shown to the user."""
+
 
 # ── Native parsers ────────────────────────────────────────────────────────────
 
@@ -35,26 +49,71 @@ def _parse_pdf(file_path: str, filename: str) -> List[Document]:
                 page_content=text,
                 metadata={"source": filename, "page": page_num, "type": "pdf"},
             ))
+    if not docs and len(reader.pages):
+        raise DocumentError(
+            f"'{filename}' has no text to read: its pages look like scans or photos. "
+            "Aether AI cannot read images yet; run the file through OCR, or upload a text version."
+        )
     return docs
 
 
+def _block_lines(blocks) -> List[str]:
+    """The text of paragraphs and tables, in the order they appear. A table row is 'cell | cell'."""
+    lines = []
+    for block in blocks:
+        if isinstance(block, Table):
+            for row in block.rows:
+                cells = []
+                for cell in row.cells:  # a merged cell is listed once per column it spans
+                    text = " ".join(cell.text.split())
+                    if text and (not cells or cells[-1] != text):
+                        cells.append(text)
+                if cells:
+                    lines.append(" | ".join(cells))
+        elif block.text.strip():
+            lines.append(block.text.strip())
+    return lines
+
+
 def _parse_docx(file_path: str, filename: str) -> List[Document]:
-    """Extract text from a Word .docx file using python-docx."""
+    """Read a Word .docx: headers, then paragraphs and tables in document order, then footers (R9)."""
     doc = DocxDoc(file_path)
-    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    if not paragraphs:
+    headers, footers = [], []
+    for section in doc.sections:
+        # A section linked to the previous one repeats its header and footer: keep each line once
+        headers += [line for line in _block_lines(section.header.iter_inner_content()) if line not in headers]
+        footers += [line for line in _block_lines(section.footer.iter_inner_content()) if line not in footers]
+    lines = headers + _block_lines(doc.iter_inner_content()) + footers
+    if not lines:
         return []
-    text = "\n".join(paragraphs)
     return [Document(
-        page_content=text,
+        page_content="\n".join(lines),
         metadata={"source": filename, "page": 1, "type": "docx"},
     )]
 
 
+def _decode(file_path: str, filename: str) -> str:
+    """The file as text: UTF-8, or UTF-16 when it starts with a byte-order mark.
+
+    Anything else is refused, not guessed. Reading with errors="ignore" dropped characters
+    silently (R9), and a detector is no better on short files: charset-normalizer 3.4 read
+    'Le café est fermé.' saved as Windows-1252 as UTF-16 Chinese characters.
+    """
+    data = Path(file_path).read_bytes()
+    encoding = "utf-16" if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)) else "utf-8-sig"
+    try:
+        # Windows line endings read as plain newlines, as open() in text mode gives
+        return data.decode(encoding).replace("\r\n", "\n").replace("\r", "\n")
+    except UnicodeDecodeError as e:
+        raise DocumentError(
+            f"'{filename}' is not saved as UTF-8 text, so some of its characters cannot be read "
+            "reliably. Save it again as UTF-8 (in Notepad: Save As, Encoding: UTF-8) and upload it."
+        ) from e
+
+
 def _parse_text(file_path: str, filename: str) -> List[Document]:
     """Read plain text or Markdown files."""
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        text = f.read().strip()
+    text = _decode(file_path, filename).strip()
     if not text:
         return []
     return [Document(
@@ -63,39 +122,60 @@ def _parse_text(file_path: str, filename: str) -> List[Document]:
     )]
 
 
+def _cell(value: Any) -> str:
+    """A table cell as the text a person would read: no '5.0' for 5, no 'nan' for a blank."""
+    if value is None or (isinstance(value, float) and math.isnan(value)) or value is pd.NaT:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, datetime):  # a date cell arrives as midnight on that day
+        return value.date().isoformat() if value.time() == time(0) else value.isoformat(sep=" ")
+    return str(value).strip()
+
+
 def _parse_tabular(file_path: str, filename: str, ext: str) -> List[Document]:
-    """Read CSV or Excel and convert each row to a natural-language line for better embeddings."""
+    """
+    Read CSV or Excel and turn each row into a line, "Column1: val1, Column2: val2", which embeds
+    better than bare values. Every sheet of a workbook is read; in a workbook with more than one,
+    each Document starts with the sheet's name. Values are kept as written: codes keep their
+    leading zeros and whole numbers stay whole (R9).
+    """
     if ext == ".csv":
-        df = pd.read_csv(file_path)
+        # dtype=str: every value exactly as typed
+        sheets: Dict[str, pd.DataFrame] = {"": pd.read_csv(
+            io.StringIO(_decode(file_path, filename)), dtype=str, keep_default_na=False)}
     else:
-        df = pd.read_excel(file_path)
+        # dtype=object: text cells stay text ("007"); numbers arrive as numbers and _cell() prints them
+        sheets = pd.read_excel(file_path, sheet_name=None, dtype=object, keep_default_na=False)
 
-    if df.empty:
-        return []
+    docs: List[Document] = []
 
-    columns = list(df.columns)
-    docs = []
-    # Convert each row to a readable sentence: "Column1: val1, Column2: val2, ..."
-    chunk_lines = []
-    for idx, row in df.iterrows():
-        line = ", ".join(f"{col}: {row[col]}" for col in columns if pd.notna(row[col]))
-        chunk_lines.append(line)
-        # Group every 50 rows into one Document to keep chunk sizes manageable
-        if len(chunk_lines) >= 50:
-            docs.append(Document(
-                page_content="\n".join(chunk_lines),
-                metadata={"source": filename, "page": len(docs) + 1, "type": ext.lstrip(".")},
-            ))
-            chunk_lines = []
-
-    # Flush remaining rows
-    if chunk_lines:
+    def flush(lines: List[str], sheet: str) -> None:
+        title = [f"Sheet: {sheet}"] if len(sheets) > 1 else []
         docs.append(Document(
-            page_content="\n".join(chunk_lines),
+            page_content="\n".join(title + lines),
             metadata={"source": filename, "page": len(docs) + 1, "type": ext.lstrip(".")},
         ))
 
+    for sheet, df in sheets.items():
+        columns = [str(col) for col in df.columns]
+        lines: List[str] = []
+        for values in df.itertuples(index=False, name=None):
+            cells = [(col, _cell(value)) for col, value in zip(columns, values)]
+            line = ", ".join(f"{col}: {text}" for col, text in cells if text)
+            if line:
+                lines.append(line)
+            if len(lines) >= ROWS_PER_DOCUMENT:
+                flush(lines, sheet)
+                lines = []
+        if lines:
+            flush(lines, sheet)
+
     return docs
+
+
+def _unsupported(ext: str) -> DocumentError:
+    return DocumentError(f"Unsupported file type '{ext}'. Allowed: pdf, docx, txt, md, csv, xlsx, xls")
 
 
 def load_document_native(file_path: str, filename: str) -> List[Document]:
@@ -110,7 +190,7 @@ def load_document_native(file_path: str, filename: str) -> List[Document]:
     elif ext in (".csv", ".xlsx", ".xls"):
         return _parse_tabular(file_path, filename, ext)
     else:
-        raise ValueError(f"Unsupported file type '{ext}'. Allowed: pdf, docx, txt, md, csv, xlsx, xls")
+        raise _unsupported(ext)
 
 
 # ── LangChain loaders (Task 12) ───────────────────────────────────────────────
@@ -119,11 +199,11 @@ def load_document_langchain(file_path: str, filename: str) -> List[Document]:
     """
     Task 12: LangChain's document loaders, as an alternative to the native parsers.
 
-    How they differ from the native parsers today:
+    How they differ from the native parsers:
       PyPDFLoader     keeps a Document for a page with no text
-      Docx2txtLoader  reads tables, headers and footers too (the native parser drops them, R9)
-      TextLoader      reads UTF-8 and raises on anything else (the native parser drops bytes)
-      CSVLoader       one Document per row, values kept as text (no "5.0", no lost zeros)
+      Docx2txtLoader  tables as tab-separated text, in its own order
+      TextLoader      UTF-8 only (no UTF-16)
+      CSVLoader       one Document per row
     """
     ext = Path(filename).suffix.lower()
 
@@ -139,7 +219,7 @@ def load_document_langchain(file_path: str, filename: str) -> List[Document]:
         # pandas, as the native parser does, instead of UnstructuredExcelLoader (a 1GB+ dependency)
         return _parse_tabular(file_path, filename, ext)
     else:
-        raise ValueError(f"Unsupported file type '{ext}'. Allowed: pdf, docx, txt, md, csv, xlsx, xls")
+        raise _unsupported(ext)
 
     # LangChain loaders return List[Document] with metadata already populated
     raw_docs = loader.load()
@@ -155,7 +235,20 @@ def load_document_langchain(file_path: str, filename: str) -> List[Document]:
 
 
 def load_document(file_path: str, filename: str) -> List[Document]:
-    """Load a file with the loader settings.document_loader names."""
-    if settings.document_loader == "langchain":
-        return load_document_langchain(file_path, filename)
-    return load_document_native(file_path, filename)
+    """
+    Load a file with the loader settings.document_loader names.
+
+    Raises DocumentError for a file that cannot be read. A parser's own error often quotes the
+    server's temp path (R9), so it is kept as the cause, for the log, and replaced by a message
+    that names only the user's file.
+    """
+    load = load_document_langchain if settings.document_loader == "langchain" else load_document_native
+    try:
+        return load(file_path, filename)
+    except DocumentError:
+        raise
+    except Exception as e:
+        kind = Path(filename).suffix.lower().lstrip(".") or "supported"
+        raise DocumentError(
+            f"'{filename}' could not be read. It may be damaged, password-protected, or not really a {kind} file."
+        ) from e
