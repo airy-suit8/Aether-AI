@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     top_k: int = 5
     confidence_threshold: float = 0.3      # minimum best cosine similarity to answer (Task 7)
+    # What the answer is written from. "summary": a model summary of the retrieved chunks (two
+    # model calls). "chunks": the numbered chunks themselves, cited as [1], [2] (one call; the
+    # sources are then the chunks cited). The default changes only when the evaluation shows
+    # which is better (R4, R5).
+    answer_from: Literal["summary", "chunks"] = "summary"
     memory_max_turns: int = 10             # conversation turns remembered per session (Task 4)
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
 
