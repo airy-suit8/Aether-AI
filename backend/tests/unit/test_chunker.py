@@ -5,13 +5,13 @@ import uuid
 
 import pytest
 
-import rag_engine
 from src.retrieval import retriever
 from src.vectordb import vector_store
 from filemakers import make_pdf
 from src.chunking import chunker
 from src.core.config import settings
 from src.ingestion import loader
+from src.pipeline.documents import ingest_document
 
 SENTENCES = [f"Sentence number {i} describes maintenance step {i} in detail." for i in range(80)]
 LONG_TEXT = " ".join(SENTENCES)  # about 4,700 characters, no newlines
@@ -28,7 +28,7 @@ def captured(monkeypatch):
 def _ingest(tmp_path, text, name="long.txt"):
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
-    return rag_engine.ingest_document(1, str(path), name)
+    return ingest_document(1, str(path), name)
 
 
 def test_short_text_is_one_chunk(tmp_path, captured):
@@ -66,7 +66,7 @@ def test_chunks_keep_source_page_and_type_and_get_unique_ids(tmp_path, captured)
 
 def test_chunks_keep_their_pdf_page(tmp_path, captured):
     path = make_pdf(tmp_path / "two.pdf", ["Page one text", "Page two text"])
-    result = rag_engine.ingest_document(1, str(path), "two.pdf")
+    result = ingest_document(1, str(path), "two.pdf")
     assert result == {"filename": "two.pdf", "pages": 2, "chunks": 2}
     assert [(c.page_content, c.metadata["page"]) for c in captured] == [("Page one text", 1), ("Page two text", 2)]
 
@@ -81,7 +81,7 @@ def test_stored_chunks_are_tagged_with_the_user(tmp_path):
     user = 880001
     path = tmp_path / "tagged.txt"
     path.write_text(LONG_TEXT, encoding="utf-8")
-    rag_engine.ingest_document(user, str(path), "tagged.txt")
+    ingest_document(user, str(path), "tagged.txt")
     metas = vector_store.store.chroma._collection.get(where={"user_id": user}, include=["metadatas"])["metadatas"]
     assert metas and all(m["user_id"] == user and m["source"] == "tagged.txt" for m in metas)
 
@@ -103,10 +103,10 @@ def test_langchain_ingest_stores_searchable_chunks(tmp_path, monkeypatch):
     path = tmp_path / "lc.txt"
     path.write_text("The Halcyon register records every blade inspection.", encoding="utf-8")
     monkeypatch.setattr(settings, "document_loader", "langchain")
-    assert rag_engine.ingest_document(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
+    assert ingest_document(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
     hits = retriever.retriever.search(user, "Halcyon register", k=1)
     assert hits[0]["meta"]["source"] == "lc.txt"
     with pytest.raises(ValueError):
         empty = tmp_path / "empty.txt"
         empty.write_text("", encoding="utf-8")
-        rag_engine.ingest_document(user, str(empty), "empty.txt")
+        ingest_document(user, str(empty), "empty.txt")
