@@ -1,10 +1,13 @@
 """
-The three search methods on the vector store (dense, BM25, hybrid) and the rank fusion in
-search_hybrid. Known defects in BM25 and the fusion key (R3) are in test_known_defects.py.
+The three search methods (dense, BM25, hybrid), the rank fusion in search_hybrid, and the
+score every one of them reports: cosine similarity from 0 to 1 (R2, R3).
 """
 
 import pytest
+from langchain_core.documents import Document
 
+from src.core.config import settings
+from src.pipeline import rag
 from src.retrieval import retriever
 from src.vectordb import vector_store
 
@@ -20,7 +23,6 @@ CORPUS = {
 def user():
     """One user with four one-chunk documents in the real (temp) vector store."""
     user_id = 870001
-    from langchain_core.documents import Document
     vector_store.store.add_documents(user_id, [
         Document(page_content=text, metadata={"source": name, "page": 1, "chunk_id": name})
         for name, text in CORPUS.items()
@@ -39,7 +41,7 @@ def test_dense_search_ranks_the_relevant_chunk_first(user):
     assert _sources(hits)[0] == "pumps.txt"
     scores = [h["score"] for h in hits]
     assert scores == sorted(scores, reverse=True)
-    assert all(0.0 <= s <= 1.0 + 1e-6 for s in scores)
+    assert all(0.0 <= s <= 1.0 for s in scores)
     assert hits[0]["text"] == CORPUS["pumps.txt"]
 
 
@@ -71,20 +73,124 @@ def test_bm25_for_a_user_with_no_documents_is_empty():
     assert retriever.retriever.search_bm25(870099, "pumps", k=5) == []
 
 
-def test_bm25_swallows_store_errors(user, monkeypatch):
-    # Today any error returns an empty list (R3 notes this hides failures)
+def test_bm25_reports_store_errors(user, monkeypatch):
+    # R3: an error used to be swallowed and returned as "no results"
+    fresh = retriever.Retriever(vector_store.store)  # nothing cached, so it must read the store
     monkeypatch.setattr(type(vector_store.store.chroma._collection), "get",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk")))
-    assert retriever.retriever.search_bm25(user, "pumps", k=4) == []
+    with pytest.raises(RuntimeError, match="disk"):
+        fresh.search_bm25(user, "pumps", k=4)
+
+
+def _add_chunks(user_id, texts):
+    vector_store.store.add_documents(user_id, [
+        Document(page_content=t, metadata={"source": f"doc{i}.txt", "page": 1, "chunk_id": f"{user_id}-{i}"})
+        for i, t in enumerate(texts)
+    ])
+
+
+def test_bm25_finds_the_only_chunk():
+    # R3: with rank_bm25's own idf, a word in the user's only chunk scored below zero
+    _add_chunks(860001, ["The north gate opens at six every morning"])
+    assert retriever.retriever.search_bm25(860001, "north gate", k=5)
+
+
+def test_bm25_finds_one_of_two_chunks():
+    # R3: a word in one of two chunks had an idf of exactly zero
+    _add_chunks(860002, ["The north gate opens at six every morning", "Lunch is served in the canteen"])
+    hits = retriever.retriever.search_bm25(860002, "gate", k=5)
+    assert [h["meta"]["source"] for h in hits] == ["doc0.txt"]
+
+
+SIGNS = [
+    "Visitors sign in at the gate.",
+    "Lunch is served in the canteen at noon",
+    "The car park closes at nine at night",
+    "Fire drills happen on the first Monday",
+]
+
+
+def test_bm25_matches_a_word_next_to_punctuation():
+    # R3: the tokenizer was lower().split(), so "gate" never matched "gate."
+    _add_chunks(860004, SIGNS)
+    assert _sources(retriever.retriever.search_bm25(860004, "canteen", k=5)) == ["doc1.txt"]
+    assert _sources(retriever.retriever.search_bm25(860004, "gate", k=5)) == ["doc0.txt"]
+    assert _sources(retriever.retriever.search_bm25(860004, "Gate?", k=5)) == ["doc0.txt"]
+
+
+def test_bm25_index_is_built_once_and_rebuilt_when_the_chunks_change(monkeypatch):
+    # R3: the index was rebuilt from every chunk on every query
+    reads = []
+    real = vector_store.store.get_user_chunks
+    monkeypatch.setattr(vector_store.store, "get_user_chunks", lambda user_id: reads.append(user_id) or real(user_id))
+    fresh, user_id = retriever.Retriever(vector_store.store), 860005
+
+    _add_chunks(user_id, ["Forklifts are charged overnight"])
+    assert fresh.search_bm25(user_id, "forklifts", k=5) and fresh.search_bm25(user_id, "charged", k=5)
+    assert reads == [user_id]
+
+    vector_store.store.add_documents(user_id, [
+        Document(page_content="Pallet jacks are inspected weekly", metadata={"source": "new.txt", "page": 1, "chunk_id": "860005-new"})])
+    assert _sources(fresh.search_bm25(user_id, "pallet jacks", k=5)) == ["new.txt"]  # an upload is seen at once
+    assert reads == [user_id, user_id]
+
+    vector_store.store.delete_user_chunks(user_id)
+    assert fresh.search_bm25(user_id, "forklifts", k=5) == []                          # and so is a delete
+
+
+def test_bm25_keeps_the_index_of_only_the_most_recent_users(monkeypatch):
+    monkeypatch.setattr(retriever, "BM25_USERS_KEPT", 2)
+    fresh = retriever.Retriever(vector_store.store)
+    for user_id in (860011, 860012, 860013):
+        fresh.search_bm25(user_id, "anything", k=1)
+    assert list(fresh._bm25) == [860012, 860013]
 
 
 # ── Hybrid, through the real store ────────────────────────────────────────────
 
 def test_hybrid_search_puts_the_chunk_both_methods_agree_on_first(user):
-    hits = retriever.retriever.search_hybrid(user, "conveyor belts tensioned monthly", k=3)
+    question = "conveyor belts tensioned monthly"
+    hits = retriever.retriever.search_hybrid(user, question, k=3)
     assert _sources(hits)[0] == "belts.txt"
-    assert hits[0]["score"] == 1.0  # ranked first by both: the maximum fused score
+    # R2: the score is the chunk's cosine similarity, as in dense search, not a rank value
+    assert hits[0]["score"] == retriever.retriever.search(user, question, k=1)[0]["score"]
     assert len(hits) <= 3
+
+
+def test_a_chunk_only_the_keyword_search_finds_gets_its_similarity(user, monkeypatch):
+    question = "When are impeller seals on centrifugal pumps replaced?"
+    dense_all = {h["meta"]["chunk_id"]: h["score"] for h in retriever.retriever.search(user, question, k=4)}
+    fresh = retriever.Retriever(vector_store.store)
+    monkeypatch.setattr(fresh, "search", lambda user_id, query, k: [])  # dense search finds nothing
+    hits = fresh.search_hybrid(user, question, k=4)
+    assert _sources(hits)[0] == "pumps.txt"
+    for hit in hits:
+        assert hit["score"] == pytest.approx(dense_all[hit["meta"]["chunk_id"]], abs=1e-6)
+
+
+@pytest.mark.parametrize("mode", ["default", "hybrid", "langchain"])
+def test_an_off_topic_question_is_refused_in_every_mode_without_asking_the_model(user, fake_llm, mode):
+    # R2: in hybrid mode the rank-based score could not fall below 0.44, so nothing was refused
+    result = rag.answer(user, "xylophone quasar", session_id=f"offtopic-{mode}", mode=mode)
+    assert result["answer"] == rag.NOT_FOUND and result["sources"] == []
+    assert result["confidence"] < settings.confidence_threshold
+    assert fake_llm.prompts == []
+
+
+def test_scores_never_pass_one(user):
+    # An exact match used to score 1.0000002, which made LangChain print a warning with the chunk text
+    hits = retriever.retriever.search(user, CORPUS["pumps.txt"], k=4)
+    assert hits[0]["score"] <= 1.0 and hits[0]["score"] == pytest.approx(1.0)
+    assert all(0.0 <= h["score"] <= 1.0 for h in hits)
+
+
+def test_similarities_are_cosines_of_the_named_chunks_of_that_user_only(user):
+    question = "When are impeller seals on centrifugal pumps replaced?"
+    dense = {h["meta"]["chunk_id"]: h["score"] for h in retriever.retriever.search(user, question, k=4)}
+    found = vector_store.store.similarities(user, question, ["pumps.txt", "fans.txt", "no-such-chunk"])
+    assert found == {key: pytest.approx(dense[key], abs=1e-6) for key in ("pumps.txt", "fans.txt")}
+    assert vector_store.store.similarities(870099, question, ["pumps.txt"]) == {}  # another user's chunk
+    assert vector_store.store.similarities(user, question, []) == {}
 
 
 # ── Fusion arithmetic, with the two inputs fixed ──────────────────────────────
@@ -95,8 +201,9 @@ def _hit(text, score=0.5):
 
 @pytest.fixture
 def fused(monkeypatch):
-    """search_hybrid on a store whose dense and BM25 results are set by the test."""
+    """search_hybrid on a store whose dense and BM25 results, and similarities, are set by the test."""
     store = retriever.Retriever(vector_store.store)
+    monkeypatch.setattr(vector_store.store, "similarities", lambda user_id, query, chunk_ids: {c: 0.33 for c in chunk_ids})
 
     def run(dense, bm25, k=5, rrf_k=60):
         monkeypatch.setattr(store, "search", lambda user_id, query, k: dense[:k])
@@ -115,20 +222,26 @@ def test_fusion_rewards_agreement(fused):
     assert {h["text"] for h in hits} == {"a", "b", "c", "d"}
 
 
-def test_fusion_scores_are_normalised_to_the_best_possible(fused):
-    hits = fused([_hit("a"), _hit("b")], [_hit("a"), _hit("x")])
-    by_text = {h["text"]: h["score"] for h in hits}
-    assert by_text["a"] == 1.0                          # first in both lists
-    assert by_text["b"] == round((1 / 62) / (2 / 61), 3)  # second in one list only
-    assert by_text["x"] == by_text["b"]
+def test_fusion_keeps_different_chunks_that_share_an_opening(fused):
+    # R3: the fusion key was text[:120], so chunks that opened the same way were merged
+    opening = "Section 4.2 Safety. " + "All maintenance staff must follow the lockout procedure. " * 2
+    assert len(opening) > 120
+    first = {"text": opening + "Applies to turbines.", "meta": {"chunk_id": "c1", "source": "a.txt"}, "score": 0.9}
+    second = {"text": opening + "Applies to pumps.", "meta": {"chunk_id": "c2", "source": "a.txt"}, "score": 0.8}
+    hits = fused([first, second], [second])
+    assert sorted(h["meta"]["chunk_id"] for h in hits) == ["c1", "c2"]
 
 
-def test_fusion_score_has_a_floor_of_point_one(fused):
-    # With rrf_k=1, rank r in one list scores (1/(1+r)) / (2/2): below 0.1 from rank 10 on
-    hits = fused([_hit(f"d{i}") for i in range(12)], [_hit("b")], k=13, rrf_k=1)
-    by_text = {h["text"]: h["score"] for h in hits}
-    assert by_text["d0"] == 0.5
-    assert by_text["d9"] == 0.1 and by_text["d11"] == 0.1
+def test_fused_hits_are_scored_by_similarity_not_by_rank(fused):
+    # R2: a and b keep their dense similarity; x, found by keywords only, gets its own looked up
+    hits = fused([_hit("a", 0.9), _hit("b", 0.7)], [_hit("a", 7.0), _hit("x", 3.2)])
+    assert {h["text"]: h["score"] for h in hits} == {"a": 0.9, "b": 0.7, "x": 0.33}
+    assert [h["text"] for h in hits][0] == "a"  # first in both lists
+
+
+def test_a_keyword_only_chunk_stored_without_an_id_scores_zero(fused):
+    old = {"text": "an old chunk", "meta": {"source": "old.txt"}, "score": 4.0}
+    assert [(h["text"], h["score"]) for h in fused([], [old])] == [("an old chunk", 0.0)]
 
 
 def test_fusion_returns_at_most_k(fused):
@@ -137,21 +250,19 @@ def test_fusion_returns_at_most_k(fused):
 
 
 def test_fusion_does_not_change_the_input_hits(fused):
-    dense = [_hit("a", score=0.42)]
-    fused(dense, [_hit("a", score=7.0)])
-    assert dense[0]["score"] == 0.42
+    dense, bm25 = [_hit("a", score=0.42)], [_hit("a", score=7.0), _hit("x", score=3.2)]
+    fused(dense, bm25)
+    assert dense[0]["score"] == 0.42 and bm25[1]["score"] == 3.2
 
 
 @pytest.mark.parametrize("dense,bm25,expected", [
     ([], [], []),
-    ([_hit("a", 0.8), _hit("b", 0.7)], [], ["a", "b"]),
-    ([], [_hit("c", 3.2)], ["c"]),
+    ([_hit("a", 0.8), _hit("b", 0.7)], [], [("a", 0.8), ("b", 0.7)]),
+    ([], [_hit("c", 3.2)], [("c", 0.33)]),
 ])
-def test_fusion_falls_back_when_one_side_is_empty(fused, dense, bm25, expected):
-    hits = fused(dense, bm25)
-    assert [h["text"] for h in hits] == expected
-    # The fallback keeps the original scores (a different scale from fused scores, R3)
-    assert [h["score"] for h in hits] == [h["score"] for h in (dense or bm25)]
+def test_fusion_with_one_side_empty_uses_the_same_score_scale(fused, dense, bm25, expected):
+    # R3: the fallback branches used to return a different scale from the fused branch
+    assert [(h["text"], h["score"]) for h in fused(dense, bm25)] == expected
 
 
 # ── The LangChain retriever object (Task 14) ──────────────────────────────────
