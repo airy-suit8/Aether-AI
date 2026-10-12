@@ -15,6 +15,7 @@ import pytest
 from src.api import routes_chat, routes_documents
 from src.core import security
 from src.core.config import settings
+from src.core.logging import request_logger
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
@@ -277,3 +278,21 @@ def test_uploaded_bytes_are_recorded(client, make_user):
     doc = client.get("/api/v1/documents/detailed", headers=headers).json()["documents"][0]
     assert doc["size_bytes"] == len(DOC_TEXT.encode())
     assert len(doc["file_hash"]) == 64
+
+
+# ── Log files ─────────────────────────────────────────────────────────────────
+
+def test_chat_requests_are_written_to_requests_log(client, make_user):
+    # AUDIT_REPORT wiring map, "Logger ↔ routes": requests.log was absent on disk. The logger was
+    # named "requests", which is also the HTTP library's logger and already carries a handler,
+    # so setup_logging() skipped it and no chat line reached a file or the terminal.
+    _, headers = make_user("logline")
+    question = f"log probe {uuid.uuid4().hex}"
+    assert ask(client, headers, question).status_code == 200
+    assert ask_stream(client, headers, question)[0] == 200
+    for handler in request_logger.handlers:
+        handler.flush()
+    lines = [line for line in (settings.log_dir / "requests.log").read_text(encoding="utf-8").splitlines()
+             if question in line]
+    assert any("CHAT OK" in line for line in lines)
+    assert any("STREAM REQUEST" in line for line in lines)
