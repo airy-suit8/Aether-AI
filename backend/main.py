@@ -31,10 +31,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from rag_engine import ingest_document, query_rag, query_rag_stream, list_documents, clear_documents
+from src.pipeline import rag
+from src.pipeline.documents import ingest_document, list_documents, clear_documents
 from src.memory.conversation import clear_session
-from rag_langchain import query_rag_langchain, query_rag_langchain_stream
-from src.agents.agent import run_agent
 
 # Task 16: Logging
 from src.core.logging import request_logger, upload_logger, error_logger, setup_logging
@@ -95,6 +94,14 @@ class ChatRequest(BaseModel):
     use_agent: bool = False
     use_langchain: bool = False
     use_hybrid: bool = False
+
+    def mode(self) -> str:
+        """The pipeline mode the flags select; the agent wins, then LangChain, then hybrid."""
+        if self.use_agent:
+            return "agent"
+        if self.use_langchain:
+            return "langchain"
+        return "hybrid" if self.use_hybrid else "default"
 
 class ChatResponse(BaseModel):
     answer: str
@@ -295,17 +302,11 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
     if len(chat_request.question) > settings.max_question_chars:
         raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
-    mode = "agent" if chat_request.use_agent else ("langchain" if chat_request.use_langchain else "original")
+    mode = chat_request.mode()
     start_time = time.time()
 
     try:
-        if chat_request.use_agent:
-            result = run_agent(user_id, chat_request.question, chat_request.session_id,
-                               search_documents=lambda q: query_rag(user_id, q, session_id=chat_request.session_id, save_turn=False))
-        elif chat_request.use_langchain:
-            result = query_rag_langchain(user_id, chat_request.question, session_id=chat_request.session_id)
-        else:
-            result = query_rag(user_id, chat_request.question, session_id=chat_request.session_id, use_hybrid=chat_request.use_hybrid)
+        result = rag.answer(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode)
     except Exception as e:
         error_logger.error(
             f"CHAT FAILED | mode={mode} | session={chat_request.session_id} | "
@@ -355,7 +356,7 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
     if len(chat_request.question) > settings.max_question_chars:
         raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
-    mode = "agent" if chat_request.use_agent else ("langchain" if chat_request.use_langchain else "original")
+    mode = chat_request.mode()
 
     request_logger.info(f"STREAM REQUEST | mode={mode} | question={chat_request.question[:80]}")
 
@@ -365,22 +366,8 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
     # call does not block the event loop and tokens are sent as they arrive.
     def generate_stream():
         try:
-            if chat_request.use_agent:
-                # Agent doesn't have a streaming LCEL pipeline in this architecture yet, fallback to fake streaming
-                result = run_agent(user_id, chat_request.question, chat_request.session_id,
-                               search_documents=lambda q: query_rag(user_id, q, session_id=chat_request.session_id, save_turn=False))
-                answer = result["answer"]
-                words = answer.split(" ")
-                for i, word in enumerate(words):
-                    token = word if i == 0 else " " + word
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'sources': result.get('sources', []), 'confidence': result.get('confidence', 0.0), 'tool_used': result.get('tool_used', None)})}\n\n"
-            elif chat_request.use_langchain:
-                for chunk in query_rag_langchain_stream(user_id, chat_request.question, session_id=chat_request.session_id):
-                    yield f"data: {json.dumps(chunk)}\n\n"
-            else:
-                for chunk in query_rag_stream(user_id, chat_request.question, session_id=chat_request.session_id, use_hybrid=chat_request.use_hybrid):
-                    yield f"data: {json.dumps(chunk)}\n\n"
+            for event in rag.events(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode):
+                yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             error_logger.error(f"STREAM FAILED | mode={mode} | error={str(e)}\n{traceback.format_exc()}")
             # A separate event type, so the UI shows an error instead of keeping it as an answer

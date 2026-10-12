@@ -1,6 +1,7 @@
 """Service -> vector store: ingest then search, with cosine similarity scores (R1)."""
 
-import rag_engine
+from src.core.config import settings
+from src.pipeline.documents import ingest_document
 from src.retrieval import retriever
 from src.vectordb import vector_store
 from helpers import DOC_TEXT
@@ -11,7 +12,7 @@ USER = 990001  # a user id no HTTP test creates
 def _ingest(tmp_path, user_id, text, name="notes.txt"):
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
-    return rag_engine.ingest_document(user_id, str(path), name)
+    return ingest_document(user_id, str(path), name)
 
 
 def test_collection_uses_cosine_distance():
@@ -32,10 +33,10 @@ def test_ingest_then_search_returns_the_text_with_cosine_scores(tmp_path):
     # A short question that shares a few words is clearly relevant on the cosine scale
     # (it scored about 0.16 under the old L2 conversion, below the 0.3 threshold).
     q = retriever.retriever.search(USER, "Zephyr turbine inspection?", k=1)[0]["score"]
-    assert rag_engine.CONFIDENCE_THRESHOLD < q <= 1.0
+    assert settings.confidence_threshold < q <= 1.0
 
 
 def test_unrelated_query_scores_low_and_never_negative(tmp_path):
     _ingest(tmp_path, USER + 1, DOC_TEXT)
     hits = retriever.retriever.search(USER + 1, "quarterly marketing budget for Paris", k=5)
-    assert all(0.0 <= h["score"] < rag_engine.CONFIDENCE_THRESHOLD for h in hits)
+    assert all(0.0 <= h["score"] < settings.confidence_threshold for h in hits)

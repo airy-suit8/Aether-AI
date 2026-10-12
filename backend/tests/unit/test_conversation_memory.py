@@ -5,7 +5,7 @@ import uuid
 import pytest
 
 from src.db import database
-import rag_engine
+from src.pipeline import rag
 from src.core.config import settings
 from src.memory import conversation
 from src.memory.conversation import ConversationMemory
@@ -83,10 +83,11 @@ def test_module_helpers_use_the_shared_memory(user_id):
 # ── Memory in the pipeline: a follow-up question is rewritten using the history ──
 
 @pytest.mark.parametrize("ask", [
-    lambda u, q: rag_engine.query_rag(u, q, session_id="follow"),
-    lambda u, q: list(rag_engine.query_rag_stream(u, q, session_id="follow")),
-    lambda u, q: rag_engine.query_rag(u, q, session_id="follow", use_hybrid=True),
-], ids=["query_rag", "query_rag_stream", "hybrid"])
+    lambda u, q: rag.answer(u, q, session_id="follow"),
+    lambda u, q: list(rag.events(u, q, session_id="follow")),
+    lambda u, q: rag.answer(u, q, session_id="follow", mode="hybrid"),
+    lambda u, q: rag.answer(u, q, session_id="follow", mode="langchain"),
+], ids=["answer", "events", "hybrid", "langchain"])
 def test_follow_up_is_rewritten_with_the_history(user_id, fake_llm, ask):
     conversation.memory.add_turn(user_id, "follow", "Who maintains the Zephyr turbine?", "The Orion field team.")
     ask(user_id, "How often do they do it?")
@@ -97,5 +98,5 @@ def test_follow_up_is_rewritten_with_the_history(user_id, fake_llm, ask):
 
 
 def test_first_question_is_not_rewritten(user_id, fake_llm):
-    rag_engine.query_rag(user_id, "How often?", session_id="first")
+    rag.answer(user_id, "How often?", session_id="first")
     assert not any("Standalone Question:" in p for p in fake_llm.prompts)

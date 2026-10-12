@@ -38,3 +38,23 @@ def test_langchain_history_is_scoped_to_the_user(client, make_user, fake_llm):
     fake_llm.prompts.clear()
     assert ask(client, bob, QUESTION, session_id="shared", use_langchain=True).status_code == 200
     assert not any("Alice secret question" in p for p in fake_llm.prompts)
+
+
+def test_only_langchain_mode_retrieves_through_the_langchain_retriever(client, make_user, monkeypatch):
+    # Decision 5: the LangChain strategy genuinely differs, it does not just relabel the default
+    from src.retrieval.retriever import UserRetriever
+
+    calls = []
+    original = UserRetriever._get_relevant_documents
+
+    def spy(self, query, *, run_manager):
+        calls.append(query)
+        return original(self, query, run_manager=run_manager)
+
+    monkeypatch.setattr(UserRetriever, "_get_relevant_documents", spy)
+    _, headers = make_user("lcret")
+    upload_text(client, headers)
+    assert ask(client, headers, QUESTION, session_id="d").status_code == 200
+    assert calls == []
+    assert ask(client, headers, QUESTION, session_id="l", use_langchain=True).status_code == 200
+    assert calls == [QUESTION]
