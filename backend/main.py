@@ -12,7 +12,8 @@ Endpoints (all under /api/v1):
   GET  /health                        routes_health
   POST /upload, GET /documents, GET /documents/detailed, DELETE /documents   routes_documents
   POST /chat, /chat/stream, /feedback, /session/clear                        routes_chat
-  GET  /                              the built React app (frontend/dist), mounted after the API
+  GET  /, /login, /chat/..., /settings   the built React app (frontend/dist), mounted after the API:
+                                      a path outside /api/ that matches no file gets its index.html
 """
 
 from contextlib import asynccontextmanager
@@ -22,6 +23,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
+from starlette.types import Scope
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIASGIMiddleware
@@ -111,10 +114,26 @@ then restart the backend and reload this page.</li>
 </body></html>"""
 
 
+class SinglePageApp(StaticFiles):
+    """
+    The built React app. Its pages are paths the browser shows (/login, /chat/<thread>, /settings)
+    that exist only in the app's router, so a path that matches no file gets index.html and the
+    app draws the page. A path under /api/ is never a page: an unknown one stays a JSON 404.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as e:
+            if e.status_code != 404 or scope["path"].startswith("/api/"):
+                raise
+            return await super().get_response("index.html", scope)
+
+
 def mount_frontend(app: FastAPI, dist_dir: Path):
     """Serve the built React app at /, or a page explaining how to build it."""
     if (dist_dir / "index.html").is_file():
-        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="frontend")
+        app.mount("/", SinglePageApp(directory=str(dist_dir), html=True), name="frontend")
     else:
         @app.get("/", include_in_schema=False)
         def frontend_not_built():

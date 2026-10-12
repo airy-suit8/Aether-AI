@@ -1,25 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useLocation } from 'react-router'
 import App from './App'
 import { AuthProvider } from './services/AuthContext'
 import * as api from './services/api'
-import { documentList, session, turn } from './test/fixtures'
+import { asResponse, documentList, session, turn } from './test/fixtures'
 
 vi.mock('./services/api', async (importOriginal) => ({
   ...(await importOriginal()),
   refreshSession: vi.fn(),
   getMe: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(async () => ({ message: 'Signed out' })),
   getDocumentsDetailed: vi.fn(),
   getSessions: vi.fn(),
   getSessionMessages: vi.fn(),
 }))
 
-function renderApp() {
-  return render(<AuthProvider><App /></AuthProvider>)
+function Where() {
+  return <output data-testid="where">{useLocation().pathname}</output>
+}
+
+function renderApp(path = '/') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <AuthProvider>
+        <App />
+        <Where />
+      </AuthProvider>
+    </MemoryRouter>,
+  )
+}
+
+const where = () => screen.getByTestId('where').textContent
+const signedIn = () => {
+  vi.mocked(api.refreshSession).mockResolvedValue({ access_token: 'renewed', token_type: 'bearer', expires_in: 1800 })
+  vi.mocked(api.getMe).mockResolvedValue({ username: 'Tirth', created_at: '2026-10-01T09:00:00' })
 }
 
 describe('App after a page reload', () => {
   beforeEach(() => {
+    vi.mocked(api.getMe).mockReset()
     vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([]))
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_7' })] })
     vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_7', turns: [turn({
@@ -29,12 +51,13 @@ describe('App after a page reload', () => {
   })
 
   it('keeps the user signed in and restores the conversation', async () => {
-    vi.mocked(api.refreshSession).mockResolvedValue({ access_token: 'renewed', token_type: 'bearer', expires_in: 1800 })
-    vi.mocked(api.getMe).mockResolvedValue({ username: 'Tirth', created_at: '2026-10-01T09:00:00' })
-    renderApp()
+    signedIn()
+    renderApp('/chat/session_7')
     expect(await screen.findByText('What did we discuss?')).toBeTruthy()
     expect(screen.getByText('The turbine schedule.')).toBeTruthy()
     expect(screen.getByText('Tirth')).toBeTruthy()  // the real name, from /auth/me
+    expect(api.getSessionMessages).toHaveBeenCalledWith('session_7')
+    expect(where()).toBe('/chat/session_7')
   })
 
   it('shows the start page when there is no sign-in to restore', async () => {
@@ -43,5 +66,85 @@ describe('App after a page reload', () => {
     expect(await screen.findByRole('heading', { level: 1 })).toBeTruthy()
     expect(api.getMe).not.toHaveBeenCalled()
     expect(screen.queryByText('What did we discuss?')).toBeNull()
+  })
+
+  it('/chat opens the most recent conversation', async () => {
+    signedIn()
+    renderApp('/chat')
+    expect(await screen.findByText('What did we discuss?')).toBeTruthy()
+    expect(where()).toBe('/chat/session_7')
+  })
+
+  it('keeps the start page at / for a signed-in user, who opens the workspace from it', async () => {
+    signedIn()
+    renderApp('/')
+    const open = await screen.findAllByRole('button', { name: 'Open workspace' })
+    await userEvent.setup().click(open[0])
+    expect(await screen.findByText('What did we discuss?')).toBeTruthy()
+    expect(where()).toBe('/chat/session_7')
+  })
+})
+
+describe('App pages', () => {
+  beforeEach(() => {
+    vi.mocked(api.refreshSession).mockResolvedValue(null)
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([]))
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
+  })
+
+  it('/login is the start page with the sign-in sheet open; closing it goes back to /', async () => {
+    renderApp('/login')
+    expect(await screen.findByRole('dialog', { name: 'Welcome back' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
+    await userEvent.setup().keyboard('{Escape}')
+    expect(where()).toBe('/')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('sends a signed-out visit to a workspace page to sign in, and back there after', async () => {
+    vi.mocked(api.login).mockResolvedValue({ access_token: 'fresh', token_type: 'bearer', expires_in: 1800 })
+    renderApp('/settings')
+    const sheet = await screen.findByRole('dialog', { name: 'Welcome back' })
+    expect(where()).toBe('/login')
+
+    const user = userEvent.setup()
+    await user.type(within(sheet).getByLabelText('Username'), 'Tirth')
+    await user.type(within(sheet).getByLabelText('Password'), 'a long password')
+    await user.click(within(sheet).getByRole('button', { name: 'Sign in' }))
+    expect(api.login).toHaveBeenCalledWith('Tirth', 'a long password')
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeTruthy()
+    expect(where()).toBe('/settings')
+  })
+
+  it('sends an unknown path to the start page', async () => {
+    renderApp('/no/such/page')
+    expect(await screen.findByRole('heading', { level: 1 })).toBeTruthy()
+    expect(where()).toBe('/')
+  })
+
+  it('Sign out in the workspace goes to the start page, not to sign in', async () => {
+    signedIn()
+    renderApp('/chat/session_7')
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Sign out' }))
+    expect(where()).toBe('/')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
+    expect(api.logout).toHaveBeenCalled()
+  })
+
+  it('signs out to the start page, saying why, when the session cannot be renewed', async () => {
+    signedIn()
+    renderApp('/chat/session_7')
+    expect(await screen.findByText('Tirth')).toBeTruthy()
+    // Every request is refused from now on, the renewal of the token included
+    globalThis.fetch = vi.fn(async () => asResponse({ ok: false, status: 401, json: async () => ({ detail: 'Not signed in.' }) }))
+    await act(async () => {
+      await expect(api.getDocuments()).rejects.toThrow(api.SESSION_EXPIRED_MESSAGE)
+    })
+    expect(where()).toBe('/')
+    expect(screen.getByText(api.SESSION_EXPIRED_MESSAGE)).toBeTruthy()
+    expect(screen.queryByText('Tirth')).toBeNull()
+    expect(api.logout).toHaveBeenCalled()  // the refresh cookie is removed on the server too
   })
 })

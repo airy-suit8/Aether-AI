@@ -1,10 +1,13 @@
 import { useState, useCallback, useEffect } from 'react'
+import type { ReactNode } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router'
 import LandingPage from './components/landing/LandingPage'
 import ChatLayout from './components/chat/ChatLayout'
 import ToastContainer from './components/common/ToastContainer'
 import type { Toast } from './components/common/ToastContainer'
 import type { ToastType } from './components/chat/types'
 import { useAuth } from './services/AuthContext'
+import { useSignOut } from './services/useSignOut'
 import { getMe, refreshSession, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './services/api'
 import { PrismRoot } from './design/prism'
 import type { Theme } from './design/prism'
@@ -21,16 +24,31 @@ function readTheme(): Theme {
   }
 }
 
+/** A workspace page for signed-in users only; anyone else is sent to sign in, and back here after. */
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAuth()
+  const location = useLocation()
+  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  return children
+}
+
 /**
- * App.tsx — Root Application Controller
- * Manages view routing (landing ↔ chat), the theme and global toast notifications.
+ * App.tsx — the root: the theme, toasts, the restored sign-in and the pages.
+ *
+ *   /                 the start page
+ *   /login            the start page with the sign-in sheet open
+ *   /chat             the most recent conversation, or a new one
+ *   /chat/:threadId   one conversation; the thread id is its session_id
+ *   /settings         the workspace with the settings sheet open
+ *
+ * The workspace pages share one ChatLayout, so opening settings keeps the conversation as it is.
  */
 export default function App() {
-  const [view, setView] = useState<'landing' | 'chat'>('landing')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [theme, setThemeState] = useState<Theme>(readTheme)
   const [restoring, setRestoring] = useState(true)
-  const { isAuthenticated, login, logout } = useAuth()
+  const { login } = useAuth()
+  const signOut = useSignOut()
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next)
@@ -50,16 +68,8 @@ export default function App() {
     }, duration)
   }, [])
 
-  const navigateToChat = useCallback(() => {
-    setView('chat')
-  }, [])
-
-  const navigateToLanding = useCallback(() => {
-    setView('landing')
-  }, [])
-
   // A reload keeps the user signed in: the sign-in cookie gives a new token, /auth/me the name.
-  // Until that is known nothing is shown, so the start page does not flash before the workspace.
+  // Until that is known no page is shown, so a workspace page is not sent to sign in first.
   useEffect(() => {
     let cancelled = false
     const restore = async () => {
@@ -69,9 +79,8 @@ export default function App() {
         const me = await getMe()
         if (cancelled) return
         login(session.access_token, me.username)
-        setView('chat')
       } catch {
-        // The server is unreachable: show the start page, signed out
+        // The server is unreachable: show the page signed out
       } finally {
         if (!cancelled) setRestoring(false)
       }
@@ -80,28 +89,37 @@ export default function App() {
     return () => { cancelled = true }
   }, [login])
 
-  // The server rejected the token (expired, or the secret changed): log out and say why
+  // The session could not be renewed (expired, or the secret changed): sign out to the start page and say why
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      logout()
-      setView('landing')
+      signOut()
       addToast(SESSION_EXPIRED_MESSAGE, 'error')
     })
     return () => setUnauthorizedHandler(null)
-  }, [logout, addToast])
+  }, [signOut, addToast])
+
+  const start = <LandingPage theme={theme} onTheme={setTheme} />
+  const workspace = (
+    <RequireAuth>
+      <ChatLayout addToast={addToast} theme={theme} onTheme={setTheme} />
+    </RequireAuth>
+  )
 
   return (
     <PrismRoot theme={theme}>
-      {!restoring && (view === 'landing' || !isAuthenticated) && (
-        <LandingPage onStartChat={navigateToChat} theme={theme} onTheme={setTheme} />
-      )}
-      {!restoring && view === 'chat' && isAuthenticated && (
-        <ChatLayout
-          onNavigateHome={navigateToLanding}
-          addToast={addToast}
-          theme={theme}
-          onTheme={setTheme}
-        />
+      {!restoring && (
+        <Routes>
+          <Route element={start}>
+            <Route index />
+            <Route path="login" />
+          </Route>
+          <Route element={workspace}>
+            <Route path="chat" />
+            <Route path="chat/:threadId" />
+            <Route path="settings" />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       )}
       <ToastContainer toasts={toasts} />
     </PrismRoot>
