@@ -3,7 +3,6 @@
 import os
 import tempfile
 
-import database
 import rag_engine
 from fakes import HashingEmbeddings
 from src.core.config import settings
@@ -11,7 +10,7 @@ from src.core.config import settings
 
 def test_stores_point_at_temp_dirs():
     tmp = tempfile.gettempdir()
-    assert str(database.DB_PATH).startswith(tmp)
+    assert str(settings.db_path).startswith(tmp)
     assert str(rag_engine.STORE_DIR).startswith(tmp)
     assert str(settings.log_dir).startswith(tmp)
 

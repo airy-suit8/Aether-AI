@@ -3,7 +3,7 @@
 import jwt
 import pytest
 
-import database
+from src.db import database
 from helpers import upload_text, ask, ask_stream
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"

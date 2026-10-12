@@ -29,7 +29,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from pydantic import BaseModel, Field
 
-from database import (
+from src.db.database import (
     save_conversation,
     get_conversation_history,
     clear_conversation as db_clear_conversation,

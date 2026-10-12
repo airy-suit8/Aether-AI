@@ -2,7 +2,8 @@
 database.py — SQLite Persistence Layer
 
 Stores conversation history and document metadata in a local SQLite database.
-Zero external dependencies — sqlite3 ships with Python.
+Zero external dependencies — sqlite3 ships with Python. Importing this module opens nothing;
+the database file is set by settings.db_path (AETHER_DB_PATH).
 
 Tables:
   conversations — stores every Q&A turn with timestamps
@@ -11,13 +12,10 @@ Tables:
 
 import sqlite3
 import threading
-from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from src.core.config import settings
-
-DB_PATH = Path(settings.db_path)
 
 # Thread-safe lock for write operations
 _db_lock = threading.Lock()
@@ -25,7 +23,7 @@ _db_lock = threading.Lock()
 
 def _get_connection() -> sqlite3.Connection:
     """Create a connection with row factory for dict-like access."""
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(settings.db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")  # Better concurrent read performance
     conn.execute("PRAGMA foreign_keys=ON")
@@ -33,7 +31,7 @@ def _get_connection() -> sqlite3.Connection:
 
 
 def init_db():
-    """Create tables if they don't exist. Called once on startup."""
+    """Create tables if they don't exist. Called once, from the app's lifespan hook."""
     with _db_lock:
         conn = _get_connection()
 
@@ -246,6 +244,3 @@ def clear_user_documents(user_id: int):
         conn.commit()
         conn.close()
 
-
-# Initialize on import
-init_db()

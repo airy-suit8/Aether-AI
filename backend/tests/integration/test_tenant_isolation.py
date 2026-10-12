@@ -8,7 +8,7 @@ Each test runs twice, once with Alice as the owner and Bob as the other user, th
 import jwt
 import pytest
 
-import database
+from src.db import database
 import rag_engine
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
