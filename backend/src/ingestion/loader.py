@@ -13,6 +13,9 @@ be read raises DocumentError, whose message is safe to show the person who uploa
 import codecs
 import io
 import math
+import os
+import re
+import unicodedata
 import zipfile
 from datetime import datetime, time
 from pathlib import Path
@@ -35,6 +38,28 @@ ROWS_PER_DOCUMENT = 50
 
 class DocumentError(ValueError):
     """An upload that cannot be read. The message names no server path and is shown to the user."""
+
+
+FILENAME_MAX_CHARS = 150
+# Not allowed in a Windows file name, and "<", ">" and quotes would read as markup in the prompt
+_FILENAME_FORBIDDEN = re.compile(r'[<>:"/\\|?*]')
+
+
+def clean_filename(name: str) -> str:
+    """
+    An uploaded file's name as the app stores, lists and quotes it (S5): the last part of any
+    path, without control or invisible formatting characters (a right-to-left override can make
+    "txt.exe" display as "exe.txt"), characters a Windows name cannot hold replaced by "_",
+    spaces collapsed, at most FILENAME_MAX_CHARS long with its extension kept.
+    """
+    name = re.split(r"[/\\]", name or "")[-1]
+    name = "".join(c for c in name if unicodedata.category(c) not in ("Cc", "Cf"))
+    name = " ".join(_FILENAME_FORBIDDEN.sub("_", name).split()).rstrip(".")  # Windows drops a trailing dot
+    stem, ext = os.path.splitext(name)
+    if len(name) > FILENAME_MAX_CHARS:
+        ext = ext[:16]
+        name = stem[:FILENAME_MAX_CHARS - len(ext)].rstrip() + ext
+    return name if os.path.splitext(name)[0] else "document" + ext
 
 
 # ── Native parsers ────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ from src.api.schemas import DocumentStatus, UploadResponse
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, upload_logger
 from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document
-from src.ingestion.loader import SUPPORTED_EXTENSIONS
+from src.ingestion.loader import SUPPORTED_EXTENSIONS, clean_filename
 from src.pipeline.documents import (
     accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
 )
@@ -94,7 +94,7 @@ async def _receive_upload(request: Request) -> Tuple[str, str, int, str]:
     upload = form.get("file")
     if upload is None or isinstance(upload, str):
         raise HTTPException(status_code=422, detail=NO_FILE)
-    filename = upload.filename or "unknown"
+    filename = clean_filename(upload.filename or "")  # S5: the name is stored, listed and quoted to the model
     try:
         path, size, file_hash = await run_in_threadpool(_copy_to_temp_file, upload.file, filename)
     finally:
