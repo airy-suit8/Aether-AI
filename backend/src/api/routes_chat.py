@@ -13,6 +13,7 @@ from src.api.schemas import ChatRequest, ChatResponse, FeedbackRequest, SessionL
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, request_logger
 from src.db.database import get_session_turns, get_sessions, update_conversation_feedback
+from src.llm.llm_client import MODEL_BUSY, is_unavailable
 from src.memory.conversation import clear_session
 from src.pipeline import rag
 
@@ -37,7 +38,10 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
 
     try:
         result = rag.answer(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode)
-    except Exception:
+    except Exception as e:
+        if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
+            log_event(error_logger, "chat_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
+            raise HTTPException(status_code=503, detail=MODEL_BUSY)
         raise server_error(request, "chat_failed", user_id=user_id, mode=mode, session=chat_request.session_id)
 
     # The question's length is logged, never its text (S10)
@@ -91,11 +95,15 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
         try:
             for event in rag.events(user_id, chat_request.question, session_id=session, mode=mode):
                 yield f"data: {json.dumps(event)}\n\n"
-        except Exception:
-            log_event(error_logger, "stream_failed", level=logging.ERROR, exc_info=True,
-                      user_id=user_id, mode=mode, session=session)
+        except Exception as e:
+            if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
+                log_event(error_logger, "stream_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
+                message = MODEL_BUSY
+            else:
+                log_event(error_logger, "stream_failed", level=logging.ERROR, exc_info=True,
+                          user_id=user_id, mode=mode, session=session)
+                message = f"The answer could not be generated. Please try again. Reference: {ref}"
             # A separate event type, so the UI shows an error instead of keeping it as an answer
-            message = f"The answer could not be generated. Please try again. Reference: {ref}"
             yield f"data: {json.dumps({'type': 'error', 'message': message, 'reference': ref})}\n\n"
 
     return StreamingResponse(

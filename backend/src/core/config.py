@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.3
     tool_temperature: float = 0.0          # the agent and the evaluation judge
     llm_timeout_seconds: float = 120.0
+    # A model call that fails for quota (429) or availability (500, 502, 503, 504) is tried again,
+    # up to llm_max_attempts calls in all, after llm_retry_seconds, then twice that, and so on (B10).
+    # Any other failure is not retried. The Google client's own retries are off: they retried
+    # six times, which held a request for about 60 s during the Gemini outage of 12 Oct 2026.
+    llm_max_attempts: int = 3
+    llm_retry_seconds: float = 2.0
     llm_max_output_tokens: int = 8192
     embedding_model: str = "models/gemini-embedding-001"
     embedding_timeout_seconds: float = 60.0
