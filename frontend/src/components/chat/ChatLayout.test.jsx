@@ -8,11 +8,14 @@ import * as api from '../../services/api'
 vi.mock('../../services/api', async (importOriginal) => ({
   ...(await importOriginal()),
   getDocumentsDetailed: vi.fn(),
+  getDocument: vi.fn(),
   deleteDocument: vi.fn(),
   sendChatStream: vi.fn(),
   sendChat: vi.fn(),
   uploadDocument: vi.fn(),
   clearSession: vi.fn(),
+  getSessions: vi.fn(),
+  getSessionMessages: vi.fn(),
 }))
 
 const SOURCE = {
@@ -44,6 +47,10 @@ describe('ChatLayout', () => {
     vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [{ id: 7, filename: 'zephyr_manual.txt' }], count: 1 })
     vi.mocked(api.deleteDocument).mockReset()
     vi.mocked(api.sendChatStream).mockReset()
+    vi.mocked(api.clearSession).mockReset()
+    vi.mocked(api.getSessions).mockReset()
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
+    vi.mocked(api.getSessionMessages).mockReset()
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {
@@ -143,5 +150,110 @@ describe('ChatLayout', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm removing zephyr_manual.txt' }))
     expect(addToast).toHaveBeenCalledWith('No such document.', 'error')
     expect(await screen.findByRole('button', { name: 'Remove zephyr_manual.txt' })).toBeTruthy()
+  })
+
+  it('does not send a file over the 50 MB limit, and says why', async () => {
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    const big = new File(['x'], 'huge.pdf', { type: 'application/pdf' })
+    Object.defineProperty(big, 'size', { value: 50 * 1024 * 1024 + 1 })
+    await user.upload(document.querySelector('input[type="file"]'), big)
+    expect(api.uploadDocument).not.toHaveBeenCalled()
+    expect(addToast).toHaveBeenCalledWith('huge.pdf is larger than 50 MB, the most one file may be.', 'error')
+  })
+
+  it('uploads a file, waits while it is read, and says how many passages it made', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 9, filename: 'plan.pdf', status: 'processing', replaces: true })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 9, filename: 'plan.pdf', status: 'ready', pages: 3, chunks: 12 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]'), new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith(
+      'Added plan.pdf: 12 passages from 3 pages. It replaced the earlier file of that name.', 'success'))
+    expect(api.getDocument).toHaveBeenCalledWith(9)
+    expect(api.deleteDocument).not.toHaveBeenCalled()
+  })
+
+  it('shows why an upload could not be read, and takes it out of the library', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 10, filename: 'scan.pdf', status: 'processing', replaces: false })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockResolvedValue({
+      id: 10, filename: 'scan.pdf', status: 'failed', error: "'scan.pdf' has no text to read.", pages: 0, chunks: 0,
+    })
+    vi.mocked(api.deleteDocument).mockResolvedValue({ filename: 'scan.pdf', deleted: 0 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]'), new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith("'scan.pdf' has no text to read.", 'error'))
+    expect(api.deleteDocument).toHaveBeenCalledWith(10)
+  })
+
+  it('marks a document that is still being read, or could not be read, in words', async () => {
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [
+      { id: 1, filename: 'big.pdf', status: 'processing' },
+      { id: 2, filename: 'bad.pdf', status: 'failed', error: 'It is damaged.' },
+      { id: 3, filename: 'good.pdf', status: 'ready' },
+    ], count: 3 })
+    renderChat()
+    expect(await screen.findByText('Reading')).toBeTruthy()
+    expect(screen.getByText('Could not be read').getAttribute('title')).toBe('It is damaged.')
+    expect(screen.getAllByText(/Reading|Could not be read/)).toHaveLength(2)
+  })
+
+  it('picks up the latest conversation, with its sources, after a reload', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [{ session_id: 'session_42', title: 'How often?', turns: 1 }] })
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', turns: [{
+      turn_id: 5, question: 'How often are the blades inspected?', answer: 'Every **90 days**.',
+      sources: [SOURCE], confidence: 0.81, mode: 'original', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
+    }] })
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone({ sources: [], confidence: 0 }))
+    renderChat()
+    expect(await screen.findByText('How often are the blades inspected?')).toBeTruthy()
+    expect((await screen.findByText('90 days')).tagName).toBe('STRONG')
+    expect(within(screen.getByText('Sources').parentElement).getByText(SOURCE.snippet)).toBeTruthy()
+    expect(screen.getByText('default mode')).toBeTruthy()
+    expect(api.getSessionMessages).toHaveBeenCalledWith('session_42')
+
+    // The next question goes on in the same conversation
+    await ask('And who inspects them?')
+    expect(api.sendChatStream.mock.calls[0][0].sessionId).toBe('session_42')
+  })
+
+  it('starts a new thread without deleting the old one from the server', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken('An answer.')
+      onDone({ sources: [], confidence: 0 })
+    })
+    const { addToast } = renderChat()
+    await ask('A first question')
+    const before = api.sendChatStream.mock.calls[0][0].sessionId
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'New thread' }))
+    expect(api.clearSession).not.toHaveBeenCalled()
+    expect(addToast).toHaveBeenCalledWith('New thread started', 'info')
+    expect(screen.queryByText('A first question')).toBeNull()
+    await ask('A second question')
+    expect(api.sendChatStream.mock.calls[1][0].sessionId).not.toBe(before)
+  })
+
+  it('deletes the conversation from the server only when asked to in Settings', async () => {
+    vi.mocked(api.clearSession).mockResolvedValue({ message: 'Session cleared' })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Clear conversation' }))
+    expect(api.clearSession).toHaveBeenCalledTimes(1)
+    expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
+  })
+
+  it('says "1 passage from 1 page", not "1 passages"', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 11, filename: 'note.txt', status: 'processing', replaces: false })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 11, filename: 'note.txt', status: 'ready', pages: 1, chunks: 1 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]'), new File(['hi'], 'note.txt', { type: 'text/plain' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Added note.txt: 1 passage from 1 page.', 'success'))
   })
 })

@@ -144,7 +144,10 @@
   background: var(--p-surface-3);
 }
 
+.x-doc__label { display: grid; min-width: 0; }
 .x-doc__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.x-doc__state { font-size: var(--p-text-xs); color: var(--p-ink-3); }
+.x-doc__state[data-tone="bad"] { color: var(--p-bad); }
 
 /* Remove: a quiet cross that shows with the row. One click arms it ("Remove?"), a second confirms. */
 .x-doc { grid-template-columns: auto minmax(0, 1fr) auto; }

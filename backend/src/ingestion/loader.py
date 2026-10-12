@@ -13,6 +13,10 @@ be read raises DocumentError, whose message is safe to show the person who uploa
 import codecs
 import io
 import math
+import os
+import re
+import unicodedata
+import zipfile
 from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -34,6 +38,28 @@ ROWS_PER_DOCUMENT = 50
 
 class DocumentError(ValueError):
     """An upload that cannot be read. The message names no server path and is shown to the user."""
+
+
+FILENAME_MAX_CHARS = 150
+# Not allowed in a Windows file name, and "<", ">" and quotes would read as markup in the prompt
+_FILENAME_FORBIDDEN = re.compile(r'[<>:"/\\|?*]')
+
+
+def clean_filename(name: str) -> str:
+    """
+    An uploaded file's name as the app stores, lists and quotes it (S5): the last part of any
+    path, without control or invisible formatting characters (a right-to-left override can make
+    "txt.exe" display as "exe.txt"), characters a Windows name cannot hold replaced by "_",
+    spaces collapsed, at most FILENAME_MAX_CHARS long with its extension kept.
+    """
+    name = re.split(r"[/\\]", name or "")[-1]
+    name = "".join(c for c in name if unicodedata.category(c) not in ("Cc", "Cf"))
+    name = " ".join(_FILENAME_FORBIDDEN.sub("_", name).split()).rstrip(".")  # Windows drops a trailing dot
+    stem, ext = os.path.splitext(name)
+    if len(name) > FILENAME_MAX_CHARS:
+        ext = ext[:16]
+        name = stem[:FILENAME_MAX_CHARS - len(ext)].rstrip() + ext
+    return name if os.path.splitext(name)[0] else "document" + ext
 
 
 # ── Native parsers ────────────────────────────────────────────────────────────
@@ -140,13 +166,19 @@ def _parse_tabular(file_path: str, filename: str, ext: str) -> List[Document]:
     each Document starts with the sheet's name. Values are kept as written: codes keep their
     leading zeros and whole numbers stay whole (R9).
     """
+    # One row more than the limit is read, to tell a file at the limit from one over it (S4)
+    nrows = settings.max_table_rows + 1
     if ext == ".csv":
         # dtype=str: every value exactly as typed
         sheets: Dict[str, pd.DataFrame] = {"": pd.read_csv(
-            io.StringIO(_decode(file_path, filename)), dtype=str, keep_default_na=False)}
+            io.StringIO(_decode(file_path, filename)), dtype=str, keep_default_na=False, nrows=nrows)}
     else:
         # dtype=object: text cells stay text ("007"); numbers arrive as numbers and _cell() prints them
-        sheets = pd.read_excel(file_path, sheet_name=None, dtype=object, keep_default_na=False)
+        sheets = pd.read_excel(file_path, sheet_name=None, dtype=object, keep_default_na=False, nrows=nrows)
+    if sum(len(df) for df in sheets.values()) > settings.max_table_rows:
+        raise DocumentError(
+            f"'{filename}' has more than {settings.max_table_rows:,} rows, the most one file may have. "
+            "Split it into smaller files and upload those.")
 
     docs: List[Document] = []
 
@@ -234,6 +266,24 @@ def load_document_langchain(file_path: str, filename: str) -> List[Document]:
     return raw_docs
 
 
+ZIP_FORMATS = (".docx", ".xlsx")
+
+
+def _check_unpacked_size(file_path: str, filename: str) -> None:
+    """Refuse a Word or Excel file (a zip archive) that would unpack to more than
+    settings.max_unpacked_bytes, before a parser unpacks it (S4). The sizes are the ones the
+    archive declares; the zip reader stops at them, so a file cannot unpack to more."""
+    try:
+        with zipfile.ZipFile(file_path) as archive:
+            entries = archive.infolist()
+    except zipfile.BadZipFile:
+        return  # not a zip: the parser reports the file as unreadable
+    if sum(entry.file_size for entry in entries) > settings.max_unpacked_bytes:
+        raise DocumentError(
+            f"'{filename}' unpacks to more than {settings.max_unpacked_bytes // (1024 * 1024)}MB, the most "
+            "one file may hold. Split it into smaller files and upload those.")
+
+
 def load_document(file_path: str, filename: str) -> List[Document]:
     """
     Load a file with the loader settings.document_loader names.
@@ -244,6 +294,8 @@ def load_document(file_path: str, filename: str) -> List[Document]:
     """
     load = load_document_langchain if settings.document_loader == "langchain" else load_document_native
     try:
+        if Path(filename).suffix.lower() in ZIP_FORMATS:
+            _check_unpacked_size(file_path, filename)
         return load(file_path, filename)
     except DocumentError:
         raise

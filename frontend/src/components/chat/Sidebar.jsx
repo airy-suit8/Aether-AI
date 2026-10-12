@@ -126,7 +126,14 @@ export default function Sidebar({
               return (
                 <li key={doc.id} className="x-doc" data-removing={removing === doc.id}>
                   <span className="x-doc__kind" aria-hidden="true">{kindOf(doc.filename)}</span>
-                  <span className="x-doc__name" title={doc.filename}>{doc.filename}</span>
+                  <span className="x-doc__label">
+                    <span className="x-doc__name" title={doc.filename}>{doc.filename}</span>
+                    {/* Uploads are read in the background; a word, not only a colour, says how it went */}
+                    {doc.status === 'processing' && <span className="x-doc__state">Reading</span>}
+                    {doc.status === 'failed' && (
+                      <span className="x-doc__state" data-tone="bad" title={doc.error || undefined}>Could not be read</span>
+                    )}
+                  </span>
                   <button
                     type="button"
                     className="x-doc__remove"

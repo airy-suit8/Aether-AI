@@ -1,6 +1,7 @@
 """
-End-to-end: register -> log in -> upload -> ask in every mode -> cited answer -> saved turn
--> feedback -> tenant isolation -> duplicate rejected -> delete (T1, T2).
+End-to-end: register -> log in -> upload (read in the background) -> ask in every mode -> cited
+answer -> saved turn -> a reload: renew the sign-in, who am I, the latest conversation -> feedback
+on that turn -> tenant isolation -> duplicate rejected -> delete (T1, T2; Sprint 5 items 2, 7-9).
 
 Runs entirely through the HTTP API with fake embeddings, a scripted fake chat model,
 a temp database and a temp vector store (see conftest.py). No API key, no network.
@@ -30,7 +31,7 @@ def _user_id(headers):
 def _turns(user_id, session_id):
     conn = database._get_connection()
     rows = conn.execute(
-        "SELECT question, answer, confidence, mode, feedback FROM conversations "
+        "SELECT id, question, answer, confidence, mode, feedback FROM conversations "
         "WHERE user_id = ? AND session_id = ? ORDER BY id",
         (user_id, session_id),
     ).fetchall()
@@ -49,15 +50,17 @@ def _assert_cites_the_file(sources):
 
 def test_end_to_end(client, make_user):
     # ── Register and log in two users (make_user does both over HTTP) ──────────
-    _, alice = make_user("alice")
+    alice_name, alice = make_user("alice")
     _, bob = make_user("bob")
     alice_id = _user_id(alice)
 
     # ── Alice uploads a small text file ─────────────────────────────────────────
     up = upload_text(client, alice, filename=FILENAME, text=DOC_TEXT)
-    assert up.status_code == 200, up.text
+    assert up.status_code == 202, up.text  # accepted, and read in the background (R12)
     assert up.json()["filename"] == FILENAME
-    chunks = up.json()["chunks"]
+    document = client.get(f"/api/v1/documents/{up.json()['document_id']}", headers=alice).json()
+    assert document["status"] == "ready"
+    chunks = document["chunks"]
     assert chunks >= 1
 
     listed = client.get("/api/v1/documents", headers=alice).json()
@@ -90,9 +93,25 @@ def test_end_to_end(client, make_user):
             assert turns[0]["mode"] == stored_mode
             assert turns[0]["confidence"] > 0
 
-    # ── Feedback lands on the latest turn; clearing the session removes it ─────
+    # ── A reload: the cookie renews the sign-in, /auth/me names the user, and the
+    #    latest conversation comes back as it was shown ─────────────────────────
+    # The test client keeps one cookie jar, Bob's since he signed in last: Alice signs in again
+    # first, as her own browser would hold her cookie
+    client.post("/api/v1/auth/login", data={"username": alice_name, "password": "securepass123"})
+    renewed = client.post("/api/v1/auth/refresh")
+    assert renewed.status_code == 200
+    alice = {"Authorization": f"Bearer {renewed.json()['access_token']}"}
+    assert client.get("/api/v1/auth/me", headers=alice).json()["username"] == alice_name
+    latest = client.get("/api/v1/sessions", headers=alice).json()["sessions"][0]["session_id"]
+    assert latest == "e2e-langchain-stream"
+    shown = client.get(f"/api/v1/sessions/{latest}/messages", headers=alice).json()["turns"]
+    assert [t["question"] for t in shown] == [QUESTION]
+    _assert_cites_the_file(shown[0]["sources"])
+
+    # ── Feedback lands on the turn it names; clearing the session removes it ───
+    turn_id = _turns(alice_id, "e2e-default")[0]["id"]
     assert client.post("/api/v1/feedback", headers=alice,
-                       json={"session_id": "e2e-default", "feedback": 1}).status_code == 200
+                       json={"turn_id": turn_id, "feedback": 1}).status_code == 200
     assert _turns(alice_id, "e2e-default")[0]["feedback"] == 1
     cleared = client.post("/api/v1/session/clear", headers=alice, json={"question": "", "session_id": "e2e-default"})
     assert cleared.status_code == 200
@@ -126,6 +145,7 @@ def test_end_to_end(client, make_user):
     ("/api/v1/upload", "post"), ("/api/v1/chat", "post"), ("/api/v1/chat/stream", "post"),
     ("/api/v1/feedback", "post"), ("/api/v1/session/clear", "post"),
     ("/api/v1/documents", "get"), ("/api/v1/documents/detailed", "get"), ("/api/v1/documents", "delete"),
+    ("/api/v1/documents/1", "get"),
 ])
 def test_protected_routes_require_a_token(client, path, method):
     assert getattr(client, method)(path).status_code == 401

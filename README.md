@@ -131,7 +131,7 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 | Package | What it holds |
 |---|---|
 | `core/` | `config.py` (every setting, the only place that reads the environment or `.env`), `security.py` (passwords and login tokens), `logging.py` |
-| `api/` | `schemas.py` (request and response models), `deps.py` (current user, rate limiter), and one router per resource: `routes_auth`, `routes_chat`, `routes_documents`, `routes_health` |
+| `api/` | `schemas.py` (request and response models), `deps.py` (current user, rate limiter), `middleware.py` (request id and security headers), `errors.py` (what a server error tells the client), and one router per resource: `routes_auth`, `routes_chat`, `routes_documents`, `routes_health` |
 | `db/` | `database.py`: SQLite for users, document records and conversations |
 | `ingestion/` | `loader.py`: reads PDF, DOCX, text, CSV and Excel files (native parsers, or LangChain's loaders when `AETHER_DOCUMENT_LOADER=langchain`) |
 | `chunking/` | `chunker.py`: splits documents into overlapping chunks |
@@ -176,6 +176,33 @@ Each run is saved as `docs\evaluation\<label>.json`, and `docs\evaluation.md` is
 
 To compare two settings, run it once for each with a different label. For example, `AETHER_ANSWER_FROM=chunks` in `backend\.env` makes the app write its answer straight from the retrieved passages and cite them as [1], [2], with no summary step (one model call per answer, not two). The default stays `summary` until a run shows which is better.
 
+## Running it where other people can reach it
+
+Before anyone else can open the app (an office network, a shared machine), add this line to `backend\.env`:
+
+```
+AETHER_ENVIRONMENT=production
+```
+
+It turns off the API pages (`/docs`, `/redoc`, `/openapi.json`), which list every route to anyone who asks. Everything else works the same.
+
+Two more settings are worth setting there:
+
+- `AETHER_INVITE_CODE=<a code>`: registering then needs that code, typed into the "Invite code" field of the sign-up form. Give it only to the people who should have an account. Left empty (the default), anyone who can open the page can register.
+- `AETHER_COOKIE_SECURE=true`, but only once the app is served over HTTPS: it keeps the sign-in cookie off plain HTTP.
+
+**Uploads.** An upload is accepted at once and read in the background: the library shows it as "Reading" until its passages are stored, and the app says how many it made, or why the file could not be read. A file still being read when the backend stops is marked as not read when it starts again; upload it again. A file may be up to 50 MB (`AETHER_MAX_UPLOAD_BYTES`); it is written to disk as it arrives and refused as soon as it passes the limit, and the sign-in is checked before any of it is read. A Word or Excel file may unpack to at most 200 MB, a CSV or workbook may have at most 100,000 rows, a document may make at most 5,000 passages, and each user may keep 100 documents (`AETHER_MAX_UNPACKED_BYTES`, `AETHER_MAX_TABLE_ROWS`, `AETHER_MAX_CHUNKS_PER_DOCUMENT`, `AETHER_MAX_DOCUMENTS_PER_USER`). Each refusal says which limit was reached.
+
+**Rate limits.** Every route has one: requests that carry a valid sign-in count against that user, and the rest against their address, so people behind one office proxy do not share an allowance. Sign-up, sign-in, upload and chat have their own limits; everything else allows 120 requests a minute (`AETHER_RATE_LIMIT_DEFAULT`). The counts are kept in the server's memory and start again when it restarts.
+
+**Conversations.** Every question and answer is saved with the sources shown beside it. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Reloading the page keeps you signed in and shows your latest conversation again.
+
+**Signing in.** Passwords are 8 characters to 72 bytes (72 letters, fewer with accents or symbols). Usernames use the letters A to Z, digits, hyphens and underscores, and their case does not matter: `Tirth` and `tirth` are the same account. A sign-in lasts 30 minutes and renews itself while the app is open, through a cookie that page scripts cannot read, so reloading the page keeps you signed in; a week without use signs you out. Sign-ups, sign-ins and refused tokens are written to `backend\logs\auth.log`, never with a password.
+
+When Gemini is over its quota or unavailable, each model call is tried three times in all, waiting 2 and then 4 seconds (`AETHER_LLM_MAX_ATTEMPTS`, `AETHER_LLM_RETRY_SECONDS`), and then the app says "The AI service is busy or over its usage limit right now. Please try again in a minute." Other errors are not retried. A free-tier key allows only a few questions a day; for a demo, use a billed key, and on an office network that inspects HTTPS, add the organisation's root certificate to the machine's trust store rather than turning certificate checks off.
+
+When something fails on the server, the app shows a general message with a reference, for example `Reference: 3f2a9c81d0b4`. The same reference is on the matching line of `backend\logs\errors.log`, with the full error. Every response also carries it in an `X-Request-ID` header. The log files hold one JSON object per line, with the user's id and the request's reference, and never the text of a question.
+
 ## Where data is kept
 
 All of these are created on first run and are ignored by git:
@@ -183,8 +210,12 @@ All of these are created on first run and are ignored by git:
 | Path | Contents |
 |---|---|
 | `backend/.env` | Your API key and JWT secret |
-| `backend/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
-| `backend/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
+| `data/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
+| `data/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
 | `backend/logs/` | Request, upload and error logs (`AETHER_LOG_DIR`) |
+
+Before Sprint 5 the database and the vector store were kept in `backend/aether.db` and `backend/vector_store/`. If they are still there and nothing is in `data/` yet, the backend keeps using them and says so in `backend/logs/errors.log`. To move them, stop the backend and move both into a `data` folder in the project folder; nothing else needs to change.
+
+Each user's chunks are filed under a random tenant id from their user record, not under the user's number, because a new database hands the same numbers out again. A store made before this change is re-filed when the backend starts; this is safe to run any number of times and deletes nothing.
 
 Uploaded text and questions are sent to Google's Gemini API. Do not upload confidential documents until you have agreed with your mentor which documents and which API tier are allowed.

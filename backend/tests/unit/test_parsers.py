@@ -4,6 +4,7 @@ and the LangChain loaders (Task 12; used when settings.document_loader is "langc
 Tests marked R9 were known defects until Sprint 4.
 """
 
+import json
 import tempfile
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from src.core.logging import error_logger
 from src.ingestion import loader
 from src.ingestion.loader import DocumentError
 from filemakers import make_docx, make_pdf, make_xls, make_xlsx
+from helpers import status_of
 
 ROWS = [["Part", "Qty", "Bin"], ["Bolt", 5, "A1"], ["Nut", 12, "B2"], ["Washer", 30, "C3"]]
 
@@ -234,30 +236,33 @@ def test_excel_dates_and_decimals_read_as_a_person_would_write_them(tmp_path):
     ("broken.xlsx", b"PK this is not really a zip"),
     ("broken.xls", b"this is not really a workbook"),
 ])
-def test_corrupt_upload_is_a_clean_422(client, make_user, filename, content):
-    # R9: these returned 500, and for DOCX the message quoted the server's temp path
+def test_corrupt_upload_fails_with_a_clean_message(client, make_user, filename, content):
+    # R9: these returned 500, and for DOCX the message quoted the server's temp path. The file is
+    # read in the background since Sprint 5 (R12), so the message is in its status.
     _, headers = make_user("corrupt")
     r = client.post("/api/v1/upload", headers=headers, files={"file": (filename, content, "application/octet-stream")})
-    assert r.status_code == 422
+    document = status_of(client, headers, r)
     kind = filename.rsplit(".", 1)[1]
-    assert r.json()["detail"] == (
+    assert document["status"] == "failed"
+    assert document["error"] == (
         f"'{filename}' could not be read. It may be damaged, password-protected, or not really a {kind} file.")
-    assert tempfile.gettempdir() not in r.text
+    assert tempfile.gettempdir() not in str(document)
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
 
     # The parser's own error is not lost: it is in the error log, for whoever runs the server
     for handler in error_logger.handlers:
         handler.flush()
-    logged = [line for line in (settings.log_dir / "errors.log").read_text(encoding="utf-8").splitlines()
-              if f"UPLOAD PARSE ERROR | file={filename}" in line]
-    assert logged and "cause=" in logged[-1] and "cause=None" not in logged[-1]
+    lines = [json.loads(line) for line in (settings.log_dir / "errors.log").read_text(encoding="utf-8").splitlines()]
+    logged = [line for line in lines if line["event"] == "upload_unreadable" and line["file"] == filename]
+    assert logged and logged[-1]["cause"] != "None"
 
 
-def test_a_scanned_pdf_upload_is_a_422_that_says_so(client, make_user, tmp_path):
+def test_a_scanned_pdf_upload_fails_and_says_so(client, make_user, tmp_path):
     _, headers = make_user("scan")
     data = make_pdf(tmp_path / "scan.pdf", [""]).read_bytes()
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("scan.pdf", data, "application/pdf")})
-    assert r.status_code == 422 and "look like scans or photos" in r.json()["detail"]
+    document = status_of(client, headers, r)
+    assert document["status"] == "failed" and "look like scans or photos" in document["error"]
 
 
 # ── LangChain loaders (Task 12) ───────────────────────────────────────────────

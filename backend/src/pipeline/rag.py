@@ -3,7 +3,10 @@ pipeline/rag.py — the one question-answering pipeline.
 
 events() yields what the client sees, in order:
   {"type": "token", "content": str}                      zero or more pieces of the answer
-  {"type": "done", "sources": [...], "confidence": float}  last; agent answers add "tool_used"
+  {"type": "done", "sources": [...], "confidence": float, "turn_id": int | None}
+                                                         last; agent answers add "tool_used"
+turn_id names the saved turn, for feedback (F10); None when no turn was saved (a refusal, or the
+agent's own document search).
 The streaming route sends each event as it comes; answer() collects them for the plain route.
 Errors are raised, not yielded: each route reports them in its own way.
 
@@ -31,9 +34,13 @@ from pydantic import BaseModel, Field
 
 from src.agents.agent import run_agent
 from src.core.config import settings
+from src.core.logging import log_event, request_logger
+from src.db.database import get_tenant_id
 from src.llm import llm_client
 from src.memory.conversation import NO_HISTORY, memory
-from src.prompts.prompt_templates import CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context
+from src.prompts.prompt_templates import (
+    CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context, injection_patterns_in,
+)
 from src.retrieval.retriever import UserRetriever, retriever, rewrite_question
 
 Mode = Literal["default", "hybrid", "agent", "langchain"]
@@ -56,6 +63,7 @@ class RAGResponse(BaseModel):
     confidence: Optional[float] = Field(
         default=0.0, description="Retrieval similarity, 0.0 to 1.0; None when the agent answered without searching the documents")
     tool_used: Optional[str] = Field(default=None, description="Agent mode: which tools answered")
+    turn_id: Optional[int] = Field(default=None, description="The saved turn, for feedback; None when none was saved")
 
 
 # ── What one question did (read by the evaluation harness) ───────────────────
@@ -93,13 +101,14 @@ def is_refusal(answer: str) -> bool:
 # ── The two retrieval-and-generation strategies ──────────────────────────────
 
 def retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
-    """The top chunks for the query, as {"text", "meta", "score"} hits."""
+    """The user's top chunks for the query, as {"text", "meta", "score"} hits."""
+    tenant = get_tenant_id(user_id)  # their chunks' key in the vector store (S2)
     if mode == "langchain":
-        docs = UserRetriever(user_id=user_id, k=settings.top_k).invoke(query)
+        docs = UserRetriever(tenant=tenant, k=settings.top_k).invoke(query)
         return [{"text": d.page_content, "meta": d.metadata, "score": d.metadata["score"]} for d in docs]
     if mode == "hybrid":
-        return retriever.search_hybrid(user_id, query, k=settings.top_k)
-    return retriever.search(user_id, query, k=settings.top_k)
+        return retriever.search_hybrid(tenant, query, k=settings.top_k)
+    return retriever.search(tenant, query, k=settings.top_k)
 
 
 def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace) -> Iterator[str]:
@@ -182,9 +191,19 @@ def _answer_sources(answer: str, results: List[Dict[str, Any]]) -> List[Dict[str
     return _sources(results)
 
 
+def _report_injection_patterns(user_id: int, results: List[Dict[str, Any]]) -> None:
+    """Task 8 as telemetry (S5): log each chunk about to reach the model that reads like an
+    instruction. The chunk itself is sent unchanged."""
+    for r in results:
+        found = injection_patterns_in(r["text"])
+        if found:
+            log_event(request_logger, "injection_pattern_retrieved", user_id=user_id,
+                      source=r["meta"].get("source"), chunk_id=r["meta"].get("chunk_id"), patterns=found)
+
+
 def _refusal(text: str, confidence: float) -> Iterator[Dict[str, Any]]:
     yield {"type": "token", "content": text}
-    yield {"type": "done", "sources": [], "confidence": confidence}
+    yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None}
 
 
 # ── The pipeline ──────────────────────────────────────────────────────────────
@@ -224,6 +243,7 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         trace.refused = True
         yield from _refusal(NOT_FOUND, confidence)
         return
+    _report_injection_patterns(user_id, results)
 
     answer_text = ""
     for chunk in _generate(mode, results, question, history, trace):
@@ -231,9 +251,12 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         yield {"type": "token", "content": chunk}
     trace.refused = is_refusal(answer_text)
 
+    sources = _answer_sources(answer_text, results)
+    turn_id = None
     if save_turn:
-        memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode])
-    yield {"type": "done", "sources": _answer_sources(answer_text, results), "confidence": confidence}
+        turn_id = memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode],
+                                  sources=sources)
+    yield {"type": "done", "sources": sources, "confidence": confidence, "turn_id": turn_id}
 
 
 def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict[str, Any]]:
@@ -245,12 +268,12 @@ def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict
     for i, word in enumerate(result["answer"].split(" ")):
         yield {"type": "token", "content": word if i == 0 else " " + word}
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
-           "tool_used": result["tool_used"]}
+           "tool_used": result["tool_used"], "turn_id": result["turn_id"]}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
            save_turn: bool = True, trace: Optional[Trace] = None) -> Dict[str, Any]:
-    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used"}."""
+    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "turn_id"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
     for event in events(user_id, question, session_id, mode, save_turn, trace):
@@ -263,4 +286,5 @@ def answer(user_id: int, question: str, session_id: str = "default", mode: Mode 
         sources=done.get("sources", []),
         confidence=done.get("confidence", 0.0),
         tool_used=done.get("tool_used"),
+        turn_id=done.get("turn_id"),
     ).model_dump()

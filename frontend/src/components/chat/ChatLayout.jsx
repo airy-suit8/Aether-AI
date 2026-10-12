@@ -3,7 +3,10 @@ import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
-import { sendChat, sendChatStream, uploadDocument, getDocumentsDetailed, deleteDocument, clearSession } from '../../services/api'
+import {
+  sendChat, sendChatStream, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
+  getSessions, getSessionMessages,
+} from '../../services/api'
 import { useAuth } from '../../services/AuthContext'
 import { AmbientField, Lens } from '../../design/prism'
 
@@ -11,6 +14,36 @@ const THEMES = [
   { value: 'system', label: 'System' },
   { value: 'dark', label: 'Dark' },
 ]
+
+// The server refuses larger files (AETHER_MAX_UPLOAD_BYTES); checked here first, so a big file
+// is not sent only to be cut off
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+// An upload is read in the background; its status is checked this often, for at most ten minutes
+const POLL_MS = 1000
+const POLL_LIMIT = 600
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// The database has always called the default mode "original"
+const MODE_OF_STORED = { original: 'default' }
+
+/** A saved turn as the two messages the conversation shows: the question and its answer. */
+function turnToMessages(turn) {
+  return [
+    { id: `q${turn.turn_id}`, role: 'user', content: turn.question, timestamp: turn.created_at },
+    {
+      id: `a${turn.turn_id}`,
+      role: 'assistant',
+      content: turn.answer,
+      sources: turn.sources || [],
+      confidence: turn.confidence || 0,
+      toolUsed: turn.tool_used || null,
+      mode: MODE_OF_STORED[turn.mode] || turn.mode,
+      turnId: turn.turn_id,
+      timestamp: turn.created_at,
+    },
+  ]
+}
 
 const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 901px)').matches : true)
 
@@ -45,6 +78,13 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   const streamRef = useRef(null)
   const abortRef = useRef(null)
+  const mountedRef = useRef(true)
+  const touchedRef = useRef(false)  // the user has asked or started a thread: no restoring over it
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   // Each document is { id, filename, ... }: the id is what removes it
   const refreshDocuments = useCallback(async () => {
@@ -61,6 +101,25 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
     refreshDocuments()
   }, [refreshDocuments])
 
+  // After a reload or a new sign-in, pick up the latest conversation where it was left
+  useEffect(() => {
+    let cancelled = false
+    const restore = async () => {
+      try {
+        const { sessions } = await getSessions()
+        if (!sessions?.length || cancelled) return
+        const { session_id: latest, turns } = await getSessionMessages(sessions[0].session_id)
+        if (cancelled || touchedRef.current || !turns.length) return
+        setSessionId(latest)
+        setMessages(turns.flatMap(turnToMessages))
+      } catch (e) {
+        console.error('Failed to restore the conversation:', e)
+      }
+    }
+    restore()
+    return () => { cancelled = true }
+  }, [])
+
   // A new message always scrolls into view; streamed text only follows if the reader is already at the bottom
   useEffect(() => {
     const el = streamRef.current
@@ -75,6 +134,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   // ── Handle sending a message ──────────────────────────────────────────
   const handleSend = useCallback(async (question) => {
     if (!question.trim() || isLoading) return
+    touchedRef.current = true
 
     const userMessage = {
       id: Date.now(),
@@ -113,6 +173,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
               sources: data.sources || [],
               confidence: data.confidence || 0,
               toolUsed: data.tool_used || null,
+              turnId: data.turn_id ?? null,  // what feedback names it by
               mode,
               timestamp: new Date().toISOString(),
             }
@@ -140,6 +201,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
           sources: result.sources || [],
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
+          turnId: result.turn_id ?? null,
           mode,
           timestamp: new Date().toISOString(),
         }
@@ -163,15 +225,38 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   // ── Handle file upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file) => {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      addToast(`${file.name} is larger than 50 MB, the most one file may be.`, 'error')
+      return
+    }
     setUploadProgress({ filename: file.name, status: 'uploading' })
     try {
-      const result = await uploadDocument(file)
-      addToast(result.message, 'success')
-      setUploadProgress(null)
-      refreshDocuments()
+      const accepted = await uploadDocument(file)
+      refreshDocuments()  // it shows in the library as being read
+      let doc = await getDocument(accepted.document_id)
+      for (let tries = 0; doc.status === 'processing' && tries < POLL_LIMIT && mountedRef.current; tries++) {
+        await pause(POLL_MS)
+        doc = await getDocument(accepted.document_id)
+      }
+      if (!mountedRef.current) return
+      if (doc.status === 'ready') {
+        const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+        const replaced = accepted.replaces ? ' It replaced the earlier file of that name.' : ''
+        addToast(`Added ${doc.filename}: ${count(doc.chunks, 'passage')} from ${count(doc.pages, 'page')}.${replaced}`, 'success')
+      } else if (doc.status === 'failed') {
+        addToast(doc.error || `${doc.filename} could not be read.`, 'error')
+        // Nothing of it was kept; its record leaves the library too
+        await deleteDocument(doc.id).catch(() => {})
+      } else {
+        addToast(`Still reading ${doc.filename}. It will appear in your library when it is ready.`, 'info')
+      }
     } catch (err) {
       addToast(err.message || 'Upload failed', 'error')
-      setUploadProgress(null)
+    } finally {
+      if (mountedRef.current) {
+        setUploadProgress(null)
+        refreshDocuments()
+      }
     }
   }, [addToast, refreshDocuments])
 
@@ -186,20 +271,30 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
     await refreshDocuments()
   }, [addToast, refreshDocuments])
 
-  // ── New thread ────────────────────────────────────────────────────────
-  const handleNewThread = useCallback(async () => {
+  // ── New thread: a fresh session; the old one stays on the server ─────
+  const startThread = useCallback(() => {
+    touchedRef.current = true
     abortRef.current?.abort()
-    try {
-      await clearSession(sessionId)
-    } catch {
-      // Silent — may fail if no session exists yet
-    }
-    const newId = `session_${Date.now()}`
-    setSessionId(newId)
+    setSessionId(`session_${Date.now()}`)
     setMessages([])
     setStreamingText('')
+  }, [])
+
+  const handleNewThread = useCallback(() => {
+    startThread()
     addToast('New thread started', 'info')
-  }, [sessionId, addToast])
+  }, [startThread, addToast])
+
+  // ── Settings: delete the current conversation from the server, then start a new thread ──
+  const handleClearConversation = useCallback(async () => {
+    try {
+      await clearSession(sessionId)
+      startThread()
+      addToast('Conversation deleted', 'info')
+    } catch (err) {
+      addToast(err.message || 'Could not delete the conversation', 'error')
+    }
+  }, [sessionId, startThread, addToast])
 
   const handleLogout = useCallback(() => {
     abortRef.current?.abort()
@@ -283,7 +378,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
           onClose={closeSettings}
           addToast={addToast}
           onDocumentsChanged={refreshDocuments}
-          onClearConversation={handleNewThread}
+          onClearConversation={handleClearConversation}
         />
       )}
     </div>

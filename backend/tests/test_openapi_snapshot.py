@@ -32,8 +32,10 @@ def test_snapshot_lists_every_api_route():
     routes = {(path, method) for path, ops in saved["paths"].items() for method in ops}
     assert routes == {
         ("/api/v1/auth/register", "post"), ("/api/v1/auth/login", "post"), ("/api/v1/health", "get"),
+        ("/api/v1/auth/refresh", "post"), ("/api/v1/auth/logout", "post"), ("/api/v1/auth/me", "get"),
+        ("/api/v1/sessions", "get"), ("/api/v1/sessions/{session_id}/messages", "get"),
         ("/api/v1/upload", "post"), ("/api/v1/chat", "post"), ("/api/v1/feedback", "post"),
         ("/api/v1/chat/stream", "post"), ("/api/v1/session/clear", "post"),
         ("/api/v1/documents", "get"), ("/api/v1/documents", "delete"), ("/api/v1/documents/detailed", "get"),
-        ("/api/v1/documents/{document_id}", "delete"),
+        ("/api/v1/documents/{document_id}", "delete"), ("/api/v1/documents/{document_id}", "get"),
     }

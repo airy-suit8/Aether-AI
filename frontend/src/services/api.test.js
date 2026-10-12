@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sendChatStream, setToken, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './api'
+import { getDocuments, refreshSession, sendChatStream, setToken, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './api'
 
 const encoder = new TextEncoder()
 
@@ -151,5 +151,74 @@ describe('sendChatStream', () => {
     const errors = []
     await sendChatStream({ question: 'q', onError: (e) => errors.push(e.message) })
     expect(errors).toEqual(['Failed to fetch'])
+  })
+})
+
+/** A fetch that answers each call with the next response in the list, recording the calls. */
+function answers(...responses) {
+  globalThis.fetch = vi.fn(async () => responses.shift())
+  return globalThis.fetch
+}
+
+const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body })
+
+describe('renewing the access token', () => {
+  afterEach(() => {
+    setToken(null)
+    setUnauthorizedHandler(null)
+    vi.restoreAllMocks()
+  })
+
+  it('renews an expired token once and sends the request again with the new one', async () => {
+    setToken('expired')
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    const fetch = answers(
+      json(401, { detail: 'Token has expired. Please log in again.' }),
+      json(200, { access_token: 'renewed', token_type: 'bearer', expires_in: 1800 }),
+      json(200, { documents: ['a.txt'], count: 1 }),
+    )
+    expect(await getDocuments()).toEqual({ documents: ['a.txt'], count: 1 })
+    expect(fetch.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
+      ['/api/v1/documents', 'GET'], ['/api/v1/auth/refresh', 'POST'], ['/api/v1/documents', 'GET'],
+    ])
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer expired')
+    expect(fetch.mock.calls[2][1].headers.Authorization).toBe('Bearer renewed')
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it('signs out when the refresh cookie is no longer valid', async () => {
+    setToken('expired')
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    const fetch = answers(json(401, {}), json(401, { detail: 'Not signed in.' }))
+    await expect(getDocuments()).rejects.toThrow(SESSION_EXPIRED_MESSAGE)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares one renewal between requests that expire together', async () => {
+    setToken('expired')
+    let refreshes = 0
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (url === '/api/v1/auth/refresh') {
+        refreshes += 1
+        return json(200, { access_token: 'renewed' })
+      }
+      return init.headers.Authorization === 'Bearer renewed' ? json(200, { documents: [] }) : json(401, {})
+    })
+    await Promise.all([getDocuments(), getDocuments(), getDocuments()])
+    expect(refreshes).toBe(1)
+  })
+
+  it('restores a session from the refresh cookie after a reload, or says there is none', async () => {
+    answers(json(200, { access_token: 'from-cookie', token_type: 'bearer', expires_in: 1800 }))
+    expect((await refreshSession()).access_token).toBe('from-cookie')
+    const fetch = answers(json(200, { documents: [] }))
+    await getDocuments()
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer from-cookie')
+
+    answers(json(401, { detail: 'Not signed in.' }))
+    expect(await refreshSession()).toBeNull()
   })
 })

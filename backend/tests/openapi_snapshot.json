@@ -86,13 +86,82 @@
         }
       }
     },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Refresh",
+        "description": "A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,\nor names a user who is gone.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Logout",
+        "description": "Remove the refresh cookie, so a reloaded page is signed out. The access token the client\nholds still works until it expires (at most settings.access_token_minutes).",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Me",
+        "description": "Who the access token belongs to (F8): a reloaded page knows its token but not the name.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
           "System"
         ],
         "summary": "Health Check",
-        "description": "Health check endpoint for monitoring and load balancers.",
+        "description": "Health check for monitoring and load balancers. Status only: it is public, so it says\nnothing about the version, the uptime or anyone's documents (S10).",
         "operationId": "health_check_api_v1_health_get",
         "responses": {
           "200": {
@@ -112,35 +181,36 @@
           "Documents"
         ],
         "summary": "Upload Document",
-        "description": "Upload and ingest a PDF or text/markdown document.",
+        "description": "Upload a document: PDF, Word, text, Markdown, CSV or Excel. 202: it is accepted and read in\nthe background; GET /documents/{document_id} reports when it is ready or why it failed (R12).\n\nThe token is checked before any of the body is read (S4).",
         "operationId": "upload_document_api_v1_upload_post",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_upload_document_api_v1_upload_post"
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "title": "File"
+                  }
+                },
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "title": "Upload"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UploadResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -227,6 +297,52 @@
       }
     },
     "/api/v1/documents/{document_id}": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get One Document",
+        "description": "One document and how reading it went: \"processing\", then \"ready\" or \"failed\" with an error\n(R12). 404 for an id that is not yours. Declared after /documents/detailed, which it would\notherwise shadow.",
+        "operationId": "get_one_document_api_v1_documents__document_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "Documents"
@@ -325,7 +441,7 @@
           "Chat"
         ],
         "summary": "Submit Feedback",
-        "description": "Submit thumbs up (1) or thumbs down (-1) for the most recent message in the session.",
+        "description": "Thumbs up (1), down (-1) or neither (0) for one answer, named by the turn_id it came with\n(F10). 404 for a turn that is not the user's.",
         "operationId": "submit_feedback_api_v1_feedback_post",
         "requestBody": {
           "content": {
@@ -453,6 +569,107 @@
           }
         ]
       }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "List Sessions",
+        "description": "The user's conversations, most recently used first, each titled by its first question.",
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/messages": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Session Messages",
+        "description": "Every turn of one of the user's conversations, oldest first, with the sources and tool\nshown with each answer. Empty for a session with no turns, or one that is not the user's.",
+        "operationId": "session_messages_api_v1_sessions__session_id__messages_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionMessages"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -515,20 +732,6 @@
           "password"
         ],
         "title": "Body_login_api_v1_auth_login_post"
-      },
-      "Body_upload_document_api_v1_upload_post": {
-        "properties": {
-          "file": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "File"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_document_api_v1_upload_post"
       },
       "ChatRequest": {
         "properties": {
@@ -601,6 +804,17 @@
               }
             ],
             "title": "Tool Used"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
           }
         },
         "type": "object",
@@ -610,15 +824,71 @@
         ],
         "title": "ChatResponse"
       },
+      "DocumentStatus": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "title": "Uploaded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "status",
+          "pages",
+          "chunks",
+          "size_bytes",
+          "uploaded_at"
+        ],
+        "title": "DocumentStatus",
+        "description": "One document in a user's library, and how reading it went."
+      },
       "FeedbackRequest": {
         "properties": {
-          "session_id": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9_.:-]+$",
-            "title": "Session Id",
-            "default": "default"
+          "turn_id": {
+            "type": "integer",
+            "title": "Turn Id"
           },
           "feedback": {
             "type": "integer",
@@ -630,8 +900,10 @@
             "title": "Feedback"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
+          "turn_id",
           "feedback"
         ],
         "title": "FeedbackRequest"
@@ -649,6 +921,95 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "Me": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "created_at"
+        ],
+        "title": "Me",
+        "description": "The signed-in user, for a page that was reloaded and knows only its token."
+      },
+      "SessionList": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "type": "array",
+            "title": "Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "title": "SessionList"
+      },
+      "SessionMessages": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/Turn"
+            },
+            "type": "array",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "turns"
+        ],
+        "title": "SessionMessages"
+      },
+      "SessionSummary": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          },
+          "started_at": {
+            "type": "string",
+            "title": "Started At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "title",
+          "turns",
+          "started_at",
+          "updated_at"
+        ],
+        "title": "SessionSummary"
+      },
       "Token": {
         "properties": {
           "access_token": {
@@ -658,52 +1019,121 @@
           "token_type": {
             "type": "string",
             "title": "Token Type"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
           }
         },
         "type": "object",
         "required": [
           "access_token",
-          "token_type"
+          "token_type",
+          "expires_in"
         ],
         "title": "Token"
       },
-      "UploadResponse": {
+      "Turn": {
         "properties": {
-          "filename": {
+          "turn_id": {
+            "type": "integer",
+            "title": "Turn Id"
+          },
+          "question": {
             "type": "string",
-            "title": "Filename"
+            "title": "Question"
           },
-          "pages": {
-            "type": "integer",
-            "title": "Pages"
-          },
-          "chunks": {
-            "type": "integer",
-            "title": "Chunks"
-          },
-          "message": {
+          "answer": {
             "type": "string",
-            "title": "Message"
+            "title": "Answer"
           },
-          "document_id": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "sources": {
+            "items": {},
+            "type": "array",
+            "title": "Sources"
+          },
+          "tool_used": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Used"
+          },
+          "feedback": {
             "type": "integer",
-            "title": "Document Id"
+            "title": "Feedback"
           },
-          "replaced": {
-            "type": "boolean",
-            "title": "Replaced",
-            "default": false
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
           }
         },
         "type": "object",
         "required": [
-          "filename",
-          "pages",
-          "chunks",
-          "message",
-          "document_id"
+          "turn_id",
+          "question",
+          "answer",
+          "mode",
+          "sources",
+          "feedback",
+          "created_at"
         ],
-        "title": "UploadResponse"
+        "title": "Turn",
+        "description": "One question and its answer, as they were shown."
+      },
+      "UploadResponse": {
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "title": "Document Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "const": "processing",
+            "title": "Status",
+            "default": "processing"
+          },
+          "replaces": {
+            "type": "boolean",
+            "title": "Replaces",
+            "default": false
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "filename",
+          "message"
+        ],
+        "title": "UploadResponse",
+        "description": "An accepted upload. It is read in the background: GET /documents/{document_id} says when\nit is ready, or why it failed (R12)."
       },
       "UserRegister": {
         "properties": {
@@ -714,6 +1144,12 @@
           "password": {
             "type": "string",
             "title": "Password"
+          },
+          "invite_code": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Invite Code",
+            "default": ""
           }
         },
         "type": "object",

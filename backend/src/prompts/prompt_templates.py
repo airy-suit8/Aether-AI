@@ -5,38 +5,44 @@ Task 1 (prompt templates) and Task 8 (prompt-injection protection). The pipeline
 agent and the evaluation import their prompts from here.
 """
 
+import html
 import re
 from typing import Any, Dict, List
 
 from langchain_core.prompts import PromptTemplate
 
-# ── Task 8: Prompt Injection Protection ───────────────────────────────────────
+# ── Task 8: Prompt injection ─────────────────────────────────────────────────
+#
+# These patterns used to be cut out of retrieved text. Two offline tests found they missed every
+# paraphrased injection and corrupted ordinary sentences ("will act as a liaison"), so they are
+# telemetry now (S5): a chunk that matches is logged and sent to the model unchanged. What
+# protects the answer is the prompts' own rules, the document boundaries below, the output
+# controls in the web app (no remote images) and the limits on the agent's tools.
 
-# Patterns that indicate prompt injection attempts in document content
-_INJECTION_PATTERNS = [
-    r"(?i)ignore\s+(all\s+)?previous\s+instructions",
-    r"(?i)disregard\s+(all\s+)?(prior|previous|above)",
-    r"(?i)you\s+are\s+now\b",
-    r"(?i)forget\s+(everything|all|your)",
-    r"(?i)new\s+instructions?\s*:",
-    r"(?i)system\s*prompt\s*:",
-    r"(?i)override\s+(your|the)\s+(rules|instructions|prompt)",
-    r"(?i)act\s+as\s+(if|a|an)",
-    r"(?i)pretend\s+(you|to\s+be)",
-    r"(?i)do\s+not\s+follow\s+(the|your)",
-    r"(?i)reveal\s+(your|the)\s+(system|prompt|instructions)",
-]
+INJECTION_PATTERNS = {
+    "ignore_previous": r"(?i)ignore\s+(all\s+)?previous\s+instructions",
+    "disregard_prior": r"(?i)disregard\s+(all\s+)?(prior|previous|above)",
+    "you_are_now": r"(?i)you\s+are\s+now\b",
+    "forget": r"(?i)forget\s+(everything|all|your)",
+    "new_instructions": r"(?i)new\s+instructions?\s*:",
+    "system_prompt": r"(?i)system\s*prompt\s*:",
+    "override_rules": r"(?i)override\s+(your|the)\s+(rules|instructions|prompt)",
+    "act_as": r"(?i)act\s+as\s+(if|a|an)",
+    "pretend": r"(?i)pretend\s+(you|to\s+be)",
+    "do_not_follow": r"(?i)do\s+not\s+follow\s+(the|your)",
+    "reveal_prompt": r"(?i)reveal\s+(your|the)\s+(system|prompt|instructions)",
+}
 
-def sanitize_context(text: str) -> str:
-    """
-    Task 8: Strip known prompt injection patterns from retrieved document chunks.
-    Replaces dangerous patterns with a safe placeholder so the LLM doesn't
-    follow malicious instructions embedded in uploaded documents.
-    """
-    sanitized = text
-    for pattern in _INJECTION_PATTERNS:
-        sanitized = re.sub(pattern, "[REDACTED: injection attempt]", sanitized)
-    return sanitized
+
+def injection_patterns_in(text: str) -> List[str]:
+    """The names of the injection patterns a text matches, for the log. The text is not changed."""
+    return [name for name, pattern in INJECTION_PATTERNS.items() if re.search(pattern, text)]
+
+
+def _inert(text: str) -> str:
+    """Document text with its own <document> and </document> tags made inert, so a chunk cannot
+    end its block early and pass what follows off as the app's own words."""
+    return re.sub(r"(?i)<(/?\s*document)", r"&lt;\1", text)
 
 
 # ── Task 1: Enhanced Prompt Templates ─────────────────────────────────────────
@@ -127,16 +133,16 @@ Standalone Question:""",
 
 def format_context(results: List[Dict[str, Any]], numbered: bool = False) -> str:
     """
-    Wrap each retrieved chunk in a <document> tag, with injection patterns redacted (Task 8).
+    Wrap each retrieved chunk in a <document> tag (Task 8). The file name and page are escaped
+    as attribute values, and the text cannot close the tag (S5); the text is otherwise as stored.
     numbered=True adds number="1", "2", ... in retrieval order, for CITED_RAG_PROMPT.
     """
     context_parts = []
     for position, r in enumerate(results, start=1):
-        src = r["meta"].get("source", "Unknown")
-        page = r["meta"].get("page", "?")
-        safe_text = sanitize_context(r["text"])
+        src = html.escape(str(r["meta"].get("source", "Unknown")), quote=True)
+        page = html.escape(str(r["meta"].get("page", "?")), quote=True)
         number = f'number="{position}" ' if numbered else ""
-        context_parts.append(f'<document {number}source="{src}" page="{page}">\n{safe_text}\n</document>')
+        context_parts.append(f'<document {number}source="{src}" page="{page}">\n{_inert(r["text"])}\n</document>')
     return "\n\n".join(context_parts)
 
 

@@ -46,7 +46,7 @@ jobs:
         run: |
           for module in \
             main.py \
-            src/api/deps.py src/api/routes_auth.py src/api/routes_chat.py src/api/routes_documents.py \
+            src/api/deps.py src/api/errors.py src/api/middleware.py src/api/routes_auth.py src/api/routes_chat.py src/api/routes_documents.py \
             src/api/routes_health.py src/api/schemas.py \
             src/core/config.py src/core/security.py src/core/logging.py \
             src/db/database.py \
