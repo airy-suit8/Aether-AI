@@ -12,6 +12,15 @@ function resolve(schema) {
   return schema
 }
 
+/** The schema's operation for a request. A path with a parameter, /documents/{document_id}, matches /documents/7. */
+function operationFor(url, method) {
+  if (snapshot.paths[url]?.[method]) return snapshot.paths[url][method]
+  const template = Object.keys(snapshot.paths).find((path) =>
+    path.includes('{') && snapshot.paths[path][method]
+    && new RegExp(`^${path.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(url))
+  return template && snapshot.paths[template][method]
+}
+
 /** Call fn with a fetch that records the request and answers 200 with an empty stream. */
 async function capture(fn) {
   let request
@@ -34,6 +43,7 @@ const CALLS = {
   sendChatStream: () => api.sendChatStream({ question: 'q', sessionId: 's1' }),
   getDocuments: () => api.getDocuments(),
   getDocumentsDetailed: () => api.getDocumentsDetailed(),
+  deleteDocument: () => api.deleteDocument(7),
   deleteAllDocuments: () => api.deleteAllDocuments(),
   clearSession: () => api.clearSession('s1'),
   getHealth: () => api.getHealth(),
@@ -57,7 +67,7 @@ describe('API client contract with the backend schema', () => {
     const request = await capture(CALLS[name])
     expect(request.url.startsWith('/api/v1/')).toBe(true)
 
-    const operation = snapshot.paths[request.url]?.[request.method]
+    const operation = operationFor(request.url, request.method)
     expect(operation, `${request.method.toUpperCase()} ${request.url} is not in the backend schema`).toBeDefined()
 
     // A protected route gets the token; a public one does not need it

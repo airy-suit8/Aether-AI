@@ -14,6 +14,7 @@ import pytest
 
 from src.api import routes_chat, routes_documents
 from src.core import security
+from src.pipeline import documents
 from src.core.config import settings
 from src.core.logging import request_logger
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
@@ -24,6 +25,7 @@ PROTECTED = [
     ("post", "/api/v1/upload"), ("post", "/api/v1/chat"), ("post", "/api/v1/chat/stream"),
     ("post", "/api/v1/feedback"), ("post", "/api/v1/session/clear"),
     ("get", "/api/v1/documents"), ("get", "/api/v1/documents/detailed"), ("delete", "/api/v1/documents"),
+    ("delete", "/api/v1/documents/1"),
 ]
 
 
@@ -204,9 +206,13 @@ def test_upload_ingestion_failure_is_500_and_records_nothing(client, make_user, 
     def broken(*args, **kwargs):
         raise RuntimeError("embedding service down")
 
-    monkeypatch.setattr(routes_documents, "ingest_document", broken)
+    # The record is written before ingestion (the chunks need its id), so it must be taken back
+    working = documents.ingest_document
+    monkeypatch.setattr(documents, "ingest_document", broken)
     assert upload_text(client, headers).status_code == 500
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
+    monkeypatch.setattr(documents, "ingest_document", working)
+    assert upload_text(client, headers).status_code == 200  # and the same file can be uploaded afterwards
 
 
 @pytest.mark.parametrize("path", ["/api/v1/chat", "/api/v1/chat/stream"])

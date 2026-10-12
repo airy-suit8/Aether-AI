@@ -209,6 +209,15 @@ export async function getDocumentsDetailed() {
 }
 
 /**
+ * Delete one document, by the id the detailed list gives it
+ */
+export async function deleteDocument(documentId) {
+  const res = await fetch(`${BASE_URL}/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE', headers: getAuthHeaders() });
+  await checkResponse(res, 'Failed to delete the document');
+  return res.json();
+}
+
+/**
  * Delete all documents
  */
 export async function deleteAllDocuments() {
