@@ -3,7 +3,7 @@ import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
-import { sendChat, sendChatStream, uploadDocument, getDocuments, clearSession } from '../../services/api'
+import { sendChat, sendChatStream, uploadDocument, getDocumentsDetailed, deleteDocument, clearSession } from '../../services/api'
 import { useAuth } from '../../services/AuthContext'
 import { AmbientField, Lens } from '../../design/prism'
 
@@ -46,9 +46,10 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   const streamRef = useRef(null)
   const abortRef = useRef(null)
 
+  // Each document is { id, filename, ... }: the id is what removes it
   const refreshDocuments = useCallback(async () => {
     try {
-      const data = await getDocuments()
+      const data = await getDocumentsDetailed()
       setDocuments(data.documents || [])
     } catch (e) {
       console.error('Failed to load documents:', e)
@@ -174,6 +175,17 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
     }
   }, [addToast, refreshDocuments])
 
+  // ── Remove one document ───────────────────────────────────────────────
+  const handleRemoveDocument = useCallback(async (doc) => {
+    try {
+      await deleteDocument(doc.id)
+      addToast(`Removed ${doc.filename}`, 'info')
+    } catch (err) {
+      addToast(err.message || 'Could not remove the document', 'error')
+    }
+    await refreshDocuments()
+  }, [addToast, refreshDocuments])
+
   // ── New thread ────────────────────────────────────────────────────────
   const handleNewThread = useCallback(async () => {
     abortRef.current?.abort()
@@ -209,6 +221,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
         isOpen={sidebarOpen}
         onToggle={toggleSidebar}
         documents={documents}
+        onRemoveDocument={handleRemoveDocument}
         onUpload={handleUpload}
         uploadProgress={uploadProgress}
         onNewThread={handleNewThread}

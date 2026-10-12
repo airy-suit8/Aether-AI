@@ -1,8 +1,9 @@
-import React, { useRef, useCallback, useState } from 'react'
+import React, { useRef, useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../services/AuthContext'
 import { PrismMark } from '../../design/prism'
 
 const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
+const DISARM_MS = 4000
 
 const KINDS = { pdf: 'PDF', docx: 'DOC', txt: 'TXT', md: 'MD', markdown: 'MD', csv: 'CSV', xlsx: 'XLS', xls: 'XLS' }
 const kindOf = (filename) => KINDS[filename.split('.').pop().toLowerCase()] || 'FILE'
@@ -14,6 +15,7 @@ export default function Sidebar({
   isOpen,
   onToggle,
   documents,
+  onRemoveDocument,
   onUpload,
   uploadProgress,
   onNewThread,
@@ -22,6 +24,8 @@ export default function Sidebar({
 }) {
   const fileInputRef = useRef(null)
   const [dragOver, setDragOver] = useState(false)
+  const [armed, setArmed] = useState(null)       // id of the document one click from being removed
+  const [removing, setRemoving] = useState(null) // id of the document being removed now
   const { username } = useAuth()
 
   // Several files are ingested one after another, so each gets its own progress and result
@@ -42,6 +46,28 @@ export default function Sidebar({
     setDragOver(false)
     if (e.dataTransfer.files?.length) uploadAll(e.dataTransfer.files)
   }, [uploadAll])
+
+  // Removing a document takes two clicks on the same button: the first arms it ("Remove?"),
+  // the second confirms. An armed button disarms after a few seconds or when focus leaves it.
+  useEffect(() => {
+    if (armed === null) return undefined
+    const timer = setTimeout(() => setArmed(null), DISARM_MS)
+    return () => clearTimeout(timer)
+  }, [armed])
+
+  const handleRemove = useCallback(async (doc) => {
+    if (armed !== doc.id) {
+      setArmed(doc.id)
+      return
+    }
+    setArmed(null)
+    setRemoving(doc.id)
+    try {
+      await onRemoveDocument(doc)
+    } finally {
+      setRemoving(null)
+    }
+  }, [armed, onRemoveDocument])
 
   return (
     <aside className="p-pane x-rail" aria-label="Library" aria-hidden={!isOpen}>
@@ -95,12 +121,30 @@ export default function Sidebar({
           <p className="x-docs__empty">No documents yet</p>
         ) : (
           <ul className="x-docs">
-            {documents.map((doc) => (
-              <li key={doc} className="x-doc">
-                <span className="x-doc__kind" aria-hidden="true">{kindOf(doc)}</span>
-                <span className="x-doc__name" title={doc}>{doc}</span>
-              </li>
-            ))}
+            {documents.map((doc) => {
+              const isArmed = armed === doc.id
+              return (
+                <li key={doc.id} className="x-doc" data-removing={removing === doc.id}>
+                  <span className="x-doc__kind" aria-hidden="true">{kindOf(doc.filename)}</span>
+                  <span className="x-doc__name" title={doc.filename}>{doc.filename}</span>
+                  <button
+                    type="button"
+                    className="x-doc__remove"
+                    data-armed={isArmed}
+                    disabled={removing === doc.id}
+                    aria-label={isArmed ? `Confirm removing ${doc.filename}` : `Remove ${doc.filename}`}
+                    onClick={() => handleRemove(doc)}
+                    onBlur={() => { if (isArmed) setArmed(null) }}
+                  >
+                    {isArmed ? 'Remove?' : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                      </svg>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
