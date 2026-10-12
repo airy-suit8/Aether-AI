@@ -91,7 +91,8 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
         save_document_record(user_id, filename, result["pages"], result["chunks"], len(content), file_hash)
 
     except ValueError as e:
-        error_logger.error(f"UPLOAD PARSE ERROR | file={filename} | error={str(e)}")
+        # The message is written for the user; the parser's own error, if any, is its cause
+        error_logger.error(f"UPLOAD PARSE ERROR | file={filename} | error={str(e)} | cause={e.__cause__!r}")
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         error_logger.error(

@@ -11,7 +11,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 2 Safety net | Done, merged 12 Oct 2026 | See below |
 | Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
-| 4 and 5 | Not started; 4 is next | |
+| 4 Retrieval quality and evaluation | In progress. The harness and four code items are merged (12 Oct 2026). The dataset, the baseline and the calibration wait for the owner's documents and Gemini quota; items 8 and 10 are not started | See below |
+| 5 Hardening and API completion | Not started | |
 | 6 Frontend rebuild | Visual redesign done early; engineering items remain | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
@@ -71,6 +72,34 @@ Sprint 3 on the owner's Windows machine, on the branch and again on the merged c
 - The existing database, vector collection and `.env` are read unchanged: the restarted app reported the same 2 documents and 45 chunks as before.
 - **Found here and fixed: `requests.log` was never written** (the audit noted the file was absent). The logger was named `requests`, which is also the HTTP library's logger and already has a handler, so the setup skipped it and chat lines reached neither a file nor the terminal. The three loggers are now `aether.requests`, `aether.uploads` and `aether.errors`, and a test reads the chat line back from the file.
 
+Sprint 4 so far (branch `claude/sprint-4`, done on the owner's Windows machine, 12 Oct 2026):
+
+| Item | State | Proof |
+|---|---|---|
+| 1 Dataset | Waiting for the owner: 3 to 5 non-confidential documents and 30 to 50 labelled questions | The format is in the README, "Measuring answer quality" |
+| 2 Harness (T3) | Done | `tests/unit/test_evaluation.py` (30 tests); the seam checklist's evaluation box |
+| 3 Baseline | Not run: needs the dataset. The tag `eval-baseline` marks the commit to measure it on (the new harness, the old pipeline) | |
+| 4 Threshold (R1, R2) | Half done: the threshold and the confidence now use cosine similarity in every mode. The value is still 0.3, uncalibrated | `tests/unit/test_search.py` |
+| 5 Hybrid search (R3) | Done | `tests/unit/test_search.py` |
+| 6 Summary step or not (R4) | The switch exists (`AETHER_ANSWER_FROM`); the comparison is not run | `tests/integration/test_sources.py` |
+| 7 Cited sources (R5) | Done behind that switch; a refusal lists no sources in every case | `tests/integration/test_sources.py` |
+| 8 Document identity (R7) | Not started | |
+| 9 Parsing (R9) | Done | `tests/unit/test_parsers.py`, `tests/unit/test_chunker.py` |
+| 10 Agent (R11) | Not started | |
+
+- `python -m pytest`: 390 passed, 0 xfailed, 99% coverage, with no API key. `ruff check .` clean. All twenty strict xfails are fixed and their tests moved beside the code's other tests.
+- A real `uvicorn` server with fake models: register, login, upload, chat in all four modes, streaming, feedback, delete and the login rate limit.
+- With the real Gemini key and temp stores: a Word file whose facts are in a table and a CSV of part codes were ingested. Hybrid search gave the same similarities as dense search (0.71 and 0.61). "Who inspects the blades, and how often?" was answered from the table. With `AETHER_ANSWER_FROM=chunks`, the answer was "The code for the rotor bearing is 0420 [1]. It is located in bin C3 [1].", with the leading zero kept and only the cited chunk listed as a source.
+
+What Sprint 4 found, and where the plan was wrong:
+
+- **Encoding detection is not safe, so it was not built (item 9).** `charset-normalizer` 3.4 read "Le café est fermé." saved as Windows-1252 as UTF-16 Chinese characters, and a longer French sample as cp775 ("cafķ"). Text and CSV files are read as UTF-8, or UTF-16 with a byte-order mark; anything else is refused with a message saying how to re-save it.
+- **Inline `[1]` citations, not structured output (item 7).** A JSON answer could not be streamed word by word.
+- **The summary step stays the default until it is measured (item 6).** One real answer written from chunks took 18 s; one through the summary took 57 s on the same afternoon, but Gemini was returning 503s, so that is not a measurement.
+- **An unrelated question still scored 0.55** against two small documents (answerable ones scored 0.71 to 0.78). The 0.3 threshold refuses nothing; the harness's suggested threshold will set it once there is a dataset.
+- **A Gemini outage holds a request for about 60 s before the error**, because the chat model retries six times. For Sprint 5 item 10.
+- **`--retrieval-only` needs no model calls**, only embeddings: hit@5, MRR, the dense-against-hybrid comparison and the threshold can be measured on the free tier. Correctness and faithfulness need about four model calls per question and mode.
+
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
 The old sprint log recorded what was written. These sprints record what was proven.
@@ -101,7 +130,7 @@ Seam checklist. Tick each when its test exists and passes.
 - [x] Config: the model id appears in exactly one place (`tests/test_no_orphans.py::test_each_model_id_is_written_in_exactly_one_place`; the no-orphan check also fails if anything but `core/config.py` reads the environment)
 - [x] Backend → UI: `GET /` returns the built React app
 - [ ] Docker: `docker compose up` passes the same end-to-end test (deferred with the Docker work)
-- [ ] Evaluation: the harness imports and calls the real pipeline
+- [x] Evaluation: the harness imports and calls the real pipeline (`tests/unit/test_evaluation.py::test_run_asks_the_real_pipeline_and_scores_it`)
 
 ---
 

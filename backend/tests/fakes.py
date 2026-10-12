@@ -61,6 +61,8 @@ class ScriptedChatModel(BaseChatModel):
     fail_with  — if set, every call raises RuntimeError(fail_with)
     tool_name  — the tool the fake agent calls on its first step
     tool_input — the argument passed to that tool (defaults to the user's question)
+    judge_reply — what it answers when asked to judge an answer (the evaluation harness)
+    citations  — what it adds to an answer written from numbered chunks
     prompts    — every prompt text received, for assertions
     """
 
@@ -68,6 +70,8 @@ class ScriptedChatModel(BaseChatModel):
     fail_with: Optional[str] = None
     tool_name: str = "document_search_wrapper"
     tool_input: Optional[str] = None
+    judge_reply: str = '{"score": 1.0, "reasoning": "fake judge"}'
+    citations: str = "[1]"
     prompts: List[str] = []
 
     @property
@@ -100,6 +104,8 @@ class ScriptedChatModel(BaseChatModel):
                 "id": "call_1",
             }])
 
+        if "Verdict (JSON):" in text:
+            return AIMessage(content=self.judge_reply)
         if "calendar and time assistant" in text:
             return AIMessage(content="Date answer. " + _between(text, "The current date and time is:", ". Calculate"))
         if "Standalone Question:" in text:
@@ -107,5 +113,7 @@ class ScriptedChatModel(BaseChatModel):
         if "Focused Summary:" in text:
             return AIMessage(content="Summary: " + _between(text, "Document Excerpts:", "\nQuestion:"))
         if "Answer:" in text:
-            return AIMessage(content="Answer from context. " + _between(text, "Context:", "\nQuestion:")[:400])
+            context = _between(text, "Context:", "\nQuestion:")
+            cited = f" {self.citations}" if '<document number="' in context else ""
+            return AIMessage(content="Answer from context. " + context[:400] + cited)
         return AIMessage(content="ok")
