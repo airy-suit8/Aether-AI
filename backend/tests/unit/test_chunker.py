@@ -71,6 +71,27 @@ def test_chunks_keep_their_pdf_page(tmp_path, captured):
     assert [(c.page_content, c.metadata["page"]) for c in captured] == [("Page one text", 1), ("Page two text", 2)]
 
 
+def test_a_row_wider_than_a_chunk_is_cut_between_fields_never_inside_one(tmp_path, captured):
+    # R9: a wide row was cut wherever the size ran out, in the middle of a value
+    fields = [(f"Col{i:02d}", f"value-{i:02d}-" + "x" * 20) for i in range(60)]  # one row of about 2,300 characters
+    path = tmp_path / "wide.csv"
+    path.write_text(",".join(name for name, _ in fields) + "\n" + ",".join(value for _, value in fields) + "\n", encoding="utf-8")
+    result = ingest_document(1, str(path), "wide.csv")
+    assert result["chunks"] == len(captured) > 2
+    whole_fields = re.compile(r"Col\d\d: value-\d\d-x{20}(, Col\d\d: value-\d\d-x{20})*")
+    assert all(whole_fields.fullmatch(c.page_content) and len(c.page_content) <= settings.chunk_size for c in captured)
+    joined = " ".join(c.page_content for c in captured)
+    assert all(f"{name}: {value}" in joined for name, value in fields)
+
+
+def test_rows_that_fit_are_kept_whole(tmp_path, captured):
+    path = tmp_path / "rows.csv"
+    path.write_text("Id,Note\n" + "".join(f"{i},{'note ' * 12}{i}\n" for i in range(60)), encoding="utf-8")
+    ingest_document(1, str(path), "rows.csv")
+    assert len(captured) > 3
+    assert all(re.fullmatch(r"Id: \d+, Note: (note ){12}\d+", line) for c in captured for line in c.page_content.split("\n"))
+
+
 def test_nothing_to_extract_is_a_value_error_and_stores_nothing(tmp_path, captured):
     with pytest.raises(ValueError, match="No text could be extracted"):
         _ingest(tmp_path, "   ")
