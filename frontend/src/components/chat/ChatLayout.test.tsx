@@ -395,4 +395,44 @@ describe('ChatLayout', () => {
     renderChat('/chat')
     await vi.waitFor(() => expect(where()).toMatch(/^\/chat\/session_\d+$/))
   })
+
+  it('lists the conversations newest first, marks the open one, and opens another in the URL', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [
+      session({ session_id: 'session_2', title: 'Who logs the inspections?', updated_at: '2026-10-12T11:00:00' }),
+      session({ session_id: 'session_1', title: 'How often are the blades inspected?', updated_at: '2026-10-11T09:30:00' }),
+    ] })
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [turn({
+      turn_id: id === 'session_2' ? 2 : 1, question: `The question of ${id}`, answer: `The answer of ${id}`,
+    })] }))
+    renderChat('/chat/session_1')
+    const list = await screen.findByRole('navigation', { name: 'Conversations' })
+    const links = await within(list).findAllByRole('link')
+    expect(links.map((l) => l.querySelector('.x-thread__title')?.textContent)).toEqual([
+      'Who logs the inspections?', 'How often are the blades inspected?',
+    ])
+    expect(links.map((l) => l.getAttribute('aria-current'))).toEqual([null, 'page'])
+    expect(links[0].querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-12T11:00:00')
+    expect(await screen.findByText('The answer of session_1')).toBeTruthy()
+
+    await userEvent.setup().click(links[0])
+    expect(where()).toBe('/chat/session_2')
+    expect(await screen.findByText('The answer of session_2')).toBeTruthy()
+    expect(screen.queryByText('The answer of session_1')).toBeNull()
+    expect(api.getSessionMessages).toHaveBeenLastCalledWith('session_2')
+    const after = within(list).getAllByRole('link')
+    expect(after.map((l) => l.getAttribute('aria-current'))).toEqual(['page', null])
+  })
+
+  it('lists a new conversation once it has an answer', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('An answer.')
+      onDone?.(done({ turn_id: 6 }))
+    })
+    renderChat('/chat/session_5')
+    expect(await screen.findByText('No conversations yet')).toBeTruthy()
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_5', title: 'A first question' })] })
+    await ask('A first question')
+    const list = screen.getByRole('navigation', { name: 'Conversations' })
+    expect((await within(list).findByRole('link')).getAttribute('aria-current')).toBe('page')
+  })
 })

@@ -13,13 +13,15 @@ interface ChatWindowProps {
   streamingText: string
   streamingPhase: string
   isLoading: boolean
+  threadLoading?: boolean
   streamRef: RefObject<HTMLDivElement | null>
   hasDocuments: boolean
   onSuggest: (question: string) => void
 }
 
-export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, streamRef, hasDocuments, onSuggest }: ChatWindowProps) {
-  const isEmpty = messages.length === 0 && !streamingText && !isLoading
+export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, threadLoading = false, streamRef, hasDocuments, onSuggest }: ChatWindowProps) {
+  // While a conversation is being loaded there is nothing to show yet, not even the empty state
+  const isEmpty = messages.length === 0 && !streamingText && !isLoading && !threadLoading
 
   return (
     <div className="x-stream" ref={streamRef}>

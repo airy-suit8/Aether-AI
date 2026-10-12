@@ -1,7 +1,8 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
+import { Link } from 'react-router'
 import { useAuth } from '../../services/AuthContext'
-import type { DocumentRecord } from '../../services/api'
+import type { DocumentRecord, SessionSummary } from '../../services/api'
 import { PrismMark } from '../../design/prism'
 
 const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
@@ -10,6 +11,16 @@ const DISARM_MS = 4000
 const KINDS: Record<string, string> = { pdf: 'PDF', docx: 'DOC', txt: 'TXT', md: 'MD', markdown: 'MD', csv: 'CSV', xlsx: 'XLS', xls: 'XLS' }
 const kindOf = (filename: string) => KINDS[(filename.split('.').pop() ?? '').toLowerCase()] || 'FILE'
 
+/** When a conversation was last used: the time today, the day and month before that. */
+function formatWhen(iso: string): string {
+  const when = new Date(iso)
+  if (Number.isNaN(when.getTime())) return ''
+  const today = new Date().toDateString() === when.toDateString()
+  return today
+    ? when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
 /**
  * Sidebar — the library rail: brand, new thread, document drop zone, the user's documents, settings.
  */
@@ -17,6 +28,9 @@ interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
   documents: DocumentRecord[]
+  threads: SessionSummary[]
+  currentThread: string | null
+  onChooseThread: () => void
   onRemoveDocument: (doc: DocumentRecord) => Promise<void>
   onUpload: (file: File) => Promise<void>
   uploadProgress: { filename: string; status: string } | null
@@ -29,6 +43,9 @@ export default function Sidebar({
   isOpen,
   onToggle,
   documents,
+  threads,
+  currentThread,
+  onChooseThread,
   onRemoveDocument,
   onUpload,
   uploadProgress,
@@ -97,6 +114,32 @@ export default function Sidebar({
       </div>
 
       <button type="button" className="p-btn p-btn--tonal" onClick={onNewThread}>New thread</button>
+
+      <nav className="x-threads" aria-label="Conversations">
+        <p className="p-eyebrow">
+          <span>Threads</span>
+          <span>{threads.length}</span>
+        </p>
+        {threads.length === 0 ? (
+          <p className="x-docs__empty">No conversations yet</p>
+        ) : (
+          <ul className="x-thread-list">
+            {threads.map((thread) => (
+              <li key={thread.session_id}>
+                <Link
+                  to={`/chat/${encodeURIComponent(thread.session_id)}`}
+                  className="x-thread"
+                  aria-current={thread.session_id === currentThread ? 'page' : undefined}
+                  onClick={onChooseThread}
+                >
+                  <span className="x-thread__title" title={thread.title}>{thread.title}</span>
+                  <time className="p-mono" dateTime={thread.updated_at}>{formatWhen(thread.updated_at)}</time>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </nav>
 
       <div>
         <button

@@ -8,7 +8,7 @@ import {
   sendChat, sendChatStream, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages,
 } from '../../services/api'
-import type { DocumentRecord, Mode, Turn } from '../../services/api'
+import type { DocumentRecord, Mode, SessionSummary, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
@@ -93,8 +93,10 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   const [mode, setMode] = useState<Mode>('default')
   const [streamingMode, setStreamingMode] = useState(true)
 
-  // Documents
+  // Documents, and the conversations listed in the rail
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
+  const [threads, setThreads] = useState<SessionSummary[]>([])
+  const [threadLoading, setThreadLoading] = useState(false)
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
@@ -126,10 +128,20 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     }
   }, [])
 
-  // Load documents on mount
+  // The user's conversations, most recently used first (title and date)
+  const refreshThreads = useCallback(async () => {
+    try {
+      setThreads((await getSessions()).sessions)
+    } catch (e) {
+      console.error('Failed to load the conversations:', e)
+    }
+  }, [])
+
+  // Load documents and conversations on mount
   useEffect(() => {
     refreshDocuments()
-  }, [refreshDocuments])
+    refreshThreads()
+  }, [refreshDocuments, refreshThreads])
 
   // /chat, or /settings opened directly: open the most recent conversation, or a new one
   useEffect(() => {
@@ -158,6 +170,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     setStreamingText('')
     setStreamingPhase('')
     setMessages([])
+    setThreadLoading(true)
     let cancelled = false
     loadingRef.current = threadId
     getSessionMessages(threadId)
@@ -167,7 +180,10 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         setMessages(turns.flatMap(turnToMessages))
       })
       .catch((e) => console.error('Failed to load the conversation:', e))
-      .finally(() => { if (loadingRef.current === threadId) loadingRef.current = null })
+      .finally(() => {
+        if (loadingRef.current === threadId) loadingRef.current = null
+        if (!cancelled) setThreadLoading(false)
+      })
     return () => { cancelled = true }
   }, [threadId])
 
@@ -208,6 +224,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     abortRef.current = controller
 
     const answered = (answer: Omit<AnswerMessage, 'id' | 'role' | 'feedback' | 'mode' | 'timestamp'>) => {
+      refreshThreads()  // a new turn, here or in a thread that was left: the list's order changes
       if (!askedIn(run, thread)) return
       setMessages(prev => [...prev, {
         ...answer, id: `a${run}-${Date.now()}`, role: 'assistant', feedback: 0, mode, timestamp: new Date().toISOString(),
@@ -266,7 +283,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         setStreamingPhase('')
       }
     }
-  }, [sessionId, pending, mode, streamingMode, askedIn])
+  }, [sessionId, pending, mode, streamingMode, askedIn, refreshThreads])
 
   // Stop the reply: close its stream. Only a streamed reply can be stopped (see ChatComposer).
   const handleStop = useCallback(() => {
@@ -334,6 +351,11 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     navigate(`/chat/${newThreadId()}`)
   }, [navigate])
 
+  // On a narrow screen the rail is a drawer over the conversation: close it once a thread is chosen
+  const chooseThread = useCallback(() => {
+    if (!isWide()) setSidebarOpen(false)
+  }, [])
+
   const handleNewThread = useCallback(() => {
     startThread()
     addToast('New thread started', 'info')
@@ -345,11 +367,12 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     try {
       await clearSession(sessionId)
       startThread()
+      refreshThreads()
       addToast('Conversation deleted', 'info')
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Could not delete the conversation', 'error')
     }
-  }, [sessionId, startThread, addToast])
+  }, [sessionId, startThread, refreshThreads, addToast])
 
   const handleLogout = useCallback(() => {
     abortRef.current?.abort()
@@ -374,6 +397,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         onRemoveDocument={handleRemoveDocument}
         onUpload={handleUpload}
         uploadProgress={uploadProgress}
+        threads={threads}
+        currentThread={sessionId}
+        onChooseThread={chooseThread}
         onNewThread={handleNewThread}
         onOpenSettings={openSettings}
         onNavigateHome={goHome}
@@ -411,6 +437,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           streamingText={isLoading ? streamingText : ''}
           streamingPhase={isLoading ? streamingPhase : ''}
           isLoading={isLoading}
+          threadLoading={threadLoading}
           streamRef={streamRef}
           hasDocuments={documents.length > 0}
           onSuggest={handleSend}
