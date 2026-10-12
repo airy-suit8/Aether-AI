@@ -7,7 +7,7 @@ QUESTION = "How often is the Zephyr turbine blade inspection?"
 
 def test_langchain_chat_answers_with_citation(client, make_user):
     _, headers = make_user("lc")
-    assert upload_text(client, headers).status_code == 200
+    assert upload_text(client, headers).status_code == 202
 
     r = ask(client, headers, QUESTION, mode="langchain")
     assert r.status_code == 200, r.text
@@ -18,7 +18,7 @@ def test_langchain_chat_answers_with_citation(client, make_user):
 
 def test_langchain_stream_answers(client, make_user):
     _, headers = make_user("lcs")
-    assert upload_text(client, headers).status_code == 200
+    assert upload_text(client, headers).status_code == 202
 
     status, events = ask_stream(client, headers, QUESTION, mode="langchain")
     assert status == 200

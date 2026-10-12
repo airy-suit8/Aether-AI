@@ -20,6 +20,13 @@ def upload_text(client, headers, filename="zephyr_manual.txt", text=DOC_TEXT):
     )
 
 
+def status_of(client, headers, response):
+    """The record of an accepted upload (202), read back from GET /documents/{id}. The test
+    client runs the background reading before it returns, so the record is ready or failed."""
+    assert response.status_code == 202, response.text
+    return client.get(f"/api/v1/documents/{response.json()['document_id']}", headers=headers).json()
+
+
 def ask(client, headers, question, session_id="s1", **modes):
     return client.post(
         "/api/v1/chat",

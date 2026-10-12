@@ -44,7 +44,7 @@ def _use_new_database(monkeypatch, path: Path):
 def test_a_user_registered_after_a_database_reset_sees_none_of_the_old_data(client, monkeypatch, tmp_path, mode):
     _use_new_database(monkeypatch, tmp_path / "first.db")
     alice = _register(client, f"alice_{uuid.uuid4().hex[:6]}")
-    assert upload_text(client, alice).status_code == 200
+    assert upload_text(client, alice).status_code == 202
     assert ask(client, alice, QUESTION, mode=mode).json()["sources"]
 
     # The database is replaced and the server restarted; the vector store is the same folder

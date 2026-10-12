@@ -3,6 +3,9 @@ Upload limits (S4, Sprint 5 item 4): the token is checked before the body is rea
 streamed to disk and refused once it passes the size limit; a zip-based file is refused when it
 would unpack to too much; tables and documents have row and passage caps; each user has a quota.
 
+Limits on what a file holds are found while it is read, in the background (R12): the upload
+is accepted (202) and its status says why it failed.
+
 The size tests call the app directly over ASGI with a body that is made as it is read, because
 the test client reads a whole request body into memory before the app sees any of it.
 """
@@ -16,8 +19,9 @@ import pytest
 
 import main
 from src.core.config import settings
+from src.vectordb import vector_store
 from filemakers import make_docx, make_xlsx
-from helpers import upload_text
+from helpers import status_of, upload_text
 
 MB = 1024 * 1024
 BOUNDARY = "aetherboundary"
@@ -98,7 +102,7 @@ def test_a_file_just_over_the_limit_is_413_and_one_at_it_is_accepted(client, mak
     monkeypatch.setattr(settings, "max_upload_bytes", 200)
     r = upload_text(client, headers, filename="over.txt", text="Zephyr turbine. " * 13)  # 208 bytes
     assert r.status_code == 413 and r.json()["detail"] == "File too large. Maximum allowed: 0MB."
-    assert upload_text(client, headers, filename="at.txt", text="z" * 200).status_code == 200
+    assert upload_text(client, headers, filename="at.txt", text="z" * 200).status_code == 202
 
 
 def test_a_body_that_is_not_multipart_is_a_400(client, make_user):
@@ -123,27 +127,29 @@ def test_a_zip_based_file_that_unpacks_to_too_much_is_refused_before_it_is_parse
     bomb = _zip_bomb()
     assert len(bomb) < 10_000
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("bomb.docx", bomb, "application/octet-stream")})
-    assert r.status_code == 422
-    assert r.json()["detail"] == ("'bomb.docx' unpacks to more than 2MB, the most one file may hold. "
-                                  "Split it into smaller files and upload those.")
+    document = status_of(client, headers, r)
+    assert document["status"] == "failed"
+    assert document["error"] == ("'bomb.docx' unpacks to more than 2MB, the most one file may hold. "
+                                 "Split it into smaller files and upload those.")
 
 
 def test_a_normal_word_file_is_well_under_the_unpacked_limit(client, make_user, tmp_path):
     _, headers = make_user("docxok")
     data = make_docx(tmp_path / "ok.docx", ["The Zephyr turbine is inspected every 90 days."]).read_bytes()
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("ok.docx", data, "application/octet-stream")})
-    assert r.status_code == 200, r.text
+    assert status_of(client, headers, r)["status"] == "ready"
 
 
-@pytest.mark.parametrize("rows,status", [(3, 200), (4, 422)])
+@pytest.mark.parametrize("rows,status", [(3, "ready"), (4, "failed")])
 def test_a_csv_with_more_rows_than_the_cap_is_refused(client, make_user, monkeypatch, rows, status):
     _, headers = make_user("rows")
     monkeypatch.setattr(settings, "max_table_rows", 3)
     csv = "Part,Bin\n" + "".join(f"P{i},B{i}\n" for i in range(rows))
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("parts.csv", csv.encode(), "text/csv")})
-    assert r.status_code == status, r.text
-    if status == 422:
-        assert "more than 3 rows" in r.json()["detail"]
+    document = status_of(client, headers, r)
+    assert document["status"] == status
+    if status == "failed":
+        assert "more than 3 rows" in document["error"]
 
 
 def test_the_row_cap_counts_every_sheet_of_a_workbook(client, make_user, monkeypatch, tmp_path):
@@ -151,7 +157,8 @@ def test_the_row_cap_counts_every_sheet_of_a_workbook(client, make_user, monkeyp
     monkeypatch.setattr(settings, "max_table_rows", 3)
     data = make_xlsx(tmp_path / "two.xlsx", {"A": [["Part"], ["P1"], ["P2"]], "B": [["Bin"], ["B1"], ["B2"]]}).read_bytes()
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("two.xlsx", data, "application/octet-stream")})
-    assert r.status_code == 422 and "more than 3 rows" in r.json()["detail"]
+    document = status_of(client, headers, r)
+    assert document["status"] == "failed" and "more than 3 rows" in document["error"]
 
 
 def test_a_document_that_makes_too_many_passages_is_refused(client, make_user, monkeypatch):
@@ -159,8 +166,10 @@ def test_a_document_that_makes_too_many_passages_is_refused(client, make_user, m
     monkeypatch.setattr(settings, "max_chunks_per_document", 2)
     text = "\n\n".join(f"Paragraph {i} about the Zephyr turbine maintenance schedule. " * 12 for i in range(6))
     r = upload_text(client, headers, filename="long.txt", text=text)
-    assert r.status_code == 422 and "one file may make 2" in r.json()["detail"]
+    document = status_of(client, headers, r)
+    assert document["status"] == "failed" and "one file may make 2" in document["error"]
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
+    assert vector_store.store.collection.get(where={"document_id": r.json()["document_id"]}, include=[])["ids"] == []
 
 
 # ── Quota ─────────────────────────────────────────────────────────────────────
@@ -169,8 +178,8 @@ def test_each_user_has_a_document_quota_and_a_replacement_does_not_count(client,
     _, headers = make_user("quota")
     _, other = make_user("quota_other")
     monkeypatch.setattr(settings, "max_documents_per_user", 2)
-    assert upload_text(client, headers, filename="a.txt", text="Alpha pumps are serviced monthly.").status_code == 200
-    assert upload_text(client, headers, filename="b.txt", text="Beta valves are greased weekly.").status_code == 200
+    assert upload_text(client, headers, filename="a.txt", text="Alpha pumps are serviced monthly.").status_code == 202
+    assert upload_text(client, headers, filename="b.txt", text="Beta valves are greased weekly.").status_code == 202
 
     r = upload_text(client, headers, filename="c.txt", text="Gamma fans are dusted daily.")
     assert r.status_code == 409
@@ -178,6 +187,6 @@ def test_each_user_has_a_document_quota_and_a_replacement_does_not_count(client,
 
     # A changed file of a name already in the library replaces it, so the count stays at 2
     r = upload_text(client, headers, filename="a.txt", text="Alpha pumps are serviced weekly now.")
-    assert r.status_code == 200 and r.json()["replaced"] is True
+    assert r.status_code == 202 and r.json()["replaces"] is True
     # The quota is per user
-    assert upload_text(client, other, filename="c.txt", text="Gamma fans are dusted daily.").status_code == 200
+    assert upload_text(client, other, filename="c.txt", text="Gamma fans are dusted daily.").status_code == 202

@@ -45,6 +45,7 @@ const CALLS = {
   sendChatStream: () => api.sendChatStream({ question: 'q', sessionId: 's1' }),
   getDocuments: () => api.getDocuments(),
   getDocumentsDetailed: () => api.getDocumentsDetailed(),
+  getDocument: () => api.getDocument(7),
   deleteDocument: () => api.deleteDocument(7),
   deleteAllDocuments: () => api.deleteAllDocuments(),
   clearSession: () => api.clearSession('s1'),

@@ -11,7 +11,7 @@ deleting chunks need no API key; adding and searching do (they embed text).
 
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import chromadb
 import numpy as np
@@ -129,11 +129,12 @@ class VectorStore:
         res = self.collection.get(where={"tenant_id": tenant}, include=["documents", "metadatas"])
         return res.get("documents", []), res.get("metadatas", [])
 
-    def delete_document_chunks(self, tenant: str, document_id: int, filename: str) -> int:
-        """Delete the chunks of one of a tenant's documents and return how many there were (R7)."""
+    def delete_document_chunks(self, tenant: str, document_id: int, filename: Optional[str] = None) -> int:
+        """Delete the chunks of one of a tenant's documents and return how many there were (R7).
+        With a filename, chunks of that name stored before documents had ids go too."""
         coll = self.collection
         chunk_ids = coll.get(where={"$and": [{"tenant_id": tenant}, {"document_id": document_id}]}, include=[])["ids"]
-        if not chunk_ids:
+        if not chunk_ids and filename:
             # Chunks stored before documents had an id carry only the file name
             named = coll.get(where={"$and": [{"tenant_id": tenant}, {"source": filename}]}, include=["metadatas"])
             chunk_ids = [i for i, meta in zip(named["ids"], named["metadatas"]) if "document_id" not in meta]
