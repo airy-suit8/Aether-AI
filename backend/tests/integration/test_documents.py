@@ -1,5 +1,7 @@
 """Document lifecycle: duplicates are rejected, delete reports what it deleted (R6, R8)."""
 
+import jwt
+
 import rag_engine
 from helpers import DOC_TEXT, upload_text
 
@@ -57,3 +59,19 @@ def test_delete_failure_is_reported_and_keeps_the_records(client, make_user, mon
     assert r.status_code == 500
     # The SQLite records stay, so the document list still matches the vector store
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 1
+
+
+def test_upload_with_the_langchain_loader_cites_pages_from_one(client, make_user, monkeypatch, tmp_path):
+    # Task 12 through the API: the LangChain loaders sit behind the same upload route
+    from filemakers import make_pdf
+    from src.core.config import settings
+
+    _, headers = make_user("lcload")
+    monkeypatch.setattr(settings, "document_loader", "langchain")
+    pdf = make_pdf(tmp_path / "two.pdf", ["The Zephyr turbine page", "The Orion team page"]).read_bytes()
+    r = client.post("/api/v1/upload", headers=headers, files={"file": ("two.pdf", pdf, "application/pdf")})
+    assert r.status_code == 200, r.text
+    assert r.json()["pages"] == 2
+    user_id = int(jwt.decode(headers["Authorization"].split()[1], options={"verify_signature": False})["sub"])
+    metas = rag_engine._store.chroma._collection.get(where={"user_id": user_id}, include=["metadatas"])["metadatas"]
+    assert sorted(m["page"] for m in metas) == [1, 2]

@@ -12,11 +12,7 @@ Tasks covered:
 """
 
 import uuid
-from pathlib import Path
 from typing import List, Dict, Any
-
-# Task 12: LangChain Document Loaders
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader
 
 # Task 13: LangChain Text Splitters
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -36,6 +32,7 @@ from rag_engine import (
     CHUNK_OVERLAP,
 )
 
+from src.ingestion.loader import load_document_langchain
 from src.llm import llm_client
 from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
 
@@ -47,70 +44,6 @@ from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_P
 # ══════════════════════════════════════════════════════════════════════════════
 # Task 12: LangChain Document Loaders
 # ══════════════════════════════════════════════════════════════════════════════
-
-def load_document_langchain(file_path: str, filename: str) -> List[Document]:
-    """
-    Task 12: Use LangChain's official document loaders instead of custom parsers.
-
-    Comparison with original rag_engine.py:
-      Original: _parse_pdf() — manual PdfReader loop, 12 lines
-      LangChain: PyPDFLoader — 2 lines, handles edge cases automatically
-
-      Original: _parse_docx() — manual python-docx paragraph extraction
-      LangChain: Docx2txtLoader — handles tables, headers, footers too
-
-      Original: _parse_text() — manual file.read()
-      LangChain: TextLoader — handles encoding detection automatically
-    """
-    ext = Path(filename).suffix.lower()
-
-    if ext == ".pdf":
-        loader = PyPDFLoader(file_path)
-    elif ext == ".docx":
-        loader = Docx2txtLoader(file_path)
-    elif ext in (".txt", ".md", ".markdown"):
-        loader = TextLoader(file_path, encoding="utf-8")
-    elif ext == ".csv":
-        loader = CSVLoader(file_path)
-    elif ext in (".xlsx", ".xls"):
-        # Use pandas (already a dependency) instead of UnstructuredExcelLoader (1GB+ dep)
-        import pandas as pd
-        df = pd.read_excel(file_path)
-        if df.empty:
-            return []
-        columns = list(df.columns)
-        raw_docs = []
-        chunk_lines = []
-        for _, row in df.iterrows():
-            line = ", ".join(f"{col}: {row[col]}" for col in columns if pd.notna(row[col]))
-            chunk_lines.append(line)
-            if len(chunk_lines) >= 50:
-                raw_docs.append(Document(
-                    page_content="\n".join(chunk_lines),
-                    metadata={"source": filename, "page": len(raw_docs) + 1, "type": ext.lstrip(".")},
-                ))
-                chunk_lines = []
-        if chunk_lines:
-            raw_docs.append(Document(
-                page_content="\n".join(chunk_lines),
-                metadata={"source": filename, "page": len(raw_docs) + 1, "type": ext.lstrip(".")},
-            ))
-        return raw_docs
-    else:
-        raise ValueError(f"Unsupported file type '{ext}'. Allowed: pdf, docx, txt, md, csv, xlsx, xls")
-
-    # LangChain loaders return List[Document] with metadata already populated
-    raw_docs = loader.load()
-
-    # Normalize metadata to match our existing format
-    for doc in raw_docs:
-        doc.metadata["source"] = filename
-        if "page" not in doc.metadata:
-            doc.metadata["page"] = 1
-        doc.metadata["type"] = ext.lstrip(".")
-
-    return raw_docs
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Task 13: LangChain Text Splitters

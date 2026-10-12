@@ -1,20 +1,19 @@
 """
-Document parsers, as they behave today: rag_engine.load_document (used by every upload) and
-rag_langchain.load_document_langchain (Task 12; not reachable from the API, see the notes in the
-pull request). Defects the audit found in these parsers are in test_known_defects.py.
+Document parsers, as they behave today: the native parsers (loader.load_document, used by every
+upload by default) and the LangChain loaders (Task 12; used when settings.document_loader is
+"langchain"). Defects the audit found in these parsers are in test_known_defects.py.
 """
 
 import pytest
 
-import rag_engine
-import rag_langchain
+from src.ingestion import loader
 from filemakers import make_docx, make_pdf, make_xls, make_xlsx
 
 ROWS = [["Part", "Qty", "Bin"], ["Bolt", 5, "A1"], ["Nut", 12, "B2"], ["Washer", 30, "C3"]]
 
 
 def load(path):
-    return rag_engine.load_document(str(path), path.name)
+    return loader.load_document(str(path), path.name)
 
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
@@ -134,16 +133,22 @@ def test_xls_rows_become_labelled_lines(tmp_path):
     assert docs[0].metadata == {"source": "legacy.xls", "page": 1, "type": "xls"}
 
 
-# ── LangChain loaders (rag_langchain, Task 12) ────────────────────────────────
+# ── LangChain loaders (Task 12) ───────────────────────────────────────────────
 
 def lc_load(path):
-    return rag_langchain.load_document_langchain(str(path), path.name)
+    return loader.load_document_langchain(str(path), path.name)
 
 
 def test_langchain_pdf_loader_reads_each_page(tmp_path):
     docs = lc_load(make_pdf(tmp_path / "manual.pdf", ["First page text", "Second page text"]))
     assert [d.page_content.strip() for d in docs] == ["First page text", "Second page text"]
     assert all(d.metadata["source"] == "manual.pdf" and d.metadata["type"] == "pdf" for d in docs)
+
+
+def test_langchain_pdf_pages_are_numbered_from_one(tmp_path):
+    # Was a known defect (Sprint 2): PyPDFLoader's 0-based pages would have been cited as "p. 0"
+    docs = lc_load(make_pdf(tmp_path / "two.pdf", ["one", "two"]))
+    assert [d.metadata["page"] for d in docs] == [1, 2]
 
 
 def test_langchain_docx_loader_includes_tables(tmp_path):
@@ -194,3 +199,10 @@ def test_langchain_unsupported_extension_is_a_value_error(tmp_path):
     path.write_bytes(b"PK")
     with pytest.raises(ValueError):
         lc_load(path)
+
+
+def test_the_setting_chooses_the_loader(tmp_path, monkeypatch):
+    path = make_docx(tmp_path / "rates.docx", ["Rates below."], table=[["Role", "Rate"], ["Engineer", "95"]])
+    assert "Engineer" not in load(path)[0].page_content
+    monkeypatch.setattr(loader.settings, "document_loader", "langchain")
+    assert "Engineer" in load(path)[0].page_content
