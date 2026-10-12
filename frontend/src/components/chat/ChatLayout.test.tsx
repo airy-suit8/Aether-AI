@@ -14,6 +14,7 @@ vi.mock('../../services/api', async (importOriginal) => ({
   deleteDocument: vi.fn(),
   sendChatStream: vi.fn(),
   sendChat: vi.fn(),
+  sendFeedback: vi.fn(),
   uploadDocument: vi.fn(),
   clearSession: vi.fn(),
   getSessions: vi.fn(),
@@ -434,5 +435,61 @@ describe('ChatLayout', () => {
     await ask('A first question')
     const list = screen.getByRole('navigation', { name: 'Conversations' })
     expect((await within(list).findByRole('link')).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('rates an answer up, takes the rating back, and rates it down', async () => {
+    vi.mocked(api.sendFeedback).mockReset()
+    vi.mocked(api.sendFeedback).mockResolvedValue({ message: 'Feedback recorded successfully.' })
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Every 90 days.')
+      onDone?.(done({ sources: [SOURCE], confidence: 0.8, turn_id: 21 }))
+    })
+    renderChat()
+    const user = await ask('How often?')
+    const rating = await screen.findByRole('group', { name: 'Rate this answer' })
+    const up = within(rating).getByRole('button', { name: 'Helpful' })
+    const down = within(rating).getByRole('button', { name: 'Not helpful' })
+    expect([up, down].map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false'])
+
+    await user.click(up)
+    expect(api.sendFeedback).toHaveBeenLastCalledWith(21, 1)
+    expect(up.getAttribute('aria-pressed')).toBe('true')
+
+    await user.click(up)  // pressing the chosen one again clears it
+    expect(api.sendFeedback).toHaveBeenLastCalledWith(21, 0)
+    expect(up.getAttribute('aria-pressed')).toBe('false')
+
+    await user.click(down)
+    expect(api.sendFeedback).toHaveBeenLastCalledWith(21, -1)
+    expect([up, down].map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+  })
+
+  it('shows the rating saved with a turn after a reload, and puts it back if a change fails', async () => {
+    vi.mocked(api.sendFeedback).mockReset()
+    vi.mocked(api.sendFeedback).mockRejectedValue(new Error('No such answer.'))
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_1', turns: [turn({
+      turn_id: 5, question: 'How often?', answer: 'Every 90 days.', sources: [SOURCE], feedback: -1,
+    })] })
+    const { addToast } = renderChat()
+    const rating = await screen.findByRole('group', { name: 'Rate this answer' })
+    const down = within(rating).getByRole('button', { name: 'Not helpful' })
+    expect(down.getAttribute('aria-pressed')).toBe('true')
+
+    await userEvent.setup().click(within(rating).getByRole('button', { name: 'Helpful' }))
+    expect(api.sendFeedback).toHaveBeenCalledWith(5, 1)
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('No such answer.', 'error'))
+    expect(down.getAttribute('aria-pressed')).toBe('true')
+    expect(within(rating).getByRole('button', { name: 'Helpful' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('offers no rating for an answer the server did not save', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('I could not find relevant information in the uploaded documents to answer that question.')
+      onDone?.(done({ turn_id: null }))
+    })
+    renderChat()
+    await ask('Something unrelated')
+    expect(await screen.findByText(/I could not find relevant information/)).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Rate this answer' })).toBeNull()
   })
 })

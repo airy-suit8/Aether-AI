@@ -322,6 +322,11 @@
   background: var(--p-surface-3);
 }
 
+/* Rating: two quiet icon buttons under an answer; the chosen one is pressed, in the tonal fill. */
+.x-rate { display: flex; gap: 2px; margin: 10px 0 0 -10px; }
+.x-rate .p-icon-btn { color: var(--p-ink-3); }
+.x-rate .p-icon-btn[aria-pressed="true"] { color: var(--p-on-primary-soft); background: var(--p-primary-soft); }
+
 .x-margin { display: grid; gap: 10px; align-content: start; }
 .x-margin .p-eyebrow { margin: 6px 0 2px; }
 
