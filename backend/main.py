@@ -3,8 +3,8 @@ main.py — the entry point: builds the Aether AI app (python -m uvicorn main:ap
 
 create_app() checks the JWT secret, adds CORS and the rate limiter, includes the API routers
 from src/api/ and serves the built React app at /. The lifespan hook sets up the log files
-and the database tables when the server starts, and files chunks stored before tenant ids
-under their owner's tenant id. Nothing is opened at import, and a server without a Gemini key
+and the database tables when the server starts, files chunks stored before tenant ids under
+their owner's tenant id, and marks uploads a restart cut short as failed. Nothing is opened at import, and a server without a Gemini key
 still starts: only adding and searching chunks need it.
 
 Endpoints (all under /api/v1):
@@ -33,7 +33,7 @@ from src.api.middleware import RequestMiddleware
 from src.core.config import APP_VERSION, settings
 from src.core.logging import error_logger, log_event, setup_logging, upload_logger
 from src.db.database import init_db
-from src.pipeline.documents import migrate_chunks_to_tenants
+from src.pipeline.documents import migrate_chunks_to_tenants, recover_interrupted_uploads
 
 
 @asynccontextmanager
@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
         error_logger.warning(
             f"{moved['unclaimed']} chunks in the vector store belong to no document in this database "
             "(left from an earlier database?). They are kept, and no user can search them.")
+    interrupted = recover_interrupted_uploads()
+    if interrupted:
+        error_logger.warning(f"{interrupted} uploads were still being read when the server stopped; they are marked failed.")
     yield
 
 

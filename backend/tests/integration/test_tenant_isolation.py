@@ -54,7 +54,7 @@ def tenants(request, client, make_user):
     b = {"headers": bob, "id": _user_id(bob), "tenant": tenant_of(bob), "doc": BOB_DOC}
     for t in (a, b):
         filename, text, _, _ = t["doc"]
-        assert upload_text(client, t["headers"], filename=filename, text=text).status_code == 200
+        assert upload_text(client, t["headers"], filename=filename, text=text).status_code == 202
     return (a, b) if request.param == "alice_owns" else (b, a)
 
 

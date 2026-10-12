@@ -55,9 +55,11 @@ def test_end_to_end(client, make_user):
 
     # ── Alice uploads a small text file ─────────────────────────────────────────
     up = upload_text(client, alice, filename=FILENAME, text=DOC_TEXT)
-    assert up.status_code == 200, up.text
+    assert up.status_code == 202, up.text  # accepted, and read in the background (R12)
     assert up.json()["filename"] == FILENAME
-    chunks = up.json()["chunks"]
+    document = client.get(f"/api/v1/documents/{up.json()['document_id']}", headers=alice).json()
+    assert document["status"] == "ready"
+    chunks = document["chunks"]
     assert chunks >= 1
 
     listed = client.get("/api/v1/documents", headers=alice).json()
@@ -126,6 +128,7 @@ def test_end_to_end(client, make_user):
     ("/api/v1/upload", "post"), ("/api/v1/chat", "post"), ("/api/v1/chat/stream", "post"),
     ("/api/v1/feedback", "post"), ("/api/v1/session/clear", "post"),
     ("/api/v1/documents", "get"), ("/api/v1/documents/detailed", "get"), ("/api/v1/documents", "delete"),
+    ("/api/v1/documents/1", "get"),
 ])
 def test_protected_routes_require_a_token(client, path, method):
     assert getattr(client, method)(path).status_code == 401

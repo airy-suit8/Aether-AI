@@ -142,7 +142,8 @@ export async function logout() {
 }
 
 /**
- * Upload a document to the RAG pipeline
+ * Upload a document. The server accepts it (202) and reads it in the background: the reply has
+ * its document_id, for getDocument, and replaces (an earlier file of the same name goes once it is read).
  */
 export async function uploadDocument(file) {
   const formData = new FormData();
@@ -256,6 +257,16 @@ export async function getDocuments() {
 export async function getDocumentsDetailed() {
   const res = await authFetch(`${BASE_URL}/documents/detailed`);
   await checkResponse(res, 'Failed to fetch detailed documents');
+  return res.json();
+}
+
+/**
+ * One document and how reading it went: status 'processing', then 'ready' or 'failed' (with error).
+ * An upload is read in the background, so this is how its result is learned.
+ */
+export async function getDocument(documentId) {
+  const res = await authFetch(`${BASE_URL}/documents/${encodeURIComponent(documentId)}`);
+  await checkResponse(res, 'Failed to fetch the document');
   return res.json();
 }
 

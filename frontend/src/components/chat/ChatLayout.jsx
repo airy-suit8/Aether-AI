@@ -3,7 +3,7 @@ import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
-import { sendChat, sendChatStream, uploadDocument, getDocumentsDetailed, deleteDocument, clearSession } from '../../services/api'
+import { sendChat, sendChatStream, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession } from '../../services/api'
 import { useAuth } from '../../services/AuthContext'
 import { AmbientField, Lens } from '../../design/prism'
 
@@ -15,6 +15,11 @@ const THEMES = [
 // The server refuses larger files (AETHER_MAX_UPLOAD_BYTES); checked here first, so a big file
 // is not sent only to be cut off
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+// An upload is read in the background; its status is checked this often, for at most ten minutes
+const POLL_MS = 1000
+const POLL_LIMIT = 600
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 901px)').matches : true)
 
@@ -49,6 +54,12 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   const streamRef = useRef(null)
   const abortRef = useRef(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   // Each document is { id, filename, ... }: the id is what removes it
   const refreshDocuments = useCallback(async () => {
@@ -173,13 +184,32 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
     }
     setUploadProgress({ filename: file.name, status: 'uploading' })
     try {
-      const result = await uploadDocument(file)
-      addToast(result.message, 'success')
-      setUploadProgress(null)
-      refreshDocuments()
+      const accepted = await uploadDocument(file)
+      refreshDocuments()  // it shows in the library as being read
+      let doc = await getDocument(accepted.document_id)
+      for (let tries = 0; doc.status === 'processing' && tries < POLL_LIMIT && mountedRef.current; tries++) {
+        await pause(POLL_MS)
+        doc = await getDocument(accepted.document_id)
+      }
+      if (!mountedRef.current) return
+      if (doc.status === 'ready') {
+        const pages = `${doc.pages} page${doc.pages === 1 ? '' : 's'}`
+        const replaced = accepted.replaces ? ' It replaced the earlier file of that name.' : ''
+        addToast(`Added ${doc.filename}: ${doc.chunks} passages from ${pages}.${replaced}`, 'success')
+      } else if (doc.status === 'failed') {
+        addToast(doc.error || `${doc.filename} could not be read.`, 'error')
+        // Nothing of it was kept; its record leaves the library too
+        await deleteDocument(doc.id).catch(() => {})
+      } else {
+        addToast(`Still reading ${doc.filename}. It will appear in your library when it is ready.`, 'info')
+      }
     } catch (err) {
       addToast(err.message || 'Upload failed', 'error')
-      setUploadProgress(null)
+    } finally {
+      if (mountedRef.current) {
+        setUploadProgress(null)
+        refreshDocuments()
+      }
     }
   }, [addToast, refreshDocuments])
 

@@ -18,7 +18,7 @@ from src.core import security
 from src.pipeline import documents
 from src.core.config import settings
 from src.core.logging import error_logger, request_logger
-from helpers import DOC_TEXT, upload_text, ask, ask_stream, user_id_of
+from helpers import DOC_TEXT, upload_text, ask, ask_stream, status_of, user_id_of
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
 
@@ -26,7 +26,7 @@ PROTECTED = [
     ("post", "/api/v1/upload"), ("post", "/api/v1/chat"), ("post", "/api/v1/chat/stream"),
     ("post", "/api/v1/feedback"), ("post", "/api/v1/session/clear"),
     ("get", "/api/v1/documents"), ("get", "/api/v1/documents/detailed"), ("delete", "/api/v1/documents"),
-    ("delete", "/api/v1/documents/1"),
+    ("delete", "/api/v1/documents/1"), ("get", "/api/v1/documents/1"),
 ]
 
 
@@ -78,13 +78,15 @@ def test_login_with_wrong_credentials_is_401(client, username, password):
 def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
     _, headers = make_user("routes")
     up = upload_text(client, headers)
-    assert up.status_code == 200
+    assert up.status_code == 202  # accepted; read in the background (R12)
     body = up.json()
-    assert isinstance(body.pop("document_id"), int)
-    assert body == {
-        "filename": "zephyr_manual.txt", "pages": 1, "chunks": 1, "replaced": False,
-        "message": "Successfully ingested 'zephyr_manual.txt' (1 chunks from 1 page(s)).",
-    }
+    document_id = body.pop("document_id")
+    assert isinstance(document_id, int)
+    assert body == {"filename": "zephyr_manual.txt", "status": "processing", "replaces": False,
+                    "message": "Reading 'zephyr_manual.txt'."}
+    document = client.get(f"/api/v1/documents/{document_id}", headers=headers).json()
+    assert {k: document[k] for k in ("id", "filename", "status", "error", "pages", "chunks")} == {
+        "id": document_id, "filename": "zephyr_manual.txt", "status": "ready", "error": None, "pages": 1, "chunks": 1}
 
     r = ask(client, headers, QUESTION)
     assert r.status_code == 200
@@ -104,7 +106,8 @@ def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
     assert client.get("/api/v1/documents", headers=headers).json() == {"documents": ["zephyr_manual.txt"], "count": 1}
     detailed = client.get("/api/v1/documents/detailed", headers=headers).json()
     assert detailed["count"] == 1
-    assert set(detailed["documents"][0]) == {"id", "filename", "file_hash", "pages", "chunks", "size_bytes", "uploaded_at"}
+    assert set(detailed["documents"][0]) == {"id", "filename", "file_hash", "pages", "chunks", "size_bytes", "uploaded_at",
+                                             "status", "error"}
 
     r = client.delete("/api/v1/documents", headers=headers)
     assert r.json() == {"message": "Cleared 1 chunks from the vector store.", "status": "cleared", "deleted": 1}
@@ -187,13 +190,21 @@ def test_feedback_rejects_bad_input(client, make_user, body):
 @pytest.mark.parametrize("filename,content,status", [
     ("notes.exe", b"MZ", 400),          # extension not allowed
     ("empty.txt", b"", 400),            # zero bytes
-    ("blank.txt", b"   \n\t ", 422),    # nothing to extract
 ])
 def test_upload_rejections(client, make_user, filename, content, status):
     _, headers = make_user("rej")
     r = client.post("/api/v1/upload", headers=headers, files={"file": (filename, content, "text/plain")})
     assert r.status_code == status, r.text
-    assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
+    assert client.get("/api/v1/documents/detailed", headers=headers).json()["count"] == 0
+
+
+def test_a_file_with_nothing_to_read_is_accepted_then_fails_with_a_reason(client, make_user):
+    # It is read in the background (R12), so the reason is in its status rather than the reply
+    _, headers = make_user("blank")
+    r = client.post("/api/v1/upload", headers=headers, files={"file": ("blank.txt", b"   \n\t ", "text/plain")})
+    document = status_of(client, headers, r)
+    assert document["status"] == "failed" and document["error"] == "No text could be extracted from the document."
+    assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0  # not searchable
 
 
 def test_upload_over_the_size_limit_is_rejected(client, make_user, monkeypatch):
@@ -204,19 +215,23 @@ def test_upload_over_the_size_limit_is_rejected(client, make_user, monkeypatch):
     assert "too large" in r.json()["detail"]
 
 
-def test_upload_ingestion_failure_is_500_and_records_nothing(client, make_user, monkeypatch):
+def test_an_ingestion_failure_is_reported_in_the_status_with_a_reference_only(client, make_user, monkeypatch):
     _, headers = make_user("ingfail")
 
     def broken(*args, **kwargs):
         raise RuntimeError("embedding service down")
 
-    # The record is written before ingestion (the chunks need its id), so it must be taken back
     working = documents.ingest_document
     monkeypatch.setattr(documents, "ingest_document", broken)
-    assert upload_text(client, headers).status_code == 500
+    r = upload_text(client, headers)
+    document = status_of(client, headers, r)
+    assert document["status"] == "failed"
+    assert document["error"] == ("Something went wrong on the server while reading this file. Please try again. "
+                                 f"Reference: {r.headers['x-request-id']}")
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
     monkeypatch.setattr(documents, "ingest_document", working)
-    assert upload_text(client, headers).status_code == 200  # and the same file can be uploaded afterwards
+    # A failed upload does not block the same file: it can be uploaded again
+    assert status_of(client, headers, upload_text(client, headers))["status"] == "ready"
 
 
 @pytest.mark.parametrize("path", ["/api/v1/chat", "/api/v1/chat/stream"])

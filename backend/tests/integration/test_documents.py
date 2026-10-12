@@ -4,12 +4,15 @@ document can be deleted or replaced on its own (R7).
 """
 
 import jwt
+from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
+import main
+from src.api import routes_documents
 from src.db import database
 from src.pipeline import documents
 from src.vectordb import vector_store
-from helpers import DOC_TEXT, ask, tenant_of, upload_text
+from helpers import DOC_TEXT, ask, status_of, tenant_of, upload_text
 
 LONG_TEXT = "\n\n".join(f"Section {i}. " + DOC_TEXT * 4 for i in range(4))  # several chunks
 
@@ -17,7 +20,7 @@ LONG_TEXT = "\n\n".join(f"Section {i}. " + DOC_TEXT * 4 for i in range(4))  # se
 def test_reupload_of_same_file_is_rejected(client, make_user):
     _, headers = make_user("dup")
     first = upload_text(client, headers)
-    assert first.status_code == 200
+    assert first.status_code == 202
 
     again = upload_text(client, headers, filename="renamed_copy.txt")
     assert again.status_code == 409
@@ -30,15 +33,13 @@ def test_reupload_of_same_file_is_rejected(client, make_user):
 def test_same_file_is_allowed_for_a_different_user(client, make_user):
     _, alice = make_user("dupa")
     _, bob = make_user("dupb")
-    assert upload_text(client, alice).status_code == 200
-    assert upload_text(client, bob).status_code == 200
+    assert status_of(client, alice, upload_text(client, alice))["status"] == "ready"
+    assert status_of(client, bob, upload_text(client, bob))["status"] == "ready"
 
 
 def test_delete_returns_the_real_chunk_count(client, make_user):
     _, headers = make_user("del")
-    up = upload_text(client, headers, filename="long.txt", text=LONG_TEXT)
-    assert up.status_code == 200
-    chunks = up.json()["chunks"]
+    chunks = status_of(client, headers, upload_text(client, headers, filename="long.txt", text=LONG_TEXT))["chunks"]
     assert chunks > 1
 
     r = client.delete("/api/v1/documents", headers=headers)
@@ -138,12 +139,12 @@ def test_an_id_that_is_not_a_number_is_a_422(client, make_user):
 def test_uploading_a_changed_file_of_the_same_name_replaces_it(client, make_user):
     _, headers = make_user("replace")
     first = upload_text(client, headers, filename="policy.txt", text="The notice period is 30 days.").json()
-    assert first["replaced"] is False
+    assert first["replaces"] is False
 
     second = upload_text(client, headers, filename="policy.txt", text="The notice period is 60 days.")
-    assert second.status_code == 200
-    assert second.json()["replaced"] is True and second.json()["document_id"] != first["document_id"]
-    assert second.json()["message"].endswith("It replaced the earlier file of that name.")
+    assert second.status_code == 202
+    assert second.json()["replaces"] is True and second.json()["document_id"] != first["document_id"]
+    assert status_of(client, headers, second)["status"] == "ready"
     assert _listed(client, headers) == {"policy.txt": second.json()["document_id"]}
     answer = ask(client, headers, "What is the notice period?").json()
     assert "60 days" in answer["answer"] and "30 days" not in answer["answer"]
@@ -158,8 +159,11 @@ def test_a_replacement_that_fails_keeps_the_earlier_file(client, make_user, monk
         raise RuntimeError("embedding service down")
 
     monkeypatch.setattr(documents, "ingest_document", broken)
-    assert upload_text(client, headers, filename="policy.txt", text="The notice period is 60 days.").status_code == 500
-    assert _listed(client, headers) == {"policy.txt": first["document_id"]}
+    failed = upload_text(client, headers, filename="policy.txt", text="The notice period is 60 days.")
+    assert status_of(client, headers, failed)["status"] == "failed"
+    # The earlier file is still there and still the one searched; the failed upload is listed as failed
+    library = client.get("/api/v1/documents/detailed", headers=headers).json()["documents"]
+    assert sorted((d["id"], d["status"]) for d in library) == [(first["document_id"], "ready"), (failed.json()["document_id"], "failed")]
     assert {m["document_id"] for m in _chunks(headers)} == {first["document_id"]}
 
 
@@ -205,7 +209,52 @@ def test_upload_with_the_langchain_loader_cites_pages_from_one(client, make_user
     monkeypatch.setattr(settings, "document_loader", "langchain")
     pdf = make_pdf(tmp_path / "two.pdf", ["The Zephyr turbine page", "The Orion team page"]).read_bytes()
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("two.pdf", pdf, "application/pdf")})
-    assert r.status_code == 200, r.text
-    assert r.json()["pages"] == 2
+    assert status_of(client, headers, r)["pages"] == 2
     metas = _chunks(headers)
     assert sorted(m["page"] for m in metas) == [1, 2]
+
+
+# ── Reading in the background (R12) ───────────────────────────────────────────
+
+def test_an_upload_is_accepted_at_once_and_read_after_the_reply(client, make_user, monkeypatch):
+    _, headers = make_user("bg")
+    seen = []
+    real = documents.finish_document
+
+    def finish_and_note(user_id, document_id, *args):
+        # By the time the reading starts, the record exists and says "processing"
+        seen.append(database.get_document(user_id, document_id)["status"])
+        return real(user_id, document_id, *args)
+
+    monkeypatch.setattr(routes_documents, "finish_document", finish_and_note)
+    r = upload_text(client, headers)
+    assert r.status_code == 202 and r.json()["status"] == "processing"
+    assert seen == ["processing"]
+    assert status_of(client, headers, r)["status"] == "ready"
+
+
+def test_the_status_of_another_user_s_document_is_a_404(client, make_user):
+    _, alice = make_user("sta")
+    _, bob = make_user("stb")
+    document_id = upload_text(client, alice).json()["document_id"]
+    assert client.get(f"/api/v1/documents/{document_id}", headers=bob).status_code == 404
+    assert client.get("/api/v1/documents/999999999", headers=alice).status_code == 404
+    assert client.get(f"/api/v1/documents/{document_id}", headers=alice).status_code == 200
+
+
+def test_an_upload_a_restart_cut_short_is_marked_failed_and_its_chunks_removed(client, make_user):
+    _, headers = make_user("restart")
+    user_id, tenant = _user_id(headers), tenant_of(headers)
+    accepted = documents.accept_document(user_id, "half.txt", 10, "hash-half")
+    document_id = accepted["document_id"]
+    vector_store.store.add_documents(tenant, [Document(
+        page_content="Half of a file.", metadata={"source": "half.txt", "page": 1, "document_id": document_id, "chunk_id": f"half-{document_id}"})])
+    assert client.get(f"/api/v1/documents/{document_id}", headers=headers).json()["status"] == "processing"
+
+    with TestClient(main.app):  # a restart: the startup finds it still processing
+        pass
+    document = client.get(f"/api/v1/documents/{document_id}", headers=headers).json()
+    assert document["status"] == "failed" and document["error"] == documents.INTERRUPTED
+    assert _chunks(headers) == []
+    # The same file may be uploaded again: a failed upload is not a duplicate
+    assert database.check_duplicate_document(user_id, "hash-half") is None

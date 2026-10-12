@@ -34,12 +34,25 @@ class FeedbackRequest(BaseModel):
     feedback: Literal[-1, 0, 1]  # 1 for up, -1 for down, 0 to clear
 
 class UploadResponse(BaseModel):
+    """An accepted upload. It is read in the background: GET /documents/{document_id} says when
+    it is ready, or why it failed (R12)."""
+    document_id: int
     filename: str
+    status: Literal["processing"] = "processing"
+    replaces: bool = False  # an earlier file of the same name is replaced once this one is read
+    message: str
+
+
+class DocumentStatus(BaseModel):
+    """One document in a user's library, and how reading it went."""
+    id: int
+    filename: str
+    status: Literal["processing", "ready", "failed"]
+    error: Optional[str] = None  # why it failed, written for the person who uploaded it
     pages: int
     chunks: int
-    message: str
-    document_id: int       # for DELETE /documents/{document_id}
-    replaced: bool = False  # true when an earlier file of the same name was replaced
+    size_bytes: int
+    uploaded_at: str
 
 # Sign-up rules (S7). The web app's sign-up form mirrors them (LandingPage.jsx).
 USERNAME_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,50}")

@@ -8,6 +8,7 @@ import * as api from '../../services/api'
 vi.mock('../../services/api', async (importOriginal) => ({
   ...(await importOriginal()),
   getDocumentsDetailed: vi.fn(),
+  getDocument: vi.fn(),
   deleteDocument: vi.fn(),
   sendChatStream: vi.fn(),
   sendChat: vi.fn(),
@@ -153,5 +154,44 @@ describe('ChatLayout', () => {
     await user.upload(document.querySelector('input[type="file"]'), big)
     expect(api.uploadDocument).not.toHaveBeenCalled()
     expect(addToast).toHaveBeenCalledWith('huge.pdf is larger than 50 MB, the most one file may be.', 'error')
+  })
+
+  it('uploads a file, waits while it is read, and says how many passages it made', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 9, filename: 'plan.pdf', status: 'processing', replaces: true })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockResolvedValue({ id: 9, filename: 'plan.pdf', status: 'ready', pages: 3, chunks: 12 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]'), new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith(
+      'Added plan.pdf: 12 passages from 3 pages. It replaced the earlier file of that name.', 'success'))
+    expect(api.getDocument).toHaveBeenCalledWith(9)
+    expect(api.deleteDocument).not.toHaveBeenCalled()
+  })
+
+  it('shows why an upload could not be read, and takes it out of the library', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 10, filename: 'scan.pdf', status: 'processing', replaces: false })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockResolvedValue({
+      id: 10, filename: 'scan.pdf', status: 'failed', error: "'scan.pdf' has no text to read.", pages: 0, chunks: 0,
+    })
+    vi.mocked(api.deleteDocument).mockResolvedValue({ filename: 'scan.pdf', deleted: 0 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]'), new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith("'scan.pdf' has no text to read.", 'error'))
+    expect(api.deleteDocument).toHaveBeenCalledWith(10)
+  })
+
+  it('marks a document that is still being read, or could not be read, in words', async () => {
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [
+      { id: 1, filename: 'big.pdf', status: 'processing' },
+      { id: 2, filename: 'bad.pdf', status: 'failed', error: 'It is damaged.' },
+      { id: 3, filename: 'good.pdf', status: 'ready' },
+    ], count: 3 })
+    renderChat()
+    expect(await screen.findByText('Reading')).toBeTruthy()
+    expect(screen.getByText('Could not be read').getAttribute('title')).toBe('It is damaged.')
+    expect(screen.getAllByText(/Reading|Could not be read/)).toHaveLength(2)
   })
 })

@@ -154,7 +154,7 @@
           "Documents"
         ],
         "summary": "Upload Document",
-        "description": "Upload and ingest a document: PDF, Word, text, Markdown, CSV or Excel.\n\nThe token is checked before any of the body is read (S4).",
+        "description": "Upload a document: PDF, Word, text, Markdown, CSV or Excel. 202: it is accepted and read in\nthe background; GET /documents/{document_id} reports when it is ready or why it failed (R12).\n\nThe token is checked before any of the body is read (S4).",
         "operationId": "upload_document_api_v1_upload_post",
         "requestBody": {
           "content": {
@@ -178,7 +178,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -270,6 +270,52 @@
       }
     },
     "/api/v1/documents/{document_id}": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get One Document",
+        "description": "One document and how reading it went: \"processing\", then \"ready\" or \"failed\" with an error\n(R12). 404 for an id that is not yours. Declared after /documents/detailed, which it would\notherwise shadow.",
+        "operationId": "get_one_document_api_v1_documents__document_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "Documents"
@@ -639,6 +685,66 @@
         ],
         "title": "ChatResponse"
       },
+      "DocumentStatus": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "title": "Uploaded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "status",
+          "pages",
+          "chunks",
+          "size_bytes",
+          "uploaded_at"
+        ],
+        "title": "DocumentStatus",
+        "description": "One document in a user's library, and how reading it went."
+      },
       "FeedbackRequest": {
         "properties": {
           "session_id": {
@@ -703,41 +809,38 @@
       },
       "UploadResponse": {
         "properties": {
-          "filename": {
-            "type": "string",
-            "title": "Filename"
-          },
-          "pages": {
-            "type": "integer",
-            "title": "Pages"
-          },
-          "chunks": {
-            "type": "integer",
-            "title": "Chunks"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          },
           "document_id": {
             "type": "integer",
             "title": "Document Id"
           },
-          "replaced": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "const": "processing",
+            "title": "Status",
+            "default": "processing"
+          },
+          "replaces": {
             "type": "boolean",
-            "title": "Replaced",
+            "title": "Replaces",
             "default": false
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
           }
         },
         "type": "object",
         "required": [
+          "document_id",
           "filename",
-          "pages",
-          "chunks",
-          "message",
-          "document_id"
+          "message"
         ],
-        "title": "UploadResponse"
+        "title": "UploadResponse",
+        "description": "An accepted upload. It is read in the background: GET /documents/{document_id} says when\nit is ready, or why it failed (R12)."
       },
       "UserRegister": {
         "properties": {
