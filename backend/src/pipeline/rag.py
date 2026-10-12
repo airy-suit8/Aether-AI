@@ -31,10 +31,13 @@ from pydantic import BaseModel, Field
 
 from src.agents.agent import run_agent
 from src.core.config import settings
+from src.core.logging import log_event, request_logger
 from src.db.database import get_tenant_id
 from src.llm import llm_client
 from src.memory.conversation import NO_HISTORY, memory
-from src.prompts.prompt_templates import CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context
+from src.prompts.prompt_templates import (
+    CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context, injection_patterns_in,
+)
 from src.retrieval.retriever import UserRetriever, retriever, rewrite_question
 
 Mode = Literal["default", "hybrid", "agent", "langchain"]
@@ -184,6 +187,16 @@ def _answer_sources(answer: str, results: List[Dict[str, Any]]) -> List[Dict[str
     return _sources(results)
 
 
+def _report_injection_patterns(user_id: int, results: List[Dict[str, Any]]) -> None:
+    """Task 8 as telemetry (S5): log each chunk about to reach the model that reads like an
+    instruction. The chunk itself is sent unchanged."""
+    for r in results:
+        found = injection_patterns_in(r["text"])
+        if found:
+            log_event(request_logger, "injection_pattern_retrieved", user_id=user_id,
+                      source=r["meta"].get("source"), chunk_id=r["meta"].get("chunk_id"), patterns=found)
+
+
 def _refusal(text: str, confidence: float) -> Iterator[Dict[str, Any]]:
     yield {"type": "token", "content": text}
     yield {"type": "done", "sources": [], "confidence": confidence}
@@ -226,6 +239,7 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         trace.refused = True
         yield from _refusal(NOT_FOUND, confidence)
         return
+    _report_injection_patterns(user_id, results)
 
     answer_text = ""
     for chunk in _generate(mode, results, question, history, trace):
