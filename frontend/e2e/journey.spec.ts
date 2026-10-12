@@ -144,6 +144,24 @@ test('the whole journey, with the accessibility gate', async ({ page }) => {
   await expect(threads.getByRole('link', { name: new RegExp(QUESTION) })).toHaveAttribute('aria-current', 'page')
   expect(secondThread).not.toBe(firstThread)
 
+  // Rename the first thread; delete the second with two clicks (Sprint 8, item 3)
+  await threads.getByRole('button', { name: `Rename ${QUESTION}` }).click()
+  const newName = threads.getByRole('textbox', { name: `New name for ${QUESTION}` })
+  await newName.fill('Blade inspections')
+  await newName.press('Enter')
+  await expect(threads.getByRole('link', { name: /Blade inspections/ })).toBeVisible()
+  await threads.getByRole('button', { name: `Delete ${SECOND}` }).click()
+  await threads.getByRole('button', { name: `Confirm deleting ${SECOND}` }).click()
+  await expect(page.getByText('Conversation deleted')).toBeVisible()
+  await expect(threads.getByRole('link')).toHaveCount(1)
+  await page.reload()
+  await expect(page).toHaveURL(firstThread)
+  await expect(threads.getByRole('link', { name: /Blade inspections/ })).toHaveAttribute('aria-current', 'page')
+  await page.goto(secondThread)
+  await expect(page.getByRole('heading', { name: SECOND })).toHaveCount(0)  // nothing of it is left
+  await page.goto(firstThread)
+  await chatReady()
+
   // ── Settings ──────────────────────────────────────────────────────────────
   await page.getByRole('button', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/\/settings$/)

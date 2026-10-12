@@ -10,12 +10,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from src.api.deps import get_current_user, limiter
 from src.api.errors import reference, server_error
 from src.api.schemas import (
-    ChatRequest, ChatResponse, FeedbackRequest, Message, SessionCleared, SessionList, SessionMessages, StreamEvent,
-    SESSION_ID_PATTERN,
+    ChatRequest, ChatResponse, FeedbackRequest, Message, SessionCleared, SessionList, SessionMessages, SessionRename,
+    SessionTitle, StreamEvent, SESSION_ID_PATTERN,
 )
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, request_logger
-from src.db.database import get_session_turns, get_sessions, update_conversation_feedback
+from src.db.database import get_session_turns, get_sessions, rename_session, update_conversation_feedback
 from src.llm.llm_client import MODEL_BUSY, is_unavailable
 from src.memory.conversation import clear_session
 from src.pipeline import rag
@@ -151,10 +151,38 @@ def list_sessions(user_id: int = Depends(get_current_user), limit: int = Query(5
     return {"sessions": get_sessions(user_id, limit)}
 
 
+# A session id in a path is held to the same rules as one in a request body
+SessionPath = Path(max_length=100, pattern=SESSION_ID_PATTERN)
+
+NO_SUCH_CONVERSATION = "No such conversation."
+
+
 @router.get("/api/v1/sessions/{session_id}/messages", response_model=SessionMessages, tags=["Session"])
-def session_messages(session_id: str = Path(max_length=100, pattern=SESSION_ID_PATTERN),
-                     user_id: int = Depends(get_current_user)):
+def session_messages(session_id: str = SessionPath, user_id: int = Depends(get_current_user)):
     """Every turn of one of the user's conversations, oldest first, with the sources and tool
     shown with each answer. Empty for a session with no turns, or one that is not the user's."""
     turns = [{**t, "turn_id": t["id"]} for t in get_session_turns(user_id, session_id)]
     return {"session_id": session_id, "turns": turns}
+
+
+# ── Renaming and deleting a conversation (Sprint 8, item 3) ──────────────────
+
+@router.patch("/api/v1/sessions/{session_id}", response_model=SessionTitle, tags=["Session"])
+def rename_conversation(rename: SessionRename, session_id: str = SessionPath, user_id: int = Depends(get_current_user)):
+    """Give one of the user's conversations a name, shown in place of its first question.
+    404 for a conversation that is not the user's, or has no turns yet."""
+    if not rename_session(user_id, session_id, rename.title):
+        raise HTTPException(status_code=404, detail=NO_SUCH_CONVERSATION)
+    log_event(request_logger, "session_renamed", user_id=user_id, session=session_id, title_chars=len(rename.title))
+    return {"session_id": session_id, "title": rename.title}
+
+
+@router.delete("/api/v1/sessions/{session_id}", response_model=SessionCleared, tags=["Session"])
+def delete_conversation(session_id: str = SessionPath, user_id: int = Depends(get_current_user)):
+    """Delete one of the user's conversations: every turn, its feedback and its name. 404 for a
+    conversation that is not the user's."""
+    deleted = clear_session(user_id, session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=NO_SUCH_CONVERSATION)
+    log_event(request_logger, "session_deleted", user_id=user_id, session=session_id, turns=deleted)
+    return {"message": "Conversation deleted", "session_id": session_id}

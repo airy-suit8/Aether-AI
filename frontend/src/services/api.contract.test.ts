@@ -84,6 +84,8 @@ const CALLS: Record<string, () => Promise<unknown>> = {
   deleteDocument: () => api.deleteDocument(7),
   deleteAllDocuments: () => api.deleteAllDocuments(),
   clearSession: () => api.clearSession('s1'),
+  renameSession: () => api.renameSession('session_1', 'Blade inspections'),
+  deleteSession: () => api.deleteSession('session_1'),
   getHealth: () => api.getHealth(),
 }
 

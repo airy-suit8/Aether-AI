@@ -6,7 +6,7 @@ import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import {
   ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
-  getSessions, getSessionMessages,
+  getSessions, getSessionMessages, renameSession, deleteSession,
 } from '../../services/api'
 import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
@@ -390,6 +390,30 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     if (!isWide()) setSidebarOpen(false)
   }, [])
 
+  // ── Rename or delete a thread from the list ──────────────────────────
+  // A new name shows at once; the list is read again from the server either way
+  const handleRenameThread = useCallback(async (thread: SessionSummary, title: string) => {
+    setThreads(prev => prev.map(t => (t.session_id === thread.session_id ? { ...t, title } : t)))
+    try {
+      await renameSession(thread.session_id, title)
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not rename the conversation', 'error')
+    }
+    await refreshThreads()
+  }, [addToast, refreshThreads])
+
+  // Deleting the open conversation starts a new one in its place
+  const handleDeleteThread = useCallback(async (thread: SessionSummary) => {
+    try {
+      await deleteSession(thread.session_id)
+      addToast('Conversation deleted', 'info')
+      if (thread.session_id === sessionId) startThread()
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not delete the conversation', 'error')
+    }
+    await refreshThreads()
+  }, [addToast, refreshThreads, sessionId, startThread])
+
   const handleNewThread = useCallback(() => {
     startThread()
     addToast('New thread started', 'info')
@@ -434,6 +458,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         threads={threads}
         currentThread={sessionId}
         onChooseThread={chooseThread}
+        onRenameThread={handleRenameThread}
+        onDeleteThread={handleDeleteThread}
         onNewThread={handleNewThread}
         onOpenSettings={openSettings}
         onNavigateHome={goHome}

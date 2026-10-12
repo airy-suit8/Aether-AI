@@ -140,6 +140,27 @@
 .x-thread__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .x-thread time { color: var(--p-ink-3); }
 
+/* Rename and Delete: the library row's quiet controls, showing with the thread's row. Delete is
+   armed by a first click ("Delete?") and confirmed by a second, as Remove is for a document. */
+.x-thread-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px; }
+.x-thread-row[data-removing="true"] { opacity: 0.5; }
+.x-thread-row .x-thread__act { margin: 0; }
+.x-thread-row:hover .x-thread__act,
+.x-thread-row:focus-within .x-thread__act,
+.x-thread-row[data-armed="true"] .x-thread__act { opacity: 1; }
+.x-thread-row .x-thread--edit { grid-column: 1 / -1; padding: 4px; }
+.x-thread--edit input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--p-r-1);
+  font: inherit;
+  color: var(--p-ink);
+  background: var(--p-surface);
+  box-shadow: inset 0 0 0 1px var(--p-outline);
+}
+
 .x-docs {
   display: grid;
   gap: 2px;
