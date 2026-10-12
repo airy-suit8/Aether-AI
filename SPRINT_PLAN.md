@@ -10,7 +10,7 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 1 Make it work end to end | Done, merged 11 Oct 2026 (PR #1) | See below |
 | 2 Safety net | Done, merged 12 Oct 2026 | See below |
 | Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
-| 3 Restructure and connect | Done, in review (branch `claude/sprint-3`) | See below |
+| 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
 | 4 and 5 | Not started; 4 is next | |
 | 6 Frontend rebuild | Visual redesign done early; engineering items remain | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
@@ -61,7 +61,15 @@ What Sprint 3 changed that later sprints should know:
 - **`langchain-community` is still a dependency**, and still prints its deprecation warning, because the LangChain loaders live only there. No standalone package provides PyPDFLoader, Docx2txtLoader, TextLoader or CSVLoader yet.
 - **One strict xfail is gone** (LangChain PDF pages from 0, fixed here); 20 remain, all for Sprints 4 and 5.
 - **The agent uses `langchain.agents.create_agent`** (`langchain==1.3.11`). At the step limit it raises; the agent catches that and gives the old answer.
-- **Model calls now have a 120 s timeout and an 8192-token output cap; embeddings a 60 s timeout.** Not yet checked against the real API.
+- **Model calls now have a 120 s timeout and an 8192-token output cap; embeddings a 60 s timeout.** Checked against the real API on Windows (below). The chat model still retries six times, so a dead connection can hold a request for several minutes; set that with the error handling in Sprint 5.
+
+Sprint 3 on the owner's Windows machine, on the branch and again on the merged code in the project folder:
+
+- `ruff` clean; `pytest` 307 passed and 20 xfailed (308 with the log test below), 99% coverage; `npm run lint` (0 errors), `npm test` 26 passed, and build.
+- A real `uvicorn` server with fake models: register, login, upload, chat in all four modes, streaming in three, feedback, clear, delete and the login rate limit. Tokens arrived one per second as produced, and `/health` answered in 0.46 s during a stream. A request that still sends an old flag (`use_hybrid`) is now a 422.
+- With the real Gemini key and temp stores: one upload and one streamed question, answered correctly with its source (confidence 0.74). So the embedding client rebuilt with a timeout, and the chat model's timeout and output cap, work against the real API.
+- The existing database, vector collection and `.env` are read unchanged: the restarted app reported the same 2 documents and 45 chunks as before.
+- **Found here and fixed: `requests.log` was never written** (the audit noted the file was absent). The logger was named `requests`, which is also the HTTP library's logger and already has a handler, so the setup skipped it and chat lines reached neither a file nor the terminal. The three loggers are now `aether.requests`, `aether.uploads` and `aether.errors`, and a test reads the chat line back from the file.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
