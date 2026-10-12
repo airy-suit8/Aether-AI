@@ -12,7 +12,7 @@ from datetime import timedelta
 import jwt
 import pytest
 
-import main
+from src.api import routes_chat, routes_documents
 from src.core import security
 from src.core.config import settings
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
@@ -200,7 +200,7 @@ def test_upload_ingestion_failure_is_500_and_records_nothing(client, make_user, 
     def broken(*args, **kwargs):
         raise RuntimeError("embedding service down")
 
-    monkeypatch.setattr(main, "ingest_document", broken)
+    monkeypatch.setattr(routes_documents, "ingest_document", broken)
     assert upload_text(client, headers).status_code == 500
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
 
@@ -220,18 +220,18 @@ def test_chat_failure_is_500(client, make_user, fake_llm):
     assert r.json()["detail"].startswith("Query failed")
 
 
-@pytest.mark.parametrize("method,path,target", [
-    ("post", "/api/v1/feedback", "update_conversation_feedback"),
-    ("get", "/api/v1/documents", "list_documents"),
-    ("get", "/api/v1/documents/detailed", "get_all_documents_detailed"),
+@pytest.mark.parametrize("method,path,module,target", [
+    ("post", "/api/v1/feedback", routes_chat, "update_conversation_feedback"),
+    ("get", "/api/v1/documents", routes_documents, "list_documents"),
+    ("get", "/api/v1/documents/detailed", routes_documents, "get_all_documents_detailed"),
 ])
-def test_storage_failure_is_500(client, make_user, monkeypatch, method, path, target):
+def test_storage_failure_is_500(client, make_user, monkeypatch, method, path, module, target):
     _, headers = make_user("dbfail")
 
     def broken(*args, **kwargs):
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr(main, target, broken)
+    monkeypatch.setattr(module, target, broken)
     kwargs = {"json": {"session_id": "s1", "feedback": 1}} if method == "post" else {}
     assert getattr(client, method)(path, headers=headers, **kwargs).status_code == 500
 

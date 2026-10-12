@@ -1,429 +1,69 @@
 """
-main.py — FastAPI application for the RAG Chatbot (Aether AI)
-Endpoints:
-  POST /upload       — ingest a document
-  POST /chat         — ask a question (RAG)
-  POST /chat/stream  — ask a question with streaming (Task 18)
-  GET  /documents    — list ingested documents
-  DELETE /documents  — clear all documents
-  GET  /health       — health check endpoint
-  GET  /             — the built React app (frontend/dist), mounted after the API
+main.py — the entry point: builds the Aether AI app (python -m uvicorn main:app, from backend/).
+
+create_app() checks the JWT secret, adds CORS and the rate limiter, includes the API routers
+from src/api/ and serves the built React app at /. The lifespan hook sets up the log files
+and the database tables when the server starts. Nothing is opened at import: the vector store
+opens on first use (it needs the Gemini key, so a server without one still starts).
+
+Endpoints (all under /api/v1):
+  POST /auth/register, /auth/login    routes_auth
+  GET  /health                        routes_health
+  POST /upload, GET /documents, GET /documents/detailed, DELETE /documents   routes_documents
+  POST /chat, /chat/stream, /feedback, /session/clear                        routes_chat
+  GET  /                              the built React app (frontend/dist), mounted after the API
 """
 
-import os
-import time
-import hashlib
-import tempfile
-import traceback
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Literal, Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, Field, field_validator
-
-# Rate limiting
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from src.pipeline import rag
-from src.pipeline.documents import ingest_document, list_documents, clear_documents
-from src.memory.conversation import clear_session
+from src.api import routes_auth, routes_chat, routes_documents, routes_health
+from src.api.deps import limiter
+from src.core.config import APP_VERSION, settings
+from src.core.logging import setup_logging
+from src.db.database import init_db
 
-# Task 16: Logging
-from src.core.logging import request_logger, upload_logger, error_logger, setup_logging
 
-# SQLite persistence
-from src.db.database import (
-    save_document_record,
-    check_duplicate_document,
-    get_conversation_stats,
-    get_document_stats,
-    get_all_documents_detailed,
-    update_conversation_feedback,
-    get_user_by_username,
-    create_user,
-    init_db,
-)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Open what the app writes to: the log files and the database tables."""
+    setup_logging(settings.log_dir)
+    init_db()
+    yield
 
-from src.core.config import settings
-from src.core.security import create_access_token, verify_password, get_password_hash
-from src.api.deps import get_current_user
 
-settings.require_jwt_secret()
-setup_logging(settings.log_dir)
-init_db()
+def create_app() -> FastAPI:
+    """Build the app. Refuses to build without a JWT secret."""
+    settings.require_jwt_secret()
 
-# ── Rate Limiter ──────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address)
-
-# ── App setup ─────────────────────────────────────────────────────────────────
-app = FastAPI(
-    title="Aether AI — Knowledge Assistant API",
-    description="A Retrieval-Augmented Generation chatbot powered by Google Gemini",
-    version="2.0.0",
-)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-_start_time = datetime.now()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown", ".docx", ".csv", ".xlsx", ".xls"}
-
-# Session ids become cache keys, database values and log text: keep them short and plain
-SessionId = Field(default="default", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
-
-# ── Request/Response Models ────────────────────────────────────────────────────
-
-class ChatRequest(BaseModel):
-    question: str
-    session_id: str = SessionId
-    use_agent: bool = False
-    use_langchain: bool = False
-    use_hybrid: bool = False
-
-    def mode(self) -> str:
-        """The pipeline mode the flags select; the agent wins, then LangChain, then hybrid."""
-        if self.use_agent:
-            return "agent"
-        if self.use_langchain:
-            return "langchain"
-        return "hybrid" if self.use_hybrid else "default"
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: list
-    confidence: float = 0.0
-    session_id: str = "default"
-    tool_used: Optional[str] = None  # agent mode: which tools answered
-
-class FeedbackRequest(BaseModel):
-    session_id: str = SessionId
-    feedback: Literal[-1, 0, 1]  # 1 for up, -1 for down, 0 to clear
-
-class UploadResponse(BaseModel):
-    filename: str
-    pages: int
-    chunks: int
-    message: str
-
-class UserRegister(BaseModel):
-    username: str
-    password: str
-
-    @field_validator('username')
-    @classmethod
-    def username_valid(cls, v: str) -> str:
-        v = v.strip()
-        if len(v) < 3:
-            raise ValueError('Username must be at least 3 characters')
-        if len(v) > 50:
-            raise ValueError('Username must be at most 50 characters')
-        if not v.isalnum() and not all(c.isalnum() or c in '_-' for c in v):
-            raise ValueError('Username may only contain letters, digits, hyphens, and underscores')
-        return v
-
-    @field_validator('password')
-    @classmethod
-    def password_valid(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError('Password must be at least 6 characters')
-        if len(v) > 128:
-            raise ValueError('Password must be at most 128 characters')
-        return v
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-# Route handlers are plain `def` on purpose: they call blocking code (Gemini, Chroma,
-# SQLite, bcrypt), and FastAPI runs `def` handlers in a thread pool, so one slow
-# request does not stall every other request.
-
-# ── Authentication ────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/auth/register", tags=["Auth"])
-@limiter.limit(settings.rate_limit_register)
-def register(user: UserRegister, request: Request):
-    if get_user_by_username(user.username):
-        raise HTTPException(status_code=400, detail="Username already registered")
-    hashed_password = get_password_hash(user.password)
-    user_id = create_user(user.username, hashed_password)
-    return {"message": "User registered successfully", "user_id": user_id}
-
-@app.post("/api/v1/auth/login", response_model=Token, tags=["Auth"])
-@limiter.limit(settings.rate_limit_login)
-def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    user = get_user_by_username(form_data.username)
-    if not user or not verify_password(form_data.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=settings.access_token_minutes)
-    access_token = create_access_token(
-        data={"sub": str(user["id"])}, expires_delta=access_token_expires
+    app = FastAPI(
+        title="Aether AI — Knowledge Assistant API",
+        description="A Retrieval-Augmented Generation chatbot powered by Google Gemini",
+        version=APP_VERSION,
+        lifespan=lifespan,
     )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-# ── Health Check ──────────────────────────────────────────────────────────────
-
-@app.get("/api/v1/health", tags=["System"])
-def health_check():
-    """Health check endpoint for monitoring and load balancers."""
-    uptime = (datetime.now() - _start_time).total_seconds()
-    doc_stats = get_document_stats()
-    conv_stats = get_conversation_stats()
-    return {
-        "status": "ok",
-        "version": "2.0.0",
-        "uptime_seconds": round(uptime, 1),
-        "documents": doc_stats,
-        "conversations": conv_stats,
-    }
-
-
-# ── Upload ────────────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/upload", response_model=UploadResponse, tags=["Documents"])
-@limiter.limit(settings.rate_limit_upload)
-def upload_document(request: Request, file: UploadFile = File(...), user_id: int = Depends(get_current_user)):
-    """Upload and ingest a PDF or text/markdown document."""
-    filename = file.filename or "unknown"
-    ext = Path(filename).suffix.lower()
-
-    # Validate file extension
-    if ext not in ALLOWED_EXTENSIONS:
-        error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=unsupported extension '{ext}'")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
-
-    # Read and validate file content
-    try:
-        content = file.file.read()
-    except Exception as e:
-        error_logger.error(f"UPLOAD READ FAILED | file={filename} | error={str(e)}")
-        raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {str(e)}")
-
-    # Check for empty uploads
-    if len(content) == 0:
-        error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=empty file (0 bytes)")
-        raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes).")
-
-    # Check file size limit
-    if len(content) > settings.max_upload_bytes:
-        size_mb = round(len(content) / (1024 * 1024), 1)
-        error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=too large ({size_mb}MB)")
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large ({size_mb}MB). Maximum allowed: {settings.max_upload_bytes // (1024*1024)}MB.",
-        )
-
-    # Check for duplicate uploads via file hash
-    file_hash = hashlib.sha256(content).hexdigest()
-    existing = check_duplicate_document(user_id, file_hash)
-    if existing:
-        upload_logger.info(f"UPLOAD DUPLICATE | user={user_id} | file={filename} | matches={existing}")
-        # Re-ingesting would store every chunk twice and crowd the top results with copies
-        raise HTTPException(
-            status_code=409,
-            detail=f"This file was already uploaded as '{existing}'. Delete your documents first to upload it again.",
-        )
-
-    # Save to a temp file then ingest
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        start_time = time.time()
-        result = ingest_document(user_id, tmp_path, filename)
-        elapsed = round(time.time() - start_time, 2)
-
-        # Log successful upload
-        upload_logger.info(
-            f"UPLOAD OK | user={user_id} | file={filename} | pages={result['pages']} | "
-            f"chunks={result['chunks']} | time={elapsed}s | size={len(content)} bytes"
-        )
-
-        # Save to SQLite
-        save_document_record(user_id, filename, result["pages"], result["chunks"], len(content), file_hash)
-
-    except ValueError as e:
-        error_logger.error(f"UPLOAD PARSE ERROR | file={filename} | error={str(e)}")
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        error_logger.error(
-            f"UPLOAD INGESTION FAILED | file={filename} | error={str(e)}\n"
-            f"{traceback.format_exc()}"
-        )
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-    msg = f"Successfully ingested '{filename}' ({result['chunks']} chunks from {result['pages']} page(s))."
-
-    return UploadResponse(
-        filename=result["filename"],
-        pages=result["pages"],
-        chunks=result["chunks"],
-        message=msg,
+    app.state.limiter = limiter
+    app.state.started_at = datetime.now()
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
-
-
-# ── Chat ──────────────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/chat", response_model=ChatResponse, tags=["Chat"])
-@limiter.limit(settings.rate_limit_chat)
-def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
-    """Ask a question — answers are grounded in uploaded documents."""
-    if not chat_request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
-
-    if len(chat_request.question) > settings.max_question_chars:
-        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
-
-    mode = chat_request.mode()
-    start_time = time.time()
-
-    try:
-        result = rag.answer(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode)
-    except Exception as e:
-        error_logger.error(
-            f"CHAT FAILED | mode={mode} | session={chat_request.session_id} | "
-            f"question={chat_request.question[:100]} | error={str(e)}\n"
-            f"{traceback.format_exc()}"
-        )
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
-
-    elapsed = round(time.time() - start_time, 2)
-
-    request_logger.info(
-        f"CHAT OK | mode={mode} | session={chat_request.session_id} | "
-        f"question={chat_request.question[:80]} | confidence={result.get('confidence', 0)} | "
-        f"sources={len(result.get('sources', []))} | time={elapsed}s"
-    )
-
-    return ChatResponse(
-        answer=result["answer"],
-        sources=result["sources"],
-        confidence=result.get("confidence", 0.0),
-        session_id=chat_request.session_id,
-        tool_used=result.get("tool_used"),
-    )
-
-
-@app.post("/api/v1/feedback", tags=["Chat"])
-def submit_feedback(feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
-    """Submit thumbs up (1) or thumbs down (-1) for the most recent message in the session."""
-    try:
-        update_conversation_feedback(user_id, feedback_request.session_id, feedback_request.feedback)
-        request_logger.info(f"FEEDBACK LOGGED | session={feedback_request.session_id} | value={feedback_request.feedback}")
-        return {"message": "Feedback recorded successfully."}
-    except Exception as e:
-        error_logger.error(f"FEEDBACK FAILED | session={feedback_request.session_id} | error={str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to record feedback: {str(e)}")
-
-
-# ── Streaming ─────────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/chat/stream", tags=["Chat"])
-@limiter.limit(settings.rate_limit_chat)
-def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
-    """Streaming endpoint — returns the answer token-by-token using SSE."""
-    if not chat_request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
-
-    if len(chat_request.question) > settings.max_question_chars:
-        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
-
-    mode = chat_request.mode()
-
-    request_logger.info(f"STREAM REQUEST | mode={mode} | question={chat_request.question[:80]}")
-
-    import json
-
-    # A plain generator: Starlette runs it in a worker thread, so a slow model
-    # call does not block the event loop and tokens are sent as they arrive.
-    def generate_stream():
-        try:
-            for event in rag.events(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode):
-                yield f"data: {json.dumps(event)}\n\n"
-        except Exception as e:
-            error_logger.error(f"STREAM FAILED | mode={mode} | error={str(e)}\n{traceback.format_exc()}")
-            # A separate event type, so the UI shows an error instead of keeping it as an answer
-            yield f"data: {json.dumps({'type': 'error', 'message': 'The answer could not be generated. Please try again.'})}\n\n"
-
-    return StreamingResponse(
-        generate_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
-
-
-# ── Session ───────────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/session/clear", tags=["Session"])
-def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
-    """Clear conversation memory for a session."""
-    clear_session(user_id, chat_request.session_id)
-    request_logger.info(f"SESSION CLEARED | session={chat_request.session_id}")
-    return {"message": "Session cleared", "session_id": chat_request.session_id}
-
-
-# ── Documents ─────────────────────────────────────────────────────────────────
-
-@app.get("/api/v1/documents", tags=["Documents"])
-def get_documents(user_id: int = Depends(get_current_user)):
-    """List all ingested document filenames."""
-    try:
-        docs = list_documents(user_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT LIST FAILED | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"documents": docs, "count": len(docs)}
-
-
-@app.get("/api/v1/documents/detailed", tags=["Documents"])
-def get_documents_detailed(user_id: int = Depends(get_current_user)):
-    """List detailed information of all ingested documents."""
-    try:
-        docs = get_all_documents_detailed(user_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT DETAILED LIST FAILED | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"documents": docs, "count": len(docs)}
-
-
-@app.delete("/api/v1/documents", tags=["Documents"])
-def delete_documents(user_id: int = Depends(get_current_user)):
-    """Clear all documents from the vector store for the user."""
-    try:
-        result = clear_documents(user_id)
-    except Exception as e:
-        error_logger.error(f"DOCUMENT CLEAR FAILED | error={str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    upload_logger.info(f"DOCUMENTS CLEARED | deleted={result['deleted']} chunks")
-    return {"message": f"Cleared {result['deleted']} chunks from the vector store.", **result}
+    for module in (routes_auth, routes_health, routes_documents, routes_chat):
+        app.include_router(module.router)
+    mount_frontend(app, FRONTEND_DIST)
+    return app
 
 
 # ── Serve the React app ───────────────────────────────────────────────────────
@@ -456,4 +96,5 @@ def mount_frontend(app: FastAPI, dist_dir: Path):
             return HTMLResponse(_FRONTEND_NOT_BUILT)
 
 
-mount_frontend(app, FRONTEND_DIST)
+
+app = create_app()
