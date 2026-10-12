@@ -20,7 +20,8 @@ Aether AI is a multi-tenant RAG chatbot built as internship work: FastAPI, LangC
 
 ## How to work
 
-- Branch `claude/sprint-N` from `main`. Never push to `main`.
+- Work on a branch from `main`: the one your session was given, or `claude/sprint-N`. Never push to `main`. Say the branch's name in the plan's Status table.
+- If the sprint has a "Decisions already made" list in `SPRINT_PLAN.md`, follow it.
 - One commit per task. The message says what changed and why, and cites the finding id.
 - Before finishing, run and paste the summary lines of:
   - `cd backend && python -m pytest`

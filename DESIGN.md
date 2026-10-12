@@ -88,4 +88,4 @@ The answer sits on the left and its evidence in the right margin, like notes in 
 1. Merge with the Sprint 2 test suite: two assertions in its chat test describe the old markup (the mode control is now a radio group, and a source card shows a preview of its passage).
 2. A full keyboard and screen-reader pass. Focus handling, labels and Escape are built in, but so far it has been exercised with a pointer and by script.
 3. Per-sentence source colour and threads in the real chat. This needs the backend to report which source supports which claim (Sprint 4); until then an answer links to its sources as a whole.
-4. Stop only ends the reply on the screen; the server may still finish it. Cancelling on the server belongs with the API work in Sprint 5.
+4. Stop only ends the reply on the screen; the server may still finish it. Sprint 5 did not cover this. Sprint 6 settles it (its decision 11): closing the stream is the signal, a stream closed early must save no turn, and no cancel route is added.
