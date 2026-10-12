@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { Aperture, Lens, Switch } from '../../design/prism'
 import type { Mode } from '../../services/api'
+import type { Failure } from './types'
 
 const MODES: { value: Mode; label: string }[] = [
   { value: 'default', label: 'Default' },
@@ -12,12 +13,12 @@ const MODES: { value: Mode; label: string }[] = [
 
 const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
 
-/**
- * ChatComposer — the dock: one answer mode, whether to stream, and the Aperture to ask through.
- */
 interface ChatComposerProps {
   onSend: (question: string) => void
   onStop: () => void
+  onRetry: () => void
+  failure: Failure | null
+  restore: { text: string } | null
   isLoading: boolean
   mode: Mode
   onMode: (mode: Mode) => void
@@ -26,7 +27,13 @@ interface ChatComposerProps {
   onUpload: (file: File) => void
 }
 
-export default function ChatComposer({ onSend, onStop, isLoading, mode, onMode, streaming, onStreaming, onUpload }: ChatComposerProps) {
+/**
+ * ChatComposer — the dock: one answer mode, whether to stream, and the Aperture to ask through.
+ * A reply that failed or was stopped is reported above it, in words, with a Retry action.
+ */
+export default function ChatComposer({
+  onSend, onStop, onRetry, failure, restore, isLoading, mode, onMode, streaming, onStreaming, onUpload,
+}: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -37,20 +44,27 @@ export default function ChatComposer({ onSend, onStop, isLoading, mode, onMode, 
 
   return (
     <div className="x-dock">
+      {failure && (
+        <div className="x-retry" role="alert" data-tone={failure.stopped ? undefined : 'bad'}>
+          <p><b>{failure.stopped ? 'Stopped.' : 'Failed.'}</b> {failure.message}</p>
+          <button type="button" className="p-btn p-btn--tonal" onClick={onRetry} disabled={isLoading}>Retry</button>
+        </div>
+      )}
       <div className="x-dock__modes">
         <Lens label="Answer mode" options={MODES} value={mode} onChange={onMode} />
         <Switch
           label="Stream"
-          checked={streaming && mode !== 'agent'}
+          checked={streaming}
           onChange={onStreaming}
-          disabled={mode === 'agent'}
-          title={mode === 'agent' ? 'The agent answers in one piece' : 'Show the answer as it is written'}
+          title={streaming ? 'Show the answer as it is written; it can be stopped' : 'Wait for the whole answer; it cannot be stopped'}
         />
       </div>
       <Aperture
         busy={isLoading}
         onSend={onSend}
-        onStop={onStop}
+        // Only a stream can be stopped: closing it is the server's signal to save nothing
+        onStop={streaming ? onStop : undefined}
+        restore={restore}
         placeholder="Ask anything about your documents"
         leading={
           <>

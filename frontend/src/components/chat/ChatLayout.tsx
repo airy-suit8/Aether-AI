@@ -12,7 +12,7 @@ import type { DocumentRecord, Mode, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
-import type { AddToast, AnswerMessage, ChatMessage } from './types'
+import type { AddToast, AnswerMessage, ChatMessage, Failure } from './types'
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -53,6 +53,8 @@ function turnToMessages(turn: Turn): ChatMessage[] {
 /** A new conversation's id. It is its URL (/chat/<id>) from the start; the server keeps it once it has a turn. */
 const newThreadId = () => `session_${Date.now()}`
 
+const STOPPED = 'Your question is back in the box below. Nothing was saved.'
+
 const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 901px)').matches : true)
 
 interface ChatLayoutProps {
@@ -74,20 +76,22 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   const routeThread = useMatch('/chat/:threadId')?.params.threadId ?? null
   const settingsOpen = useMatch('/settings') !== null
 
-  // Messages
+  // The open conversation: the one in the URL, or under the settings sheet the one that was open
+  const [sessionId, setSessionId] = useState<string | null>(routeThread)
+  const threadId = routeThread ?? (settingsOpen ? sessionId : null)
+
+  // Messages, and the reply being written (shown only in the thread it was asked in)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [pending, setPending] = useState<{ run: number; threadId: string; question: string } | null>(null)
   const [streamingText, setStreamingText] = useState('')
   const [streamingPhase, setStreamingPhase] = useState('')
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [composerText, setComposerText] = useState<{ text: string } | null>(null)
+  const isLoading = pending !== null && pending.threadId === sessionId
 
   // One answer mode at a time, plus whether to stream
   const [mode, setMode] = useState<Mode>('default')
   const [streamingMode, setStreamingMode] = useState(true)
-  const agentMode = mode === 'agent'
-
-  // The open conversation: the one in the URL, or under the settings sheet the one that was open
-  const [sessionId, setSessionId] = useState<string | null>(routeThread)
-  const threadId = routeThread ?? (settingsOpen ? sessionId : null)
 
   // Documents
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
@@ -98,12 +102,18 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
 
   const streamRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const runRef = useRef(0)                          // the latest reply asked for
+  const threadRef = useRef<string | null>(sessionId) // the thread open now, for replies still on their way
+  threadRef.current = sessionId
   const mountedRef = useRef(true)
   const loadingRef = useRef<string | null>(null)  // the thread whose turns are being loaded
 
   useEffect(() => {
     mountedRef.current = true
-    return () => { mountedRef.current = false }
+    return () => {
+      mountedRef.current = false
+      abortRef.current?.abort()  // leaving the workspace: nothing is left to show the reply
+    }
   }, [])
 
   // Each document is { id, filename, ... }: the id is what removes it
@@ -140,6 +150,14 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   useEffect(() => {
     if (!threadId) return undefined
     setSessionId(threadId)
+    // A reply still on its way belongs to the thread that was open: it goes on, and the server
+    // saves it there, but nothing of it is shown here, now or if the user comes back before it ends
+    runRef.current += 1
+    abortRef.current = null
+    setPending(null)
+    setStreamingText('')
+    setStreamingPhase('')
+    setMessages([])
     let cancelled = false
     loadingRef.current = threadId
     getSessionMessages(threadId)
@@ -164,99 +182,102 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight
   }, [streamingText])
 
-  // ── Handle sending a message ──────────────────────────────────────────
-  const handleSend = useCallback(async (question: string) => {
-    if (!question.trim() || isLoading || !sessionId) return
-    loadingRef.current = null
+  // ── Asking: one reply at a time, tied to the thread it was asked in ──────
+  //
+  // A reply is a run. Its callbacks write to the screen only while it is the latest run and its
+  // thread is still open, so a reply that finishes after its thread was left is discarded here
+  // (the server has saved it to its own thread). Stop closes the stream, which is the only
+  // signal the server gets: it then saves no turn. A reply that fails or is stopped takes its
+  // question out of the conversation and puts it back in the composer, with a Retry action.
+  const askedIn = useCallback((run: number, thread: string) => runRef.current === run && threadRef.current === thread, [])
 
-    const userMessage: ChatMessage = {
-      id: `q${Date.now()}`,
-      role: 'user',
-      content: question,
-      timestamp: new Date().toISOString(),
-    }
-    setMessages(prev => [...prev, userMessage])
-    setIsLoading(true)
+  const handleSend = useCallback(async (question: string) => {
+    if (!question.trim() || !sessionId || pending?.threadId === sessionId) return
+    loadingRef.current = null  // the user's question wins over a load still on its way
+    const thread = sessionId
+    const run = ++runRef.current
+    const questionId = `q${run}-${Date.now()}`
+
+    setFailure(null)
+    setMessages(prev => [...prev, { id: questionId, role: 'user', content: question, timestamp: new Date().toISOString() }])
+    setPending({ run, threadId: thread, question })
     setStreamingText('')
+    setStreamingPhase(mode === 'agent' ? 'The agent is working' : 'Searching your documents')
 
     const controller = new AbortController()
     abortRef.current = controller
 
-    try {
-      if (streamingMode && !agentMode) {
-        // Streaming path
-        setStreamingPhase('Searching your documents')
-        let fullText = ''
+    const answered = (answer: Omit<AnswerMessage, 'id' | 'role' | 'feedback' | 'mode' | 'timestamp'>) => {
+      if (!askedIn(run, thread)) return
+      setMessages(prev => [...prev, {
+        ...answer, id: `a${run}-${Date.now()}`, role: 'assistant', feedback: 0, mode, timestamp: new Date().toISOString(),
+      }])
+    }
+    const failed = (err: Error) => {
+      if (!askedIn(run, thread)) return
+      const stopped = err.name === 'AbortError'
+      setMessages(prev => prev.filter(m => m.id !== questionId))
+      setFailure({ threadId: thread, question, stopped, message: stopped ? STOPPED : err.message || 'The answer could not be generated.' })
+      setComposerText({ text: question })
+    }
 
+    try {
+      if (streamingMode) {
+        let fullText = ''
         await sendChatStream({
           question,
-          sessionId,
+          sessionId: thread,
           mode,
           signal: controller.signal,
           onToken: (token) => {
-            setStreamingPhase('')
             fullText += token
+            if (!askedIn(run, thread)) return
+            setStreamingPhase('')
             setStreamingText(fullText)
           },
-          onDone: (data) => {
-            const aiMessage: AnswerMessage = {
-              id: `a${Date.now()}`,
-              role: 'assistant',
-              content: fullText,
-              sources: data.sources || [],
-              confidence: data.confidence || 0,
-              toolUsed: data.tool_used || null,
-              turnId: data.turn_id ?? null,  // what feedback names it by
-              feedback: 0,
-              mode,
-              timestamp: new Date().toISOString(),
-            }
-            setMessages(prev => [...prev, aiMessage])
-          },
-          // Server error event, dropped connection, or missing 'done': show it, keep no partial answer
-          onError: (err) => {
-            if (err.name !== 'AbortError') addToast(err.message || 'Stream failed', 'error')
-          },
+          onDone: (data) => answered({
+            content: fullText,
+            sources: data.sources || [],
+            confidence: data.confidence || 0,
+            toolUsed: data.tool_used || null,
+            turnId: data.turn_id ?? null,  // what feedback names it by
+          }),
+          // A server error event, a dropped connection, a missing done event, or Stop
+          onError: failed,
         })
       } else {
-        // Non-streaming path
-        setStreamingPhase(agentMode ? 'The agent is working' : 'Reading your documents')
-        const result = await sendChat({
-          question,
-          sessionId,
-          mode,
-          signal: controller.signal,
-        })
-
-        const aiMessage: AnswerMessage = {
-          id: `a${Date.now()}`,
-          role: 'assistant',
+        const result = await sendChat({ question, sessionId: thread, mode, signal: controller.signal })
+        answered({
           content: result.answer,
           sources: result.sources || [],
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
           turnId: result.turn_id ?? null,
-          feedback: 0,
-          mode,
-          timestamp: new Date().toISOString(),
-        }
-        setMessages(prev => [...prev, aiMessage])
+        })
       }
     } catch (err) {
-      if (err instanceof Error && err.name !== 'AbortError') addToast(err.message || 'Failed to get response', 'error')
+      failed(err instanceof Error ? err : new Error(String(err)))
     } finally {
-      // Always unlock the composer, whatever happened above
-      abortRef.current = null
-      setStreamingText('')
-      setStreamingPhase('')
-      setIsLoading(false)
+      // Unlock the composer, whatever happened above, unless a later question has taken over
+      if (runRef.current === run) {
+        abortRef.current = null
+        setPending(null)
+        setStreamingText('')
+        setStreamingPhase('')
+      }
     }
-  }, [isLoading, sessionId, mode, agentMode, streamingMode, addToast])
+  }, [sessionId, pending, mode, streamingMode, askedIn])
 
-  // Stop reading the reply. The server may still finish and save its turn; that is fixed with the API work.
+  // Stop the reply: close its stream. Only a streamed reply can be stopped (see ChatComposer).
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
   }, [])
+
+  const handleRetry = useCallback(() => {
+    if (!failure) return
+    setComposerText({ text: '' })
+    handleSend(failure.question)
+  }, [failure, handleSend])
 
   // ── Handle file upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file: File) => {
@@ -307,10 +328,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   }, [addToast, refreshDocuments])
 
   // ── New thread: a fresh session; the old one stays on the server ─────
+  // A reply still on its way goes on, and is saved to the thread it was asked in.
   const startThread = useCallback(() => {
-    abortRef.current?.abort()
     setMessages([])
-    setStreamingText('')
     navigate(`/chat/${newThreadId()}`)
   }, [navigate])
 
@@ -388,8 +408,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
 
         <ChatWindow
           messages={messages}
-          streamingText={streamingText}
-          streamingPhase={streamingPhase}
+          streamingText={isLoading ? streamingText : ''}
+          streamingPhase={isLoading ? streamingPhase : ''}
           isLoading={isLoading}
           streamRef={streamRef}
           hasDocuments={documents.length > 0}
@@ -399,6 +419,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         <ChatComposer
           onSend={handleSend}
           onStop={handleStop}
+          onRetry={handleRetry}
+          failure={failure?.threadId === sessionId ? failure : null}
+          restore={composerText}
           isLoading={isLoading}
           mode={mode}
           onMode={setMode}

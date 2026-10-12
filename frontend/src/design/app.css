@@ -481,3 +481,25 @@
   .l-trio { grid-template-columns: minmax(0, 1fr); }
   .l-card { min-height: 0; }
 }
+
+/* ── Retry: a reply that failed or was stopped, above the composer ─────────── */
+
+.x-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: min(100%, 680px);
+  padding: 8px 8px 8px 18px;
+  border-radius: var(--p-r-3);
+  font-size: var(--p-text-sm);
+  color: var(--p-ink-2);
+  background: var(--p-surface-2);
+  box-shadow: inset 0 0 0 1px var(--p-edge);
+  animation: p-rise var(--p-dur-3) var(--p-spring) both;
+}
+
+.x-retry p { margin: 0; }
+.x-retry b { font-weight: 660; color: var(--p-ink); }
+.x-retry[data-tone="bad"] b { color: var(--p-bad); }

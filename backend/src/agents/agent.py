@@ -35,7 +35,10 @@ def run_agent(user_id: int, question: str, session_id: str,
 
     search_documents(query) answers a sub-question from the user's documents and returns
     {"answer", "sources", "confidence"}; the pipeline passes it in, and must not save the
-    sub-question as a turn (run_agent saves the user's turn).
+    sub-question as a turn.
+
+    Returns {"answer", "sources", "confidence", "tool_used"}. The turn is not saved here: the
+    pipeline saves it once the answer has been sent, so a stream the client closed saves none.
     """
     
     metadata_store = {
@@ -132,17 +135,11 @@ def run_agent(user_id: int, question: str, session_id: str,
     # Format tools used for the UI badge
     tools_used_str = " + ".join(sorted(list(metadata_store["tool_used"]))) if metadata_store["tool_used"] else "agent_direct"
     
-    # Save the turn to memory so future agent calls or RAG calls remember this interaction.
     # Confidence is how close the retrieved passages were; an answer that searched no document
-    # has none (it used to claim 1.0). The database column is a number, so it records 0.
-    confidence = metadata_store["confidence"]
-    turn_id = _memory.add_turn(user_id, session_id, question, final_answer, confidence or 0.0, mode="agent",
-                               sources=unique_sources, tool_used=tools_used_str)
-
+    # has none (it used to claim 1.0).
     return {
         "answer": final_answer,
         "sources": unique_sources,
-        "confidence": confidence,
+        "confidence": metadata_store["confidence"],
         "tool_used": tools_used_str,
-        "turn_id": turn_id,
     }

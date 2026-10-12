@@ -6,7 +6,8 @@ events() yields what the client sees, in order:
   {"type": "done", "sources": [...], "confidence": float, "turn_id": int | None}
                                                          last; agent answers add "tool_used"
 turn_id names the saved turn, for feedback (F10); None when no turn was saved (a refusal, or the
-agent's own document search).
+agent's own document search). A turn is saved only after its last token: a stream the client
+closes early (Stop) is not run to the end, so it saves no turn.
 The streaming route sends each event as it comes; answer() collects them for the plain route.
 Errors are raised, not yielded: each route reports them in its own way.
 
@@ -260,15 +261,20 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
 
 
 def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict[str, Any]]:
-    """Run the agent, then send its answer word by word (it has no token stream of its own)."""
+    """Run the agent, then send its answer word by word (it has no token stream of its own).
+    The turn is saved after the last word, as in the other modes: a stream closed before then
+    saves none (Sprint 6, decision 11)."""
     result = run_agent(
         user_id, question, session_id,
         search_documents=lambda query: answer(user_id, query, session_id=session_id, save_turn=False),
     )
     for i, word in enumerate(result["answer"].split(" ")):
         yield {"type": "token", "content": word if i == 0 else " " + word}
+    # The database column is a number, so an answer that searched no document records 0
+    turn_id = memory.add_turn(user_id, session_id, question, result["answer"], result["confidence"] or 0.0,
+                              mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
-           "tool_used": result["tool_used"], "turn_id": result["turn_id"]}
+           "tool_used": result["tool_used"], "turn_id": turn_id}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",

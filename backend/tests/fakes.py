@@ -68,6 +68,7 @@ class ScriptedChatModel(BaseChatModel):
     tool_args  — the whole argument dict, for a tool that takes more than one
     judge_reply — what it answers when asked to judge an answer (the evaluation harness)
     citations  — what it adds to an answer written from numbered chunks
+    stream_delay — when set, a streamed reply arrives word by word, this many seconds apart
     prompts    — every prompt text received, for assertions
     """
 
@@ -80,6 +81,7 @@ class ScriptedChatModel(BaseChatModel):
     tool_args: Optional[dict] = None
     judge_reply: str = '{"score": 1.0, "reasoning": "fake judge"}'
     citations: str = "[1]"
+    stream_delay: float = 0.0
     prompts: List[str] = []
 
     @property
@@ -104,8 +106,15 @@ class ScriptedChatModel(BaseChatModel):
 
     def _stream(self, messages: List[BaseMessage], stop: Optional[List[str]] = None,
                 run_manager: Any = None, **kwargs: Any):
-        """The reply in one piece, as LangChain streams a model that cannot stream."""
+        """The reply in one piece, as LangChain streams a model that cannot stream; or, with
+        stream_delay, word by word, as a real model streams."""
         message = ScriptedChatModel._generate(self, messages, stop, run_manager, **kwargs).generations[0].message
+        if self.stream_delay and not message.tool_calls:
+            for i, word in enumerate(str(message.content).split(" ")):
+                if i:
+                    time.sleep(self.stream_delay)
+                yield ChatGenerationChunk(message=AIMessageChunk(content=word if i == 0 else " " + word))
+            return
         yield ChatGenerationChunk(message=AIMessageChunk(content=message.content, tool_call_chunks=[
             {"name": call["name"], "args": json.dumps(call["args"]), "id": call["id"], "index": i}
             for i, call in enumerate(message.tool_calls)
