@@ -208,15 +208,6 @@ def update_conversation_feedback(user_id: int, session_id: str, feedback: int):
         conn.close()
 
 
-def get_conversation_stats() -> Dict[str, Any]:
-    """Get overall conversation statistics."""
-    conn = _get_connection()
-    total = conn.execute("SELECT COUNT(*) as c FROM conversations").fetchone()["c"]
-    sessions = conn.execute("SELECT COUNT(DISTINCT session_id) as c FROM conversations").fetchone()["c"]
-    conn.close()
-    return {"total_turns": total, "total_sessions": sessions}
-
-
 # ── Document Operations ───────────────────────────────────────────────────────
 
 def save_document_record(user_id: int, filename: str, pages: int, chunks: int,
@@ -270,15 +261,6 @@ def check_duplicate_document(user_id: int, file_hash: str) -> Optional[str]:
     ).fetchone()
     conn.close()
     return row["filename"] if row else None
-
-
-def get_document_stats() -> Dict[str, Any]:
-    """Get document upload statistics."""
-    conn = _get_connection()
-    total = conn.execute("SELECT COUNT(*) as c FROM documents").fetchone()["c"]
-    total_chunks = conn.execute("SELECT COALESCE(SUM(chunks), 0) as c FROM documents").fetchone()["c"]
-    conn.close()
-    return {"total_documents": total, "total_chunks": total_chunks}
 
 
 def get_all_documents_detailed(user_id: int) -> List[Dict[str, Any]]:

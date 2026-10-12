@@ -6,6 +6,7 @@ Routes with no request body or parameters (health, document list, detailed list,
 no input that could be rejected with a 422.
 """
 
+import json
 import uuid
 from datetime import timedelta
 
@@ -16,8 +17,8 @@ from src.api import routes_chat, routes_documents
 from src.core import security
 from src.pipeline import documents
 from src.core.config import settings
-from src.core.logging import request_logger
-from helpers import DOC_TEXT, upload_text, ask, ask_stream
+from src.core.logging import error_logger, request_logger
+from helpers import DOC_TEXT, upload_text, ask, ask_stream, user_id_of
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
 
@@ -43,13 +44,11 @@ BAD_TOKENS = {
 
 # ── Success, one per route ────────────────────────────────────────────────────
 
-def test_health_is_public_and_reports_ok(client):
+def test_health_is_public_and_reports_only_the_status(client):
+    # S10: it used to return the version, the uptime and counts across every user
     r = client.get("/api/v1/health")
     assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ok"
-    assert {"total_documents", "total_chunks"} <= body["documents"].keys()
-    assert {"total_turns", "total_sessions"} <= body["conversations"].keys()
+    assert r.json() == {"status": "ok"}
 
 
 def test_register_then_login(client):
@@ -227,7 +226,8 @@ def test_chat_failure_is_500(client, make_user, fake_llm):
     fake_llm.fail_with = "model unavailable"
     r = ask(client, headers, QUESTION)
     assert r.status_code == 500
-    assert r.json()["detail"].startswith("Query failed")
+    # S10: a general message and the request's reference, never the exception's text
+    assert r.json()["detail"] == f"Something went wrong on the server. Please try again. Reference: {r.headers['x-request-id']}"
 
 
 @pytest.mark.parametrize("method,path,module,target", [
@@ -243,7 +243,9 @@ def test_storage_failure_is_500(client, make_user, monkeypatch, method, path, mo
 
     monkeypatch.setattr(module, target, broken)
     kwargs = {"json": {"session_id": "s1", "feedback": 1}} if method == "post" else {}
-    assert getattr(client, method)(path, headers=headers, **kwargs).status_code == 500
+    r = getattr(client, method)(path, headers=headers, **kwargs)
+    assert r.status_code == 500
+    assert "database is locked" not in r.text and r.headers["x-request-id"] in r.json()["detail"]
 
 
 # ── Rate limits (declared on register, login, upload, chat and chat/stream) ───
@@ -290,17 +292,42 @@ def test_uploaded_bytes_are_recorded(client, make_user):
 
 # ── Log files ─────────────────────────────────────────────────────────────────
 
-def test_chat_requests_are_written_to_requests_log(client, make_user):
-    # AUDIT_REPORT wiring map, "Logger ↔ routes": requests.log was absent on disk. The logger was
-    # named "requests", which is also the HTTP library's logger and already carries a handler,
-    # so setup_logging() skipped it and no chat line reached a file or the terminal.
+def _log_lines(name):
+    for logger in (request_logger, error_logger):
+        for handler in logger.handlers:
+            handler.flush()
+    path = settings.log_dir / name
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+
+
+def test_chat_requests_are_logged_as_json_with_the_user_and_request_but_not_the_question(client, make_user):
+    # AUDIT_REPORT wiring map, "Logger ↔ routes": requests.log was absent on disk (its logger was
+    # named "requests", the HTTP library's). S10: the lines are structured, carry the user and the
+    # request id, and never the question.
     _, headers = make_user("logline")
+    user_id = user_id_of(headers)
     question = f"log probe {uuid.uuid4().hex}"
-    assert ask(client, headers, question).status_code == 200
-    assert ask_stream(client, headers, question)[0] == 200
-    for handler in request_logger.handlers:
-        handler.flush()
-    lines = [line for line in (settings.log_dir / "requests.log").read_text(encoding="utf-8").splitlines()
-             if question in line]
-    assert any("CHAT OK" in line for line in lines)
-    assert any("STREAM REQUEST" in line for line in lines)
+    r = ask(client, headers, question)
+    assert r.status_code == 200
+    status, _ = ask_stream(client, headers, question)
+    assert status == 200
+
+    mine = [line for line in _log_lines("requests.log") if line.get("user_id") == user_id]
+    chat = [line for line in mine if line["event"] == "chat_ok"]
+    assert len(chat) == 1 and chat[0]["request_id"] == r.headers["x-request-id"]
+    assert chat[0]["question_chars"] == len(question) and chat[0]["mode"] == "default"
+    assert [line["event"] for line in mine if line["event"] == "stream_request"] == ["stream_request"]
+    for name in ("requests.log", "uploads.log", "errors.log"):
+        path = settings.log_dir / name
+        assert not path.exists() or question not in path.read_text(encoding="utf-8"), name
+
+
+def test_a_failed_request_is_logged_with_its_traceback_under_the_reference_given(client, make_user, fake_llm):
+    _, headers = make_user("logerr")
+    upload_text(client, headers)
+    fake_llm.fail_with = f"model unavailable {uuid.uuid4().hex}"
+    r = ask(client, headers, QUESTION)
+    assert r.status_code == 500 and fake_llm.fail_with not in r.text
+    line = [line for line in _log_lines("errors.log") if line.get("request_id") == r.headers["x-request-id"]]
+    assert len(line) == 1 and line[0]["event"] == "chat_failed" and line[0]["user_id"] == user_id_of(headers)
+    assert fake_llm.fail_with in line[0]["exception"] and "Traceback" in line[0]["exception"]

@@ -18,14 +18,6 @@ const formatSize = (bytes) => {
 
 const formatDate = (isoString) => (isoString ? new Date(isoString).toLocaleString() : 'Unknown')
 
-const formatUptime = (seconds) => {
-  if (seconds == null) return 'Unknown'
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 1) return `${Math.round(seconds)} s`
-  if (minutes < 60) return `${minutes} min`
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
-}
-
 export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation }) {
   const [activeTab, setActiveTab] = useState('general')
   const [docs, setDocs] = useState([])
@@ -133,19 +125,12 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
         </>
       )}
 
+      {/* The health check is public, so it reports the status and nothing else */}
       {activeTab === 'health' && (
         <div className="s-metrics">
           <div className="s-metric" data-tone={health?.status === 'ok' ? 'ok' : healthFailed ? 'bad' : undefined}>
             <b>{health?.status === 'ok' ? 'Running' : healthFailed ? 'Unreachable' : 'Checking'}</b>
             <span>Backend</span>
-          </div>
-          <div className="s-metric">
-            <b>{formatUptime(health?.uptime_seconds)}</b>
-            <span>Since last start</span>
-          </div>
-          <div className="s-metric">
-            <b>{health?.version ?? 'Unknown'}</b>
-            <span>API version</span>
           </div>
         </div>
       )}

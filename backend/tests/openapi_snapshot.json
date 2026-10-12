@@ -92,7 +92,7 @@
           "System"
         ],
         "summary": "Health Check",
-        "description": "Health check endpoint for monitoring and load balancers.",
+        "description": "Health check for monitoring and load balancers. Status only: it is public, so it says\nnothing about the version, the uptime or anyone's documents (S10).",
         "operationId": "health_check_api_v1_health_get",
         "responses": {
           "200": {

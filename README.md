@@ -131,7 +131,7 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 | Package | What it holds |
 |---|---|
 | `core/` | `config.py` (every setting, the only place that reads the environment or `.env`), `security.py` (passwords and login tokens), `logging.py` |
-| `api/` | `schemas.py` (request and response models), `deps.py` (current user, rate limiter), and one router per resource: `routes_auth`, `routes_chat`, `routes_documents`, `routes_health` |
+| `api/` | `schemas.py` (request and response models), `deps.py` (current user, rate limiter), `middleware.py` (request id and security headers), `errors.py` (what a server error tells the client), and one router per resource: `routes_auth`, `routes_chat`, `routes_documents`, `routes_health` |
 | `db/` | `database.py`: SQLite for users, document records and conversations |
 | `ingestion/` | `loader.py`: reads PDF, DOCX, text, CSV and Excel files (native parsers, or LangChain's loaders when `AETHER_DOCUMENT_LOADER=langchain`) |
 | `chunking/` | `chunker.py`: splits documents into overlapping chunks |
@@ -175,6 +175,18 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 Each run is saved as `docs\evaluation\<label>.json`, and `docs\evaluation.md` is rebuilt to show every saved run side by side, with a section explaining how each number is computed.
 
 To compare two settings, run it once for each with a different label. For example, `AETHER_ANSWER_FROM=chunks` in `backend\.env` makes the app write its answer straight from the retrieved passages and cite them as [1], [2], with no summary step (one model call per answer, not two). The default stays `summary` until a run shows which is better.
+
+## Running it where other people can reach it
+
+Before anyone else can open the app (an office network, a shared machine), add this line to `backend\.env`:
+
+```
+AETHER_ENVIRONMENT=production
+```
+
+It turns off the API pages (`/docs`, `/redoc`, `/openapi.json`), which list every route to anyone who asks. Everything else works the same.
+
+When something fails on the server, the app shows a general message with a reference, for example `Reference: 3f2a9c81d0b4`. The same reference is on the matching line of `backend\logs\errors.log`, with the full error. Every response also carries it in an `X-Request-ID` header. The log files hold one JSON object per line, with the user's id and the request's reference, and never the text of a question.
 
 ## Where data is kept
 
