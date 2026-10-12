@@ -340,6 +340,13 @@
 .x-rate .p-icon-btn { color: var(--p-ink-3); }
 .x-rate .p-icon-btn[aria-pressed="true"] { color: var(--p-on-primary-soft); background: var(--p-primary-soft); }
 
+/* What an answer cost: one quiet line of mono numbers under it; its stages open on demand. */
+.x-usage { margin: 6px 0 0; font-size: var(--p-text-xs); color: var(--p-ink-3); }
+.x-usage summary { width: fit-content; padding: 4px 0; cursor: pointer; border-radius: var(--p-r-1); }
+.x-usage summary:hover { color: var(--p-ink-2); }
+.x-usage ul { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+.x-usage li { display: grid; grid-template-columns: minmax(0, 11rem) 4rem auto; gap: 12px; color: var(--p-ink-2); }
+
 .x-margin { display: grid; gap: 10px; align-content: start; }
 .x-margin .p-eyebrow { margin: 6px 0 2px; }
 

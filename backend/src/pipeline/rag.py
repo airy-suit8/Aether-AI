@@ -3,12 +3,14 @@ pipeline/rag.py — the one question-answering pipeline.
 
 events() yields what the client sees, in order:
   {"type": "token", "content": str}                      zero or more pieces of the answer
-  {"type": "done", "sources": [...], "confidence": float, "turn_id": int | None}
+  {"type": "done", "sources": [...], "confidence": float, "turn_id": int | None, "usage": {...}}
                                                          last; agent answers add "tool_used"
 turn_id names the saved turn, for feedback (F10); None when no turn was saved (a refusal, or the
 agent's own document search). A turn is saved only after its last token: a stream the client
 closes early (Stop) is not run to the end, so it saves no turn.
 The streaming route sends each event as it comes; answer() collects them for the plain route.
+usage is what the answer cost (Sprint 8, item 1): its seconds and the tokens the model's API
+reported, in all and for each stage in the order it ran (see _usage).
 Errors are raised, not yielded: each route reports them in its own way.
 
 One pipeline, four modes:
@@ -65,6 +67,7 @@ class RAGResponse(BaseModel):
         default=0.0, description="Retrieval similarity, 0.0 to 1.0; None when the agent answered without searching the documents")
     tool_used: Optional[str] = Field(default=None, description="Agent mode: which tools answered")
     turn_id: Optional[int] = Field(default=None, description="The saved turn, for feedback; None when none was saved")
+    usage: Optional[Dict[str, Any]] = Field(default=None, description="Seconds and tokens, in all and by stage")
 
 
 # ── What one question did (read by the evaluation harness) ───────────────────
@@ -92,6 +95,22 @@ class Trace:
                 "input_tokens": sum(u.get("input_tokens", 0) for u in used),
                 "output_tokens": sum(u.get("output_tokens", 0) for u in used),
             }
+
+
+def _usage(trace: Trace, started: float, more: List[Dict[str, Any]] = ()) -> Dict[str, Any]:
+    """
+    What an answer cost (Sprint 8, item 1): the seconds from the question to the answer, and the
+    tokens the model's API reported, in all and for each stage in the order it ran (more: stages
+    the trace does not hold, such as the agent's document searches). Tokens are not turned into
+    money: prices change, and the app does not know the account's tier (decision 7).
+    """
+    stages = [{"name": name, **stage} for name, stage in trace.stages.items()] + list(more)
+    return {
+        "seconds": round(time.perf_counter() - started, 3),
+        "input_tokens": sum(stage["input_tokens"] for stage in stages),
+        "output_tokens": sum(stage["output_tokens"] for stage in stages),
+        "stages": stages,
+    }
 
 
 def is_refusal(answer: str) -> bool:
@@ -202,9 +221,9 @@ def _report_injection_patterns(user_id: int, results: List[Dict[str, Any]]) -> N
                       source=r["meta"].get("source"), chunk_id=r["meta"].get("chunk_id"), patterns=found)
 
 
-def _refusal(text: str, confidence: float) -> Iterator[Dict[str, Any]]:
+def _refusal(text: str, confidence: float, usage: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     yield {"type": "token", "content": text}
-    yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None}
+    yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None, "usage": usage}
 
 
 # ── The pipeline ──────────────────────────────────────────────────────────────
@@ -214,12 +233,13 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
     """
     Answer a question as a stream of events (see the module docstring).
     save_turn=False is for the agent's document search, whose turn the agent saves itself.
-    trace, when given, is filled in as the question runs (the agent mode leaves it empty).
+    trace, when given, is filled in as the question runs (in agent mode, with one "agent" stage).
     """
-    if mode == "agent":
-        yield from _agent_events(user_id, question, session_id)
-        return
+    started = time.perf_counter()
     trace = trace or Trace()
+    if mode == "agent":
+        yield from _agent_events(user_id, question, session_id, trace, started)
+        return
 
     # Contextualize the question for search if there's history (Task 4)
     history = memory.format_history(user_id, session_id)
@@ -234,7 +254,7 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
     trace.hits = results
     if not results:
         trace.refused = True
-        yield from _refusal(NO_DOCUMENTS, 0.0)
+        yield from _refusal(NO_DOCUMENTS, 0.0, _usage(trace, started))
         return
 
     # Task 2: confidence is the average similarity; Task 7: refuse if even the best is too low
@@ -242,7 +262,7 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
     confidence = round(sum(scores) / len(scores), 3)
     if max(scores) < settings.confidence_threshold:
         trace.refused = True
-        yield from _refusal(NOT_FOUND, confidence)
+        yield from _refusal(NOT_FOUND, confidence, _usage(trace, started))
         return
     _report_injection_patterns(user_id, results)
 
@@ -257,29 +277,39 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
     if save_turn:
         turn_id = memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode],
                                   sources=sources)
-    yield {"type": "done", "sources": sources, "confidence": confidence, "turn_id": turn_id}
+    yield {"type": "done", "sources": sources, "confidence": confidence, "turn_id": turn_id,
+           "usage": _usage(trace, started)}
 
 
-def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict[str, Any]]:
+def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, started: float) -> Iterator[Dict[str, Any]]:
     """Run the agent, then send its answer word by word (it has no token stream of its own).
     The turn is saved after the last word, as in the other modes: a stream closed before then
-    saves none (Sprint 6, decision 11)."""
-    result = run_agent(
-        user_id, question, session_id,
-        search_documents=lambda query: answer(user_id, query, session_id=session_id, save_turn=False),
-    )
+    saves none (Sprint 6, decision 11).
+    Its usage has an "agent" stage, the agent's own model calls, and a "document_search" stage
+    for each search it made, whose seconds the agent's stage does not count again."""
+    searches: List[Dict[str, Any]] = []
+
+    def search_documents(query: str) -> Dict[str, Any]:
+        found = answer(user_id, query, session_id=session_id, save_turn=False)
+        searches.append({"name": "document_search", **{k: found["usage"][k] for k in ("seconds", "input_tokens", "output_tokens")}})
+        return found
+
+    with trace.stage("agent") as config:
+        result = run_agent(user_id, question, session_id, search_documents=search_documents, config=config)
+    agent = trace.stages["agent"]
+    agent["seconds"] = round(max(0.0, agent["seconds"] - sum(s["seconds"] for s in searches)), 3)
     for i, word in enumerate(result["answer"].split(" ")):
         yield {"type": "token", "content": word if i == 0 else " " + word}
     # The database column is a number, so an answer that searched no document records 0
     turn_id = memory.add_turn(user_id, session_id, question, result["answer"], result["confidence"] or 0.0,
                               mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
-           "tool_used": result["tool_used"], "turn_id": turn_id}
+           "tool_used": result["tool_used"], "turn_id": turn_id, "usage": _usage(trace, started, searches)}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
            save_turn: bool = True, trace: Optional[Trace] = None) -> Dict[str, Any]:
-    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "turn_id"}."""
+    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "turn_id", "usage"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
     for event in events(user_id, question, session_id, mode, save_turn, trace):
@@ -293,4 +323,5 @@ def answer(user_id: int, question: str, session_id: str = "default", mode: Mode 
         confidence=done.get("confidence", 0.0),
         tool_used=done.get("tool_used"),
         turn_id=done.get("turn_id"),
+        usage=done.get("usage"),
     ).model_dump()

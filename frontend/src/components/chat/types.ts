@@ -1,4 +1,4 @@
-import type { FeedbackValue, Source } from '../../services/api'
+import type { FeedbackValue, Source, Usage } from '../../services/api'
 
 /** A question as the conversation shows it. */
 export interface QuestionMessage {
@@ -19,6 +19,8 @@ export interface AnswerMessage {
   mode: string
   turnId: number | null
   feedback: FeedbackValue
+  /** What it cost: seconds and tokens, in all and by stage. Sent with a new answer, not kept with a saved one */
+  usage?: Usage | null
   timestamp?: string
 }
 

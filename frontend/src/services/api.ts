@@ -20,6 +20,7 @@ export type SessionSummary = Schemas['SessionSummary']
 export type DocumentRecord = Schemas['DocumentRecord']
 export type DocumentStatus = Schemas['DocumentStatus']
 export type DoneEvent = Schemas['DoneEvent']
+export type Usage = Schemas['Usage']
 export type StreamEvent = Schemas['TokenEvent'] | Schemas['DoneEvent'] | Schemas['ErrorEvent']
 export type Mode = NonNullable<Schemas['ChatRequest']['mode']>
 export type FeedbackValue = Schemas['FeedbackRequest']['feedback']

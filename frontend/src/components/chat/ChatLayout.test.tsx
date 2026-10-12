@@ -100,6 +100,43 @@ describe('ChatLayout', () => {
     expect((screen.getByPlaceholderText(/ask anything/i) as HTMLTextAreaElement).disabled).toBe(false)
   })
 
+  it('shows what an answer cost in one line, with its stages on demand (Sprint 8, item 1)', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Every 90 days.')
+      onDone?.(done({
+        sources: [SOURCE], confidence: 0.81, turn_id: 4,
+        usage: {
+          seconds: 4.23, input_tokens: 1100, output_tokens: 140,
+          stages: [
+            { name: 'retrieve', seconds: 0.31, input_tokens: 0, output_tokens: 0 },
+            { name: 'summarize', seconds: 1.9, input_tokens: 600, output_tokens: 90 },
+            { name: 'answer', seconds: 2.0, input_tokens: 500, output_tokens: 50 },
+          ],
+        },
+      }))
+    })
+    renderChat()
+    const user = await ask('How often are the blades inspected?')
+
+    const line = await screen.findByText((_, el) => el?.tagName === 'SUMMARY' && el.textContent === '4.2 s, 1,240 tokens')
+    const stages = screen.getByRole('list', { name: 'Stages', hidden: true })
+    expect(stages.closest('details')?.open).toBe(false)
+    await user.click(line)
+    expect(stages.closest('details')?.open).toBe(true)
+    expect(within(stages).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Search0.3 sno model call', 'Summary1.9 s600 in, 90 out', 'Answer2.0 s500 in, 50 out',
+    ])
+  })
+
+  it('shows no cost line for an answer read back from the server', async () => {
+    vi.mocked(api.getSessionMessages).mockResolvedValue({
+      session_id: 'session_1', turns: [turn({ turn_id: 3, question: 'Earlier?', answer: 'Yes.', sources: [SOURCE] })],
+    })
+    renderChat()
+    expect(await screen.findByText('Yes.')).toBeTruthy()
+    expect(document.querySelector('.x-usage')).toBeNull()
+  })
+
   it('shows a stream error with Retry, keeps no partial answer, and puts the question back in the composer', async () => {
     // Decision 11 replaced the error toast with this: the question is not lost
     vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onError }) => {

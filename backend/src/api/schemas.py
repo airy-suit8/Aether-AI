@@ -37,6 +37,22 @@ class Source(BaseModel):
     number: Optional[int] = Field(default=None, exclude_if=lambda n: n is None)
 
 
+class UsageStage(BaseModel):
+    """One stage of an answer: rewrite, retrieve, summarize, answer; or agent, document_search."""
+    name: str
+    seconds: float
+    input_tokens: int   # as the model's API reported them; 0 for a stage with no model call
+    output_tokens: int
+
+
+class Usage(BaseModel):
+    """What an answer cost (Sprint 8, item 1). Tokens are counted, never priced."""
+    seconds: float      # from the question to the answer
+    input_tokens: int
+    output_tokens: int
+    stages: list[UsageStage]  # in the order they ran
+
+
 class ChatResponse(BaseModel):
     answer: str
     sources: list[Source]
@@ -46,6 +62,7 @@ class ChatResponse(BaseModel):
     session_id: str = "default"
     tool_used: Optional[str] = None  # agent mode: which tools answered
     turn_id: Optional[int] = None    # the saved turn, for POST /feedback; null when none was saved (a refusal)
+    usage: Optional[Usage] = None
 
 
 # ── The events of POST /chat/stream, one per `data:` line ─────────────────────
@@ -63,6 +80,7 @@ class DoneEvent(BaseModel):
     confidence: Optional[float]  # as in ChatResponse
     turn_id: Optional[int]       # as in ChatResponse
     tool_used: Optional[str] = None  # agent mode only: which tools answered
+    usage: Optional[Usage] = None    # as in ChatResponse
 
 
 class ErrorEvent(BaseModel):

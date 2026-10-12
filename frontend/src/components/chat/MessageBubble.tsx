@@ -4,7 +4,7 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Cite, ClarityRing, SourceCard } from '../../design/prism'
 import type { ClarityState } from '../../design/prism'
-import type { FeedbackValue, Source } from '../../services/api'
+import type { FeedbackValue, Source, Usage } from '../../services/api'
 import { remarkCitations } from './citations'
 import type { AnswerMessage, ChatMessage } from './types'
 
@@ -90,6 +90,47 @@ function ToolsUsed({ toolUsed }: { toolUsed: string }) {
         <span key={name} className="x-tool">{TOOL_NAMES[name] ?? name.replace(/_/g, ' ')}</span>
       ))}
     </p>
+  )
+}
+
+// What each stage of an answer is called on screen (the server's names: api/schemas.py, UsageStage)
+const STAGE_NAMES: Record<string, string> = {
+  rewrite: 'Rewriting the question',
+  retrieve: 'Search',
+  summarize: 'Summary',
+  answer: 'Answer',
+  agent: 'Agent',
+  document_search: 'Document search',
+}
+
+const seconds = (s: number) => `${s.toFixed(1)} s`
+const count = (n: number) => n.toLocaleString('en-US')
+
+/**
+ * What an answer cost, in one quiet line under it: "4.2 s, 1,240 tokens". Opening it lists the
+ * stages in the order they ran. Tokens are what the model's API reported; they are never priced.
+ */
+function UsageLine({ usage }: { usage: Usage }) {
+  const tokens = usage.input_tokens + usage.output_tokens
+  return (
+    <details className="x-usage">
+      <summary>
+        <span className="p-mono">{seconds(usage.seconds)}</span>, <span className="p-mono">{count(tokens)}</span> {tokens === 1 ? 'token' : 'tokens'}
+      </summary>
+      <ul aria-label="Stages">
+        {usage.stages.map((stage, index) => (
+          <li key={index}>
+            <span>{STAGE_NAMES[stage.name] ?? stage.name.replace(/_/g, ' ')}</span>
+            <span className="p-mono">{seconds(stage.seconds)}</span>
+            <span className="p-mono">
+              {stage.input_tokens + stage.output_tokens
+                ? `${count(stage.input_tokens)} in, ${count(stage.output_tokens)} out`
+                : 'no model call'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }
 
@@ -194,6 +235,7 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
           {message.toolUsed && <ToolsUsed toolUsed={message.toolUsed} />}
           <AnswerText content={message.content} cited={numbered ? [...byNumber.keys()].join(',') : ''} />
           {message.turnId != null && onRate && <Rating message={message} onRate={onRate} />}
+          {message.usage && <UsageLine usage={message.usage} />}
         </div>
 
         {sources.length > 0 && (

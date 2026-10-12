@@ -47,10 +47,11 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
             raise HTTPException(status_code=503, detail=MODEL_BUSY)
         raise server_error(request, "chat_failed", user_id=user_id, mode=mode, session=chat_request.session_id)
 
-    # The question's length is logged, never its text (S10)
+    # The question's length is logged, never its text (S10); with what each stage cost (Sprint 8)
     log_event(request_logger, "chat_ok", user_id=user_id, mode=mode, session=chat_request.session_id,
               question_chars=len(chat_request.question), confidence=result.get("confidence"),
-              sources=len(result.get("sources", [])), seconds=round(time.time() - start_time, 2))
+              sources=len(result.get("sources", [])), seconds=round(time.time() - start_time, 2),
+              usage=result.get("usage"))
 
     return ChatResponse(
         answer=result["answer"],
@@ -59,6 +60,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         session_id=chat_request.session_id,
         tool_used=result.get("tool_used"),
         turn_id=result.get("turn_id"),
+        usage=result.get("usage"),
     )
 
 
@@ -114,6 +116,9 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
     def generate_stream():
         try:
             for event in rag.events(user_id, chat_request.question, session_id=session, mode=mode):
+                if event["type"] == "done":
+                    log_event(request_logger, "stream_ok", user_id=user_id, mode=mode, session=session,
+                              confidence=event.get("confidence"), sources=len(event["sources"]), usage=event.get("usage"))
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             if is_unavailable(e):  # over quota or unavailable, after the retries (B10)

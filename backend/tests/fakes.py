@@ -70,6 +70,10 @@ class ScriptedChatModel(BaseChatModel):
     citations  — what it adds to an answer written from numbered chunks
     stream_delay — when set, a streamed reply arrives word by word, this many seconds apart
     prompts    — every prompt text received, for assertions
+
+    Every reply reports its usage as Gemini does: usage_metadata, and the model's name in
+    response_metadata (on the last piece of a stream), which LangChain's usage counter needs. One
+    token per word of the prompt in, one per word of the reply out, so the tests know the counts.
     """
 
     delay: float = 0.0
@@ -101,8 +105,13 @@ class ScriptedChatModel(BaseChatModel):
             raise self.errors.pop(0)
         if self.fail_with:
             raise RuntimeError(self.fail_with)
-        self.prompts.append("\n".join(str(m.content) for m in messages))
-        return ChatResult(generations=[ChatGeneration(message=self._reply(messages))])
+        prompt = "\n".join(str(m.content) for m in messages)
+        self.prompts.append(prompt)
+        message = self._reply(messages)
+        used_in, used_out = len(prompt.split()), len(str(message.content).split())
+        message.usage_metadata = {"input_tokens": used_in, "output_tokens": used_out, "total_tokens": used_in + used_out}
+        message.response_metadata = {"model_name": self._llm_type}
+        return ChatResult(generations=[ChatGeneration(message=message)])
 
     def _stream(self, messages: List[BaseMessage], stop: Optional[List[str]] = None,
                 run_manager: Any = None, **kwargs: Any):
@@ -110,12 +119,16 @@ class ScriptedChatModel(BaseChatModel):
         stream_delay, word by word, as a real model streams."""
         message = ScriptedChatModel._generate(self, messages, stop, run_manager, **kwargs).generations[0].message
         if self.stream_delay and not message.tool_calls:
-            for i, word in enumerate(str(message.content).split(" ")):
+            words = str(message.content).split(" ")
+            for i, word in enumerate(words):
                 if i:
                     time.sleep(self.stream_delay)
-                yield ChatGenerationChunk(message=AIMessageChunk(content=word if i == 0 else " " + word))
+                # The usage and the model's name come once, with the last piece, as Gemini sends them
+                last = {"usage_metadata": message.usage_metadata, "response_metadata": message.response_metadata} if i == len(words) - 1 else {}
+                yield ChatGenerationChunk(message=AIMessageChunk(content=word if i == 0 else " " + word, **last))
             return
-        yield ChatGenerationChunk(message=AIMessageChunk(content=message.content, tool_call_chunks=[
+        yield ChatGenerationChunk(message=AIMessageChunk(content=message.content, usage_metadata=message.usage_metadata,
+                                                         response_metadata=message.response_metadata, tool_call_chunks=[
             {"name": call["name"], "args": json.dumps(call["args"]), "id": call["id"], "index": i}
             for i, call in enumerate(message.tool_calls)
         ]))
