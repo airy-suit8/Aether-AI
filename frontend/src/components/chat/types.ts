@@ -34,3 +34,9 @@ export interface Failure {
 
 export type ToastType = 'info' | 'success' | 'error'
 export type AddToast = (message: string, type?: ToastType, duration?: number) => void
+
+/** An upload in progress: being sent, then read into passages by the server. */
+export interface UploadProgress {
+  filename: string
+  status: 'uploading' | 'reading'
+}

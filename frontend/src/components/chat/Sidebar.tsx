@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { useAuth } from '../../services/AuthContext'
 import type { DocumentRecord, SessionSummary } from '../../services/api'
 import { PrismMark } from '../../design/prism'
+import type { UploadProgress } from './types'
 
 const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
 const DISARM_MS = 4000
@@ -33,7 +34,7 @@ interface SidebarProps {
   onChooseThread: () => void
   onRemoveDocument: (doc: DocumentRecord) => Promise<void>
   onUpload: (file: File) => Promise<void>
-  uploadProgress: { filename: string; status: string } | null
+  uploadProgress: UploadProgress | null
   onNewThread: () => void
   onOpenSettings: () => void
   onNavigateHome: () => void
@@ -141,7 +142,8 @@ export default function Sidebar({
         )}
       </nav>
 
-      <div>
+      {/* aria-live: the drop zone says how an upload is going, to a screen reader too */}
+      <div aria-live="polite">
         <button
           type="button"
           className="x-drop"
@@ -154,9 +156,9 @@ export default function Sidebar({
         >
           {uploadProgress ? (
             <>
-              <b>Reading {uploadProgress.filename}</b>
+              <b>{uploadProgress.status === 'uploading' ? 'Sending' : 'Reading'} {uploadProgress.filename}</b>
               <i className="p-beam" aria-hidden="true" />
-              <span>Splitting it into passages</span>
+              <span>{uploadProgress.status === 'uploading' ? 'Uploading the file' : 'Splitting it into passages'}</span>
             </>
           ) : (
             <>
