@@ -6,7 +6,9 @@ import pytest
 
 from src.db import database
 import rag_engine
-from rag_engine import ConversationMemory, MEMORY_MAX_TURNS
+from src.core.config import settings
+from src.memory import conversation
+from src.memory.conversation import ConversationMemory
 
 
 @pytest.fixture
@@ -45,9 +47,9 @@ def test_turns_survive_a_restart_with_confidence_and_mode(user_id):
 
 def test_history_is_capped_at_the_most_recent_turns(user_id):
     memory = ConversationMemory()
-    for i in range(MEMORY_MAX_TURNS + 3):
+    for i in range(settings.memory_max_turns + 3):
         memory.add_turn(user_id, "s", f"q{i}", f"a{i}")
-    expected = [f"q{i}" for i in range(3, MEMORY_MAX_TURNS + 3)]
+    expected = [f"q{i}" for i in range(3, settings.memory_max_turns + 3)]
     assert [t["question"] for t in memory.get_history(user_id, "s")] == expected
     # A fresh process loads the same window from the database
     assert [t["question"] for t in ConversationMemory().get_history(user_id, "s")] == expected
@@ -72,10 +74,10 @@ def test_clear_session_empties_cache_and_database(user_id):
 
 
 def test_module_helpers_use_the_shared_memory(user_id):
-    rag_engine._memory.add_turn(user_id, "helper", "q", "a")
-    assert rag_engine.get_session_history(user_id, "helper") == [{"question": "q", "answer": "a"}]
-    rag_engine.clear_session(user_id, "helper")
-    assert rag_engine.get_session_history(user_id, "helper") == []
+    conversation.memory.add_turn(user_id, "helper", "q", "a")
+    assert conversation.get_session_history(user_id, "helper") == [{"question": "q", "answer": "a"}]
+    conversation.clear_session(user_id, "helper")
+    assert conversation.get_session_history(user_id, "helper") == []
 
 
 # ── Memory in the pipeline: a follow-up question is rewritten using the history ──
@@ -86,7 +88,7 @@ def test_module_helpers_use_the_shared_memory(user_id):
     lambda u, q: rag_engine.query_rag(u, q, session_id="follow", use_hybrid=True),
 ], ids=["query_rag", "query_rag_stream", "hybrid"])
 def test_follow_up_is_rewritten_with_the_history(user_id, fake_llm, ask):
-    rag_engine._memory.add_turn(user_id, "follow", "Who maintains the Zephyr turbine?", "The Orion field team.")
+    conversation.memory.add_turn(user_id, "follow", "Who maintains the Zephyr turbine?", "The Orion field team.")
     ask(user_id, "How often do they do it?")
     rewrite = [p for p in fake_llm.prompts if "Standalone Question:" in p]
     assert len(rewrite) == 1

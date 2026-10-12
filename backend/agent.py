@@ -13,6 +13,7 @@ from rag_engine import query_rag
 
 from src.core.config import settings
 from src.llm import llm_client
+from src.memory.conversation import memory as _memory
 from src.prompts.prompt_templates import AGENT_SYSTEM_PROMPT
 
 
@@ -77,7 +78,6 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     
     
     from langchain_core.messages import HumanMessage, AIMessage
-    from rag_engine import _memory
     
     agent = create_react_agent(llm, tools, prompt=AGENT_SYSTEM_PROMPT)
     

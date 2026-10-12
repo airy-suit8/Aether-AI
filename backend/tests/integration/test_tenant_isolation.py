@@ -9,7 +9,7 @@ import jwt
 import pytest
 
 from src.db import database
-import rag_engine
+from src.memory import conversation
 from src.retrieval import retriever
 from src.vectordb import vector_store
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
@@ -119,7 +119,7 @@ def test_history_with_the_same_session_id_is_not_shared(client, tenants, fake_ll
     assert len(_rows(owner["id"], SHARED)) == 1
 
     # The other user's history for the same session id is empty, in memory and on disk
-    assert rag_engine._memory.get_history(other["id"], SHARED) == []
+    assert conversation.memory.get_history(other["id"], SHARED) == []
     assert _rows(other["id"], SHARED) == []
 
     # and nothing of the owner's turn reaches the model when the other user asks
@@ -157,4 +157,4 @@ def test_clearing_a_session_clears_only_your_own_history(client, tenants):
     assert r.status_code == 200
     assert _rows(other["id"], SHARED) == []
     assert len(_rows(owner["id"], SHARED)) == 1
-    assert len(rag_engine._memory.get_history(owner["id"], SHARED)) == 1
+    assert len(conversation.memory.get_history(owner["id"], SHARED)) == 1

@@ -18,13 +18,13 @@ from langchain_core.output_parsers import StrOutputParser
 
 # Reuse the existing vector store and memory — no duplication
 from rag_engine import (
-    _memory,
     RAGResponse,
     CONFIDENCE_THRESHOLD,
     TOP_K,
 )
 
 from src.llm import llm_client
+from src.memory.conversation import NO_HISTORY, memory as _memory
 from src.retrieval.retriever import retriever, rewrite_question
 from src.prompts.prompt_templates import RAG_PROMPT, SUMMARIZE_PROMPT, format_context
 
@@ -52,7 +52,7 @@ def _retrieve_and_format(user_id: int, question: str, session_id: str) -> Dict[s
     history = _memory.format_history(user_id, session_id)
     search_query = question
     
-    if history != "(No previous conversation)":
+    if history != NO_HISTORY:
         search_query = rewrite_question(question, history)
 
     results = retriever.search(user_id, search_query, k=TOP_K)
