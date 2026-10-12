@@ -12,6 +12,10 @@ const THEMES = [
   { value: 'dark', label: 'Dark' },
 ]
 
+// The server refuses larger files (AETHER_MAX_UPLOAD_BYTES); checked here first, so a big file
+// is not sent only to be cut off
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
 const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 901px)').matches : true)
 
 /**
@@ -163,6 +167,10 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   // ── Handle file upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file) => {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      addToast(`${file.name} is larger than 50 MB, the most one file may be.`, 'error')
+      return
+    }
     setUploadProgress({ filename: file.name, status: 'uploading' })
     try {
       const result = await uploadDocument(file)

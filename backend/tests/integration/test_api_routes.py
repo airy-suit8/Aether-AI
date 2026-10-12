@@ -159,6 +159,8 @@ def test_login_rejects_missing_fields(client, form):
 def test_upload_without_a_file_is_422(client, make_user):
     _, headers = make_user("nofile")
     assert client.post("/api/v1/upload", headers=headers).status_code == 422
+    assert client.post("/api/v1/upload", headers=headers, files={"other": ("a.txt", b"hi")}).status_code == 422
+    assert client.post("/api/v1/upload", headers=headers, data={"file": "just text"}).status_code == 422
 
 
 @pytest.mark.parametrize("path", ["/api/v1/chat", "/api/v1/chat/stream", "/api/v1/session/clear"])
@@ -198,7 +200,7 @@ def test_upload_over_the_size_limit_is_rejected(client, make_user, monkeypatch):
     _, headers = make_user("big")
     monkeypatch.setattr(settings, "max_upload_bytes", 100)
     r = upload_text(client, headers, text="x" * 101)
-    assert r.status_code == 400
+    assert r.status_code == 413  # was a 400, after the whole file had been read into memory (S4)
     assert "too large" in r.json()["detail"]
 
 
