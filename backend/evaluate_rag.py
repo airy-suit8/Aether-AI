@@ -13,18 +13,14 @@ Run:
 
 import json
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from src.core.config import settings
+from src.llm import llm_client
 
 def get_eval_llm():
-    return ChatGoogleGenerativeAI(
-        model=settings.llm_model,
-        google_api_key=settings.google_api_key,
-        temperature=settings.tool_temperature
-    )
+    return llm_client.get_llm(temperature=settings.tool_temperature)
 
 BENCHMARK_DATASET = [
     {

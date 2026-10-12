@@ -21,7 +21,6 @@ from pypdf import PdfReader
 from docx import Document as DocxDoc
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
@@ -39,6 +38,7 @@ from src.db.database import (
 
 from src.core.config import settings
 from src.embeddings import embedder
+from src.llm import llm_client
 
 # ── Constants ────────────────────────────────────────────────────────────────
 STORE_DIR     = Path(settings.vector_store_dir)
@@ -52,12 +52,6 @@ STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Gemini clients ────────────────────────────────────────────────────────────
 
-def _get_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model=settings.llm_model,
-        google_api_key=settings.google_api_key,
-        temperature=settings.llm_temperature,
-    )
 
 # ── Task 2: Structured Output Schema ─────────────────────────────────────────
 
@@ -448,7 +442,7 @@ def query_rag(user_id: int, question: str, session_id: str = "default", use_hybr
     search_query = question
     
     if history != "(No previous conversation)":
-        llm = _get_llm()
+        llm = llm_client.get_llm()
         contextualize_prompt = f"""Given the following conversation history and the user's current question, rephrase the current question to be a standalone question that captures all necessary context. If it is already standalone, return it exactly as is. Do not answer the question, just reformulate it.
         
 History:
@@ -495,7 +489,7 @@ Standalone Question:"""
     raw_context = "\n\n".join(context_parts)
 
     # ── Step 2: Summarize (LCEL chain) ────────────────────────────────────────
-    llm = _get_llm()
+    llm = llm_client.get_llm()
     summarize_chain = SUMMARIZE_PROMPT | llm | StrOutputParser()
     summarized_context = summarize_chain.invoke({
         "context": raw_context,
@@ -547,7 +541,7 @@ def query_rag_stream(user_id: int, question: str, session_id: str = "default", u
     search_query = question
     
     if history != "(No previous conversation)":
-        llm = _get_llm()
+        llm = llm_client.get_llm()
         contextualize_prompt = f"""Given the following conversation history and the user's current question, rephrase the current question to be a standalone question that captures all necessary context. If it is already standalone, return it exactly as is. Do not answer the question, just reformulate it.
         
 History:
@@ -585,7 +579,7 @@ Standalone Question:"""
         context_parts.append(f'<document source="{src}" page="{page}">\n{safe_text}\n</document>')
     raw_context = "\n\n".join(context_parts)
 
-    llm = _get_llm()
+    llm = llm_client.get_llm()
     summarize_chain = SUMMARIZE_PROMPT | llm | StrOutputParser()
     summarized_context = summarize_chain.invoke({
         "context": raw_context,
