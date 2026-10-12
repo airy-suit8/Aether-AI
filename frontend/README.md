@@ -1,16 +1,43 @@
-# React + Vite
+# Aether AI — the web app
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The interface of Aether AI: React 19 and Vite, in TypeScript, styled with the Prism design
+language (`../DESIGN.md`). It talks only to the backend's API under `/api/v1`; setting up and
+running the whole project is in the root `README.md`.
 
-Currently, two official plugins are available:
+## Pages
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Path | What it shows |
+|---|---|
+| `/` | The start page |
+| `/login` | The start page with the sign-in sheet open |
+| `/chat` | The most recent conversation, or a new one |
+| `/chat/:threadId` | One conversation (the thread id is its `session_id`) |
+| `/settings` | The workspace with the settings sheet open |
 
-## React Compiler
+## Where things are
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Folder | What is in it |
+|---|---|
+| `src/services/` | `api.ts`, the one client for the backend, and its request wrapper; `api-schema.ts`, the API types generated from `../backend/tests/openapi_snapshot.json` (do not edit it by hand); the sign-in state |
+| `src/components/` | The pages and their parts: the start page, the workspace (rail, conversation, composer), settings |
+| `src/design/` | Prism: tokens, components (`prism.tsx`), the self-playing demo, and the design lab (`/design-lab.html` in development) |
+| `e2e/` | The browser journey (Playwright), with its accessibility checks |
 
-## Expanding the Oxlint configuration
+## Commands
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Run them here, in `frontend/`.
+
+| Command | What it does |
+|---|---|
+| `npm ci` | Install the exact versions in `package-lock.json` |
+| `npm run dev` | The development server on http://localhost:5173, passing `/api/v1` to the backend on port 8000 |
+| `npm run api-types` | Regenerate `src/services/api-schema.ts` after the backend's schema snapshot changed |
+| `npm run lint` | oxlint |
+| `npm run typecheck` | TypeScript, for the app, its tests and the journey |
+| `npm test` | The unit and component tests (Vitest) |
+| `npm run build` | Type check, then build into `dist/`, which the backend serves at `/` |
+| `npm run e2e` | Build, then walk the whole app in Chromium against a backend with fake models (once before: `npx playwright install chromium`) |
+
+## Credits
+
+Built by Tirth Ganatra during an internship at Netweb Software, Vadodara, with the help of an AI coding assistant.
