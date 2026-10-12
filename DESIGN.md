@@ -1,6 +1,6 @@
 # Prism — the Aether AI design language
 
-Status: 11 October 2026. Prism is applied to every screen of the app: the start page, the sign-in sheet, the workspace (library rail, conversation, composer) and settings. The old stylesheets are gone. All of it lives on the branch `design/prism` until Sprint 2 is merged.
+Status: 11 October 2026. Prism is applied to every screen of the app: the start page, the sign-in sheet, the workspace (library rail, conversation, composer) and settings. The old stylesheets are gone. It was merged together with Sprint 2 on 12 October 2026.
 
 Sprint 6 (13 October 2026) added the pieces in the second half of the component table (thread list, citation chips in real answers, rating, tools row, retry row, upload stage) from the same tokens and components, with no new styling approach; their screenshots are in "Added in Sprint 6" below.
 
@@ -80,7 +80,7 @@ Two moments are choreographed. **Development:** streamed words arrive blurred an
 
 ## Layout
 
-The answer sits on the left and its evidence in the right margin, like notes in a scholarly book. Below 860 px the margin moves under the answer and the threads are not drawn.
+The answer sits on the left and its evidence in the right margin, like notes in a scholarly book. Below 900 px in the workspace (860 px on the start page's bench) the margin moves under the answer and the threads are not drawn; below 900 px the library rail also becomes a drawer.
 
 ![The bench at phone width](docs/design/prism-bench-phone.png)
 
