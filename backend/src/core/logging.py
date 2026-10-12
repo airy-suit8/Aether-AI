@@ -23,10 +23,12 @@ MAX_BYTES = 5 * 1024 * 1024  # 5MB per file
 BACKUP_COUNT = 5             # Keep 5 old copies
 
 # ── Named loggers (one per log file) ──────────────────────────────────────────
+# Under "aether." on purpose: a logger named plain "requests" is the HTTP library's own, which
+# already carries a handler, so setup_logging() skipped it and requests.log was never written.
 
-request_logger = logging.getLogger("requests")
-upload_logger = logging.getLogger("uploads")
-error_logger = logging.getLogger("errors")
+request_logger = logging.getLogger("aether.requests")
+upload_logger = logging.getLogger("aether.uploads")
+error_logger = logging.getLogger("aether.errors")
 
 _FILES = [
     (request_logger, "requests.log", logging.INFO),
