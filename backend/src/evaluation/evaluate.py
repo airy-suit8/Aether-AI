@@ -1,14 +1,15 @@
 """
-evaluate_rag.py — Sprint 7: RAG Pipeline Evaluation & Benchmarking Subsystem
+evaluation/evaluate.py — RAG evaluation harness (moved in Sprint 3; rewritten in Sprint 4)
 
 Automated benchmark evaluator that measures retrieval & generation quality:
   1. Faithfulness Score (groundedness in context)
   2. Answer Relevance Score (direct alignment with prompt)
   3. Context Precision Score (proportion of relevant chunks retrieved)
   4. Vector Search vs. Hybrid (BM25 + Vector) Comparison
+Items 3 and 4 are not implemented, and the harness does not call the real pipeline yet (T3).
 
 Run:
-  python evaluate_rag.py
+  python -m src.evaluation.evaluate      (from backend/)
 """
 
 import json
