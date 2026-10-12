@@ -856,6 +856,16 @@
               }
             ],
             "title": "Turn Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1131,6 +1141,16 @@
               }
             ],
             "title": "Tool Used"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1533,6 +1553,67 @@
         ],
         "title": "UploadResponse",
         "description": "An accepted upload. It is read in the background: GET /documents/{document_id} says when\nit is ready, or why it failed (R12)."
+      },
+      "Usage": {
+        "properties": {
+          "seconds": {
+            "type": "number",
+            "title": "Seconds"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/UsageStage"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seconds",
+          "input_tokens",
+          "output_tokens",
+          "stages"
+        ],
+        "title": "Usage",
+        "description": "What an answer cost (Sprint 8, item 1). Tokens are counted, never priced."
+      },
+      "UsageStage": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "seconds": {
+            "type": "number",
+            "title": "Seconds"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "seconds",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "UsageStage",
+        "description": "One stage of an answer: rewrite, retrieve, summarize, answer; or agent, document_search."
       },
       "UserRegister": {
         "properties": {

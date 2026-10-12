@@ -87,6 +87,16 @@ test('the whole journey, with the accessibility gate', async ({ page }) => {
   await expect(page.locator('.p-answer').first()).toContainText('blade inspection every 90 days')
   const firstThread = new URL(page.url()).pathname
 
+  // What it cost (Sprint 8, item 1): one quiet line, and its stages on demand
+  const cost = page.locator('.x-usage summary')
+  await expect(cost).toHaveText(/^\d+\.\d s, [\d,]+ tokens$/)
+  await cost.click()
+  const stages = page.getByRole('list', { name: 'Stages' })
+  await expect(stages.getByRole('listitem')).toHaveCount(3)
+  await expect(stages).toContainText('Search')
+  await expect(stages).toContainText(/Answer[\d.]+ s[\d,]+ in, [\d,]+ out/)
+  await cost.click()
+
   const chatReady = () => expect(page.getByRole('heading', { name: QUESTION })).toBeVisible()
   await checkAtBothWidths(page, 'the chat', chatReady)
 

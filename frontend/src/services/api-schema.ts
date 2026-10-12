@@ -400,6 +400,7 @@ export interface components {
             tool_used?: string | null;
             /** Turn Id */
             turn_id?: number | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /** DocumentDeleted */
         DocumentDeleted: {
@@ -506,6 +507,7 @@ export interface components {
             turn_id: number | null;
             /** Tool Used */
             tool_used?: string | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /**
          * ErrorEvent
@@ -680,6 +682,34 @@ export interface components {
             replaces?: boolean;
             /** Message */
             message: string;
+        };
+        /**
+         * Usage
+         * @description What an answer cost (Sprint 8, item 1). Tokens are counted, never priced.
+         */
+        Usage: {
+            /** Seconds */
+            seconds: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Stages */
+            stages: components["schemas"]["UsageStage"][];
+        };
+        /**
+         * UsageStage
+         * @description One stage of an answer: rewrite, retrieve, summarize, answer; or agent, document_search.
+         */
+        UsageStage: {
+            /** Name */
+            name: string;
+            /** Seconds */
+            seconds: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
         };
         /** UserRegister */
         UserRegister: {

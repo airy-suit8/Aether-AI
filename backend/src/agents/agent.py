@@ -5,7 +5,7 @@ Uses LangChain's create_agent (a LangGraph agent loop) to allow the LLM to chain
 structured metadata for the UI.
 """
 
-from typing import Callable
+from typing import Callable, Optional
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage
@@ -25,7 +25,7 @@ OUT_OF_STEPS = "Sorry, need more steps to process this request."
 
 
 def run_agent(user_id: int, question: str, session_id: str,
-              search_documents: Callable[[str], dict]) -> dict:
+              search_documents: Callable[[str], dict], config: Optional[dict] = None) -> dict:
     """
     Agent Decision Layer — uses an Execution Loop (ReAct / Tool Calling).
     
@@ -35,7 +35,8 @@ def run_agent(user_id: int, question: str, session_id: str,
 
     search_documents(query) answers a sub-question from the user's documents and returns
     {"answer", "sources", "confidence"}; the pipeline passes it in, and must not save the
-    sub-question as a turn.
+    sub-question as a turn. config is a LangChain config for the agent's own model calls (the
+    pipeline passes one that counts their tokens).
 
     Returns {"answer", "sources", "confidence", "tool_used"}. The turn is not saved here: the
     pipeline saves it once the answer has been sent, so a stream the client closed saves none.
@@ -106,7 +107,8 @@ def run_agent(user_id: int, question: str, session_id: str,
     # Other errors propagate to the API, which reports them as errors instead of saving and
     # showing them as an answer.
     try:
-        result = agent.invoke({"messages": messages}, config={"recursion_limit": settings.agent_recursion_limit})
+        result = agent.invoke({"messages": messages},
+                              config={**(config or {}), "recursion_limit": settings.agent_recursion_limit})
     except GraphRecursionError:
         # create_agent raises at the limit; the old create_react_agent answered with this text
         result = {"messages": [AIMessage(content=OUT_OF_STEPS)]}
