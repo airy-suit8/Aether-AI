@@ -492,4 +492,59 @@ describe('ChatLayout', () => {
     expect(await screen.findByText(/I could not find relevant information/)).toBeTruthy()
     expect(screen.queryByRole('group', { name: 'Rate this answer' })).toBeNull()
   })
+
+  it('ties each cited [n] to source card n, by pointer and by keyboard, when sources are numbered', async () => {
+    // The server's AETHER_ANSWER_FROM=chunks mode: the sources are the cited chunks, each with its number
+    const register = { source: 'halcyon_register.xlsx', page: 2, score: 0.71, snippet: 'Inspection HR-2291 · Team Orion.', number: 3 }
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Blades are inspected every 90 days [1]. Each inspection is logged [3]; see `[1]` and [7].')
+      onDone?.(done({ sources: [{ ...SOURCE, number: 1 }, register], confidence: 0.8, turn_id: 30 }))
+    })
+    renderChat()
+    const user = await ask('How are inspections handled?')
+
+    const first = await screen.findByRole('button', { name: 'Source 1: zephyr_manual.txt, page 1' })
+    const third = screen.getByRole('button', { name: 'Source 3: halcyon_register.xlsx, page 2' })
+    expect(screen.getAllByRole('button', { name: /^Source \d/ })).toHaveLength(2)
+    // A number no source has, and a marker inside code, stay as written
+    const answer = first.closest('.p-answer') as HTMLElement
+    expect(answer.textContent).toContain('[7]')
+    expect(within(answer).getByText('[1]').tagName).toBe('CODE')
+
+    // Cards are numbered by their citation number
+    const margin = screen.getByText('Sources').parentElement as HTMLElement
+    const cards = within(margin).getAllByRole('button')
+    expect(cards.map((c) => c.querySelector('.p-source__n')?.textContent)).toEqual(['1', '3'])
+
+    // Pointer: the chip lights its card, and the card lights its chip
+    await user.hover(third)
+    expect(cards[1].getAttribute('aria-expanded')).toBe('true')
+    expect(cards[0].getAttribute('aria-expanded')).toBe('false')
+    await user.unhover(third)
+    expect(cards[1].getAttribute('aria-expanded')).toBe('false')
+    await user.hover(cards[0])
+    expect(first.getAttribute('data-active')).toBe('true')
+    await user.unhover(cards[0])
+
+    // Keyboard: focusing a chip lights its card; Enter pins the card open
+    act(() => first.focus())
+    expect(cards[0].getAttribute('aria-expanded')).toBe('true')
+    await user.keyboard('{Enter}')
+    act(() => first.blur())
+    expect(cards[0].getAttribute('aria-expanded')).toBe('true')
+    expect(cards[1].getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('shows an answer and its sources as written when the sources carry no number', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Blades are inspected every 90 days [1].')
+      onDone?.(done({ sources: [SOURCE], confidence: 0.8, turn_id: 31 }))
+    })
+    renderChat()
+    await ask('How often?')
+    expect(await screen.findByText('Blades are inspected every 90 days [1].')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Source \d/ })).toBeNull()
+    const margin = screen.getByText('Sources').parentElement as HTMLElement
+    expect(within(margin).getByRole('button').querySelector('.p-source__n')?.textContent).toBe('1')
+  })
 })

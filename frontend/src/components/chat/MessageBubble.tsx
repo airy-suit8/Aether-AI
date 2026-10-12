@@ -1,17 +1,12 @@
-import { useState } from 'react'
+import { createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ClarityRing, SourceCard } from '../../design/prism'
+import { Cite, ClarityRing, SourceCard } from '../../design/prism'
 import type { ClarityState } from '../../design/prism'
-import type { FeedbackValue } from '../../services/api'
+import type { FeedbackValue, Source } from '../../services/api'
+import { remarkCitations } from './citations'
 import type { AnswerMessage, ChatMessage } from './types'
-
-// Model output is untrusted: no remote images (they can leak text in a URL), and links open elsewhere
-const MARKDOWN: Components = {
-  img: () => null,
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-}
 
 // Similarity at or above this reads as grounded. From the first real run: relevant passages
 // scored 0.67 to 0.80 and an unrelated question 0.50. To be calibrated on a dataset in Sprint 4.
@@ -22,6 +17,59 @@ function clarityOf(message: AnswerMessage): { state: ClarityState; value: number
   const value = Math.max(0, Math.min(1, message.confidence || 0))
   return { state: value >= GROUNDED_AT ? 'grounded' : 'uncertain', value }
 }
+
+/** Which source card is lit or pinned open, shared by an answer's citation chips and its cards. */
+interface CitationState {
+  byNumber: ReadonlyMap<number, Source>
+  active: number | null
+  setActive: (n: number | null) => void
+  toggle: (n: number) => void
+}
+
+const Citations = createContext<CitationState | null>(null)
+const NO_SOURCES: Source[] = []
+
+const describe = (n: number, source: Source) =>
+  `Source ${n}: ${source.source}${source.page != null && source.page !== '?' ? `, page ${source.page}` : ''}`
+
+/** A [n] in the answer, drawn as a Cite chip in the hue of source card n. */
+function CitationMarker({ n }: { n: number }) {
+  const citations = useContext(Citations)
+  const source = citations?.byNumber.get(n)
+  if (!citations || !source) return <>[{n}]</>
+  return (
+    <Cite
+      n={n}
+      label={describe(n, source)}
+      active={citations.active === n}
+      onActivate={citations.setActive}
+      onClick={() => citations.toggle(n)}
+    />
+  )
+}
+
+// Model output is untrusted: no remote images (they can leak text in a URL), and links open
+// elsewhere. A <cite> is made only by remarkCitations, never from the answer's own text.
+const MARKDOWN: Components = {
+  img: () => null,
+  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+  cite: ({ node }) => <CitationMarker n={Number(node?.properties?.dataN)} />,
+}
+
+/** The answer's Markdown. Memoised: lighting a source card does not parse the answer again. */
+const AnswerText = memo(function AnswerText({ content, cited }: { content: string; cited: string }) {
+  const plugins = useMemo(() => {
+    const numbers = new Set(cited ? cited.split(',').map(Number) : [])
+    return [remarkGfm, remarkCitations(numbers)]
+  }, [cited])
+  return (
+    <div className="p-answer">
+      <ReactMarkdown remarkPlugins={plugins} components={MARKDOWN}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+})
 
 const RATINGS: { value: Exclude<FeedbackValue, 0>; label: string; path: string }[] = [
   { value: 1, label: 'Helpful', path: 'M6 8.5V15H3.5V8.5H6Zm0 0 3-5.5c1.2 0 2 .9 1.8 2.1L10.4 7.5h3.7c.9 0 1.6.9 1.4 1.8l-1.1 4.6c-.2.7-.8 1.1-1.5 1.1H6' },
@@ -62,10 +110,27 @@ interface MessageBubbleProps {
  * MessageBubble — one message. A question is a heading; an answer carries its clarity,
  * its text and, in the margin, the passages it came from. An answer the server saved (it has a
  * turn id) can be rated.
+ *
+ * When the sources carry a number (the server's AETHER_ANSWER_FROM=chunks mode), each card is
+ * numbered by it and each [n] in the answer is a Cite chip tied to card n: hovering or focusing
+ * either lights both, and a chip pins its card open. Otherwise the cards are numbered in order
+ * and the answer is shown as written.
  */
 export default function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate }: MessageBubbleProps) {
   const [active, setActive] = useState<number | null>(null)
   const [open, setOpen] = useState<number | null>(null)
+  const cardRefs = useRef<Record<number, HTMLButtonElement | null>>({})
+
+  const sources = message.role === 'assistant' ? message.sources : NO_SOURCES
+  const numbered = sources.length > 0 && sources.every((s) => typeof s.number === 'number')
+  const numberOf = useCallback((source: Source, index: number) => (numbered && source.number != null ? source.number : index + 1), [numbered])
+  const byNumber = useMemo(() => new Map(sources.map((s, i) => [numberOf(s, i), s])), [sources, numberOf])
+
+  const toggle = useCallback((n: number) => {
+    setOpen((current) => (current === n ? null : n))
+    cardRefs.current[n]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [])
+  const citations = useMemo<CitationState>(() => ({ byNumber, active, setActive, toggle }), [byNumber, active, toggle])
 
   if (message.role === 'user') {
     return <h2 className="x-question">{message.content}</h2>
@@ -92,42 +157,43 @@ export default function MessageBubble({ message, isStreaming = false, streamingP
   }
 
   const clarity = clarityOf(message)
-  const sources = message.sources ?? []
 
   return (
-    <article className="x-exchange">
-      <div>
-        <div className="x-status">
-          {clarity && <ClarityRing value={clarity.value} state={clarity.state} />}
-          {message.toolUsed && <span className="x-tool p-mono">tool · {message.toolUsed}</span>}
-          {message.mode && <span className="p-mono">{message.mode} mode</span>}
+    <Citations.Provider value={citations}>
+      <article className="x-exchange">
+        <div>
+          <div className="x-status">
+            {clarity && <ClarityRing value={clarity.value} state={clarity.state} />}
+            {message.toolUsed && <span className="x-tool p-mono">tool · {message.toolUsed}</span>}
+            {message.mode && <span className="p-mono">{message.mode} mode</span>}
+          </div>
+          <AnswerText content={message.content} cited={numbered ? [...byNumber.keys()].join(',') : ''} />
+          {message.turnId != null && onRate && <Rating message={message} onRate={onRate} />}
         </div>
-        <div className="p-answer">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN}>
-            {message.content}
-          </ReactMarkdown>
-        </div>
-        {message.turnId != null && onRate && <Rating message={message} onRate={onRate} />}
-      </div>
 
-      {sources.length > 0 && (
-        <aside className="x-margin">
-          <p className="p-eyebrow">Sources</p>
-          {sources.map((source, index) => (
-            <SourceCard
-              key={index}
-              n={index + 1}
-              source={source}
-              order={index}
-              dispersing
-              active={active === index + 1}
-              open={open === index + 1}
-              onActivate={setActive}
-              onToggle={() => setOpen(open === index + 1 ? null : index + 1)}
-            />
-          ))}
-        </aside>
-      )}
-    </article>
+        {sources.length > 0 && (
+          <aside className="x-margin">
+            <p className="p-eyebrow">Sources</p>
+            {sources.map((source, index) => {
+              const n = numberOf(source, index)
+              return (
+                <SourceCard
+                  key={n}
+                  n={n}
+                  source={source}
+                  order={index}
+                  dispersing
+                  active={active === n}
+                  open={open === n}
+                  onActivate={setActive}
+                  onToggle={() => setOpen(open === n ? null : n)}
+                  innerRef={(el) => { cardRefs.current[n] = el }}
+                />
+              )
+            })}
+          </aside>
+        )}
+      </article>
+    </Citations.Provider>
   )
 }
