@@ -240,9 +240,9 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
       }
       if (!mountedRef.current) return
       if (doc.status === 'ready') {
-        const pages = `${doc.pages} page${doc.pages === 1 ? '' : 's'}`
+        const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
         const replaced = accepted.replaces ? ' It replaced the earlier file of that name.' : ''
-        addToast(`Added ${doc.filename}: ${doc.chunks} passages from ${pages}.${replaced}`, 'success')
+        addToast(`Added ${doc.filename}: ${count(doc.chunks, 'passage')} from ${count(doc.pages, 'page')}.${replaced}`, 'success')
       } else if (doc.status === 'failed') {
         addToast(doc.error || `${doc.filename} could not be read.`, 'error')
         // Nothing of it was kept; its record leaves the library too
