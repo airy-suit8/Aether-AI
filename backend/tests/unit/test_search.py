@@ -5,7 +5,7 @@ search_hybrid. Known defects in BM25 and the fusion key (R3) are in test_known_d
 
 import pytest
 
-import rag_engine
+from src.vectordb import vector_store
 
 CORPUS = {
     "pumps.txt": "Centrifugal pumps need their impeller seals replaced every six months.",
@@ -20,7 +20,7 @@ def user():
     """One user with four one-chunk documents in the real (temp) vector store."""
     user_id = 870001
     from langchain_core.documents import Document
-    rag_engine._store.add_documents(user_id, [
+    vector_store.store.add_documents(user_id, [
         Document(page_content=text, metadata={"source": name, "page": 1, "chunk_id": name})
         for name, text in CORPUS.items()
     ])
@@ -34,7 +34,7 @@ def _sources(hits):
 # ── Dense ─────────────────────────────────────────────────────────────────────
 
 def test_dense_search_ranks_the_relevant_chunk_first(user):
-    hits = rag_engine._store.search(user, "When are impeller seals on centrifugal pumps replaced?", k=4)
+    hits = vector_store.store.search(user, "When are impeller seals on centrifugal pumps replaced?", k=4)
     assert _sources(hits)[0] == "pumps.txt"
     scores = [h["score"] for h in hits]
     assert scores == sorted(scores, reverse=True)
@@ -43,44 +43,44 @@ def test_dense_search_ranks_the_relevant_chunk_first(user):
 
 
 def test_dense_search_returns_at_most_k(user):
-    assert len(rag_engine._store.search(user, "maintenance", k=2)) == 2
+    assert len(vector_store.store.search(user, "maintenance", k=2)) == 2
 
 
 def test_dense_search_for_a_user_with_no_documents_is_empty():
-    assert rag_engine._store.search(870099, "pumps", k=5) == []
+    assert vector_store.store.search(870099, "pumps", k=5) == []
 
 
 # ── BM25 ──────────────────────────────────────────────────────────────────────
 
 def test_bm25_ranks_the_keyword_match_first(user):
-    hits = rag_engine._store.search_bm25(user, "butterfly valves greased", k=4)
+    hits = vector_store.store.search_bm25(user, "butterfly valves greased", k=4)
     assert _sources(hits)[0] == "valves.txt"
     assert all(h["score"] > 0 for h in hits)
 
 
 def test_bm25_returns_only_chunks_that_share_a_word(user):
-    assert rag_engine._store.search_bm25(user, "xylophone quasar", k=4) == []
+    assert vector_store.store.search_bm25(user, "xylophone quasar", k=4) == []
 
 
 def test_bm25_respects_k(user):
-    assert len(rag_engine._store.search_bm25(user, "are the and by", k=1)) == 1
+    assert len(vector_store.store.search_bm25(user, "are the and by", k=1)) == 1
 
 
 def test_bm25_for_a_user_with_no_documents_is_empty():
-    assert rag_engine._store.search_bm25(870099, "pumps", k=5) == []
+    assert vector_store.store.search_bm25(870099, "pumps", k=5) == []
 
 
 def test_bm25_swallows_store_errors(user, monkeypatch):
     # Today any error returns an empty list (R3 notes this hides failures)
-    monkeypatch.setattr(type(rag_engine._store.chroma._collection), "get",
+    monkeypatch.setattr(type(vector_store.store.chroma._collection), "get",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk")))
-    assert rag_engine._store.search_bm25(user, "pumps", k=4) == []
+    assert vector_store.store.search_bm25(user, "pumps", k=4) == []
 
 
 # ── Hybrid, through the real store ────────────────────────────────────────────
 
 def test_hybrid_search_puts_the_chunk_both_methods_agree_on_first(user):
-    hits = rag_engine._store.search_hybrid(user, "conveyor belts tensioned monthly", k=3)
+    hits = vector_store.store.search_hybrid(user, "conveyor belts tensioned monthly", k=3)
     assert _sources(hits)[0] == "belts.txt"
     assert hits[0]["score"] == 1.0  # ranked first by both: the maximum fused score
     assert len(hits) <= 3
@@ -95,7 +95,7 @@ def _hit(text, score=0.5):
 @pytest.fixture
 def fused(monkeypatch):
     """search_hybrid on a store whose dense and BM25 results are set by the test."""
-    store = rag_engine.ChromaVectorStoreWrapper()
+    store = vector_store.VectorStore()
 
     def run(dense, bm25, k=5, rrf_k=60):
         monkeypatch.setattr(store, "search", lambda user_id, query, k: dense[:k])

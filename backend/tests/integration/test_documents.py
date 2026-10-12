@@ -2,7 +2,7 @@
 
 import jwt
 
-import rag_engine
+from src.vectordb import vector_store
 from helpers import DOC_TEXT, upload_text
 
 LONG_TEXT = "\n\n".join(f"Section {i}. " + DOC_TEXT * 4 for i in range(4))  # several chunks
@@ -49,7 +49,7 @@ def test_delete_failure_is_reported_and_keeps_the_records(client, make_user, mon
     _, headers = make_user("delfail")
     upload_text(client, headers)
 
-    collection = rag_engine._store.chroma._collection
+    collection = vector_store.store.chroma._collection
 
     def broken_delete(*args, **kwargs):
         raise RuntimeError("disk error")
@@ -73,5 +73,5 @@ def test_upload_with_the_langchain_loader_cites_pages_from_one(client, make_user
     assert r.status_code == 200, r.text
     assert r.json()["pages"] == 2
     user_id = int(jwt.decode(headers["Authorization"].split()[1], options={"verify_signature": False})["sub"])
-    metas = rag_engine._store.chroma._collection.get(where={"user_id": user_id}, include=["metadatas"])["metadatas"]
+    metas = vector_store.store.chroma._collection.get(where={"user_id": user_id}, include=["metadatas"])["metadatas"]
     assert sorted(m["page"] for m in metas) == [1, 2]
