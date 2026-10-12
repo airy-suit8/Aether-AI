@@ -17,9 +17,6 @@ from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
 
 from src.db.database import (
-    save_conversation,
-    get_conversation_history,
-    clear_conversation as db_clear_conversation,
     clear_user_documents,
     get_all_documents_detailed as _db_get_all_documents_detailed,
 )
@@ -30,12 +27,12 @@ from src.chunking.chunker import split_documents
 from src.ingestion.loader import load_document
 from src.vectordb.vector_store import store as _store
 from src.retrieval.retriever import retriever, rewrite_question
+from src.memory.conversation import NO_HISTORY, memory as _memory
 from src.prompts.prompt_templates import RAG_PROMPT, SUMMARIZE_PROMPT, format_context
 
 # ── Constants ────────────────────────────────────────────────────────────────
 TOP_K         = settings.top_k
 CONFIDENCE_THRESHOLD = settings.confidence_threshold  # Task 7: minimum cosine similarity to proceed
-MEMORY_MAX_TURNS = settings.memory_max_turns  # Task 4: max conversation turns to remember
 
 # ── Task 2: Structured Output Schema ─────────────────────────────────────────
 
@@ -59,62 +56,6 @@ def ingest_document(user_id: int, file_path: str, filename: str) -> Dict[str, An
 
     return {"filename": filename, "pages": len(raw_docs), "chunks": len(chunks)}
 
-# ── Task 4: Conversation Memory (SQLite-backed) ──────────────────────────────
-
-class ConversationMemory:
-    """
-    Conversation buffer — backed by SQLite for persistence.
-    In-memory cache is kept for fast reads during a session.
-    Every turn is also saved to disk so conversations survive server restarts.
-    """
-
-    def __init__(self):
-        self._cache: Dict[str, List[Dict[str, str]]] = {}
-
-    @staticmethod
-    def _cache_key(user_id: int, session_id: str) -> str:
-        """Composite key prevents cross-tenant data leaks when session IDs collide."""
-        return f"{user_id}:{session_id}"
-
-    def get_history(self, user_id: int, session_id: str) -> List[Dict[str, str]]:
-        """Return list of {"question": ..., "answer": ...} for this session."""
-        key = self._cache_key(user_id, session_id)
-        if key not in self._cache:
-            self._cache[key] = get_conversation_history(user_id, session_id, limit=MEMORY_MAX_TURNS)
-        return self._cache.get(key, [])
-
-    def add_turn(self, user_id: int, session_id: str, question: str, answer: str, confidence: float = 0.0, mode: str = "original"):
-        """Append a Q&A turn to both cache and SQLite."""
-        key = self._cache_key(user_id, session_id)
-        if key not in self._cache:
-            self._cache[key] = get_conversation_history(user_id, session_id, limit=MEMORY_MAX_TURNS)
-        self._cache[key].append({"question": question, "answer": answer})
-        # Trim cache
-        if len(self._cache[key]) > MEMORY_MAX_TURNS:
-            self._cache[key] = self._cache[key][-MEMORY_MAX_TURNS:]
-        # Persist to SQLite
-        save_conversation(user_id, session_id, question, answer, confidence, mode)
-
-    def clear_session(self, user_id: int, session_id: str):
-        """Clear history from both cache and SQLite."""
-        key = self._cache_key(user_id, session_id)
-        self._cache.pop(key, None)
-        db_clear_conversation(user_id, session_id)
-
-    def format_history(self, user_id: int, session_id: str) -> str:
-        """Format history into a readable string for the prompt."""
-        history = self.get_history(user_id, session_id)
-        if not history:
-            return "(No previous conversation)"
-        lines = []
-        for turn in history:
-            lines.append(f"User: {turn['question']}")
-            lines.append(f"Assistant: {turn['answer']}")
-        return "\n".join(lines)
-
-
-# Module-level singleton
-_memory = ConversationMemory()
 
 # ── Task 3: Sequential Chain Query (Retrieve → Summarize → Generate) ─────────
 
@@ -133,7 +74,7 @@ def query_rag(user_id: int, question: str, session_id: str = "default", use_hybr
     history = _memory.format_history(user_id, session_id)
     search_query = question
     
-    if history != "(No previous conversation)":
+    if history != NO_HISTORY:
         search_query = rewrite_question(question, history)
 
     if use_hybrid:
@@ -216,7 +157,7 @@ def query_rag_stream(user_id: int, question: str, session_id: str = "default", u
     history = _memory.format_history(user_id, session_id)
     search_query = question
     
-    if history != "(No previous conversation)":
+    if history != NO_HISTORY:
         search_query = rewrite_question(question, history)
 
     if use_hybrid:
@@ -291,14 +232,3 @@ def clear_documents(user_id: int) -> Dict[str, Any]:
     # Clear from SQLite metadata only once the vectors are gone
     clear_user_documents(user_id)
     return {"status": "cleared", "deleted": deleted}
-
-# ── Session Management ────────────────────────────────────────────────────────
-
-def clear_session(user_id: int, session_id: str):
-    """Clear conversation memory for a session."""
-    _memory.clear_session(user_id, session_id)
-
-
-def get_session_history(user_id: int, session_id: str) -> List[Dict[str, str]]:
-    """Return conversation history for a session."""
-    return _memory.get_history(user_id, session_id)

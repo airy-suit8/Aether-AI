@@ -31,7 +31,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from rag_engine import ingest_document, query_rag, query_rag_stream, list_documents, clear_documents, clear_session
+from rag_engine import ingest_document, query_rag, query_rag_stream, list_documents, clear_documents
+from src.memory.conversation import clear_session
 from rag_langchain import query_rag_langchain, query_rag_langchain_stream
 from agent import run_agent
 
