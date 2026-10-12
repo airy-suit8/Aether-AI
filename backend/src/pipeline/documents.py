@@ -22,6 +22,10 @@ from src.vectordb.vector_store import store
 INTERRUPTED = "The server stopped before this file was read. Upload it again."
 
 
+class DocumentRemoved(Exception):
+    """The user removed a document while it was being read; nothing of it was kept."""
+
+
 def ingest_document(user_id: int, file_path: str, filename: str, document_id: Optional[int] = None) -> Dict[str, Any]:
     """Parse → chunk → embed → store. Returns summary stats. Chunks are tagged with document_id when one is given."""
     raw_docs = load_document(file_path, filename)
@@ -57,10 +61,13 @@ def finish_document(user_id: int, document_id: int, file_path: str, filename: st
     Read an accepted upload into the vector store and mark it "ready"; then remove any other
     document of the same name, which it replaces. Returns the stats and "replaced" (bool).
     Errors propagate: the caller reports them with fail_document(), and an earlier file of the
-    same name is kept.
+    same name is kept. DocumentRemoved when the user removed the document while it was read: its
+    passages, stored by then, are removed again, so none stays searchable without a record (N2).
     """
     result = ingest_document(user_id, file_path, filename, document_id)
-    set_document_status(user_id, document_id, "ready", pages=result["pages"], chunks=result["chunks"])
+    if not set_document_status(user_id, document_id, "ready", pages=result["pages"], chunks=result["chunks"]):
+        store.delete_document_chunks(get_tenant_id(user_id), document_id)
+        raise DocumentRemoved(filename)
     earlier = [d for d in get_all_documents_detailed(user_id) if d["filename"] == filename and d["id"] != document_id]
     for old in earlier:
         delete_document(user_id, old["id"])

@@ -4,6 +4,7 @@ document can be deleted or replaced on its own (R7).
 """
 
 import jwt
+import pytest
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
@@ -258,3 +259,28 @@ def test_an_upload_a_restart_cut_short_is_marked_failed_and_its_chunks_removed(c
     assert _chunks(headers) == []
     # The same file may be uploaded again: a failed upload is not a duplicate
     assert database.check_duplicate_document(user_id, "hash-half") is None
+
+
+@pytest.mark.parametrize("removal", ["one", "all"])
+def test_a_document_removed_while_it_is_read_leaves_nothing_behind(client, make_user, monkeypatch, removal):
+    # Second audit, N2: the library offers Remove on a document still "Reading". The record went,
+    # but the reading went on and stored its passages anyway: searchable, with nothing to delete
+    # them by. The same after "Delete all documents".
+    _, headers = make_user("gone")
+    real = documents.finish_document
+
+    def remove_then_finish(user_id, document_id, *args):
+        if removal == "one":
+            assert documents.delete_document(user_id, document_id)["deleted"] == 0  # nothing stored yet
+        else:
+            documents.clear_documents(user_id)
+        return real(user_id, document_id, *args)
+
+    monkeypatch.setattr(routes_documents, "finish_document", remove_then_finish)
+    r = upload_text(client, headers)
+    assert r.status_code == 202
+    assert client.get(f"/api/v1/documents/{r.json()['document_id']}", headers=headers).status_code == 404
+    assert _chunks(headers) == []
+    assert client.get("/api/v1/documents/detailed", headers=headers).json()["count"] == 0
+    answer = ask(client, headers, "How often is the Zephyr turbine blade inspection?").json()
+    assert answer["sources"] == [] and answer["answer"].startswith("No documents have been uploaded yet")

@@ -295,14 +295,17 @@ def save_document_record(user_id: int, filename: str, pages: int, chunks: int,
 
 
 def set_document_status(user_id: int, document_id: int, status: str, error: Optional[str] = None,
-                        pages: int = 0, chunks: int = 0):
-    """Record how reading a document ended: "ready" with its counts, or "failed" with a message for the user."""
+                        pages: int = 0, chunks: int = 0) -> bool:
+    """Record how reading a document ended: "ready" with its counts, or "failed" with a message for
+    the user. False when the record is gone (the user removed the document meanwhile)."""
     with _db_lock:
         conn = _get_connection()
-        conn.execute("UPDATE documents SET status = ?, error = ?, pages = ?, chunks = ? WHERE id = ? AND user_id = ?",
-                     (status, error, pages, chunks, document_id, user_id))
+        updated = conn.execute(
+            "UPDATE documents SET status = ?, error = ?, pages = ?, chunks = ? WHERE id = ? AND user_id = ?",
+            (status, error, pages, chunks, document_id, user_id)).rowcount
         conn.commit()
         conn.close()
+    return updated == 1
 
 
 def fail_processing_documents(error: str) -> List[Dict[str, Any]]:

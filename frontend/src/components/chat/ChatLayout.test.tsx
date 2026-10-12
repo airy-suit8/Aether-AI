@@ -611,4 +611,15 @@ describe('ChatLayout', () => {
     expect(screen.getByText('Version').previousElementSibling?.textContent).toBe(version)
     expect(version).toBe(snapshot.info.version)
   })
+
+  it('says a file was removed before it was read, not that something failed', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 13, filename: 'plan.pdf', status: 'processing', replaces: false, message: "Reading 'plan.pdf'." })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockRejectedValue(new api.ApiError('No such document.', 404))
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('plan.pdf was removed before it was read.', 'info'))
+    expect(addToast).not.toHaveBeenCalledWith('No such document.', 'error')
+  })
 })
