@@ -1,16 +1,19 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import LandingPage from './components/landing/LandingPage'
 import ChatLayout from './components/chat/ChatLayout'
 import ToastContainer from './components/common/ToastContainer'
+import type { Toast } from './components/common/ToastContainer'
+import type { ToastType } from './components/chat/types'
 import { useAuth } from './services/AuthContext'
 import { getMe, refreshSession, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './services/api'
 import { PrismRoot } from './design/prism'
+import type { Theme } from './design/prism'
 import './design/app.css'
 
 const THEME_KEY = 'aether_theme'
 
 // The theme is a per-browser convenience, so it lives in localStorage; the page works without it.
-function readTheme() {
+function readTheme(): Theme {
   try {
     return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'system'
   } catch {
@@ -19,17 +22,17 @@ function readTheme() {
 }
 
 /**
- * App.jsx — Root Application Controller
+ * App.tsx — Root Application Controller
  * Manages view routing (landing ↔ chat), the theme and global toast notifications.
  */
 export default function App() {
-  const [view, setView] = useState('landing')
-  const [toasts, setToasts] = useState([])
-  const [theme, setThemeState] = useState(readTheme)
+  const [view, setView] = useState<'landing' | 'chat'>('landing')
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const [theme, setThemeState] = useState<Theme>(readTheme)
   const [restoring, setRestoring] = useState(true)
   const { isAuthenticated, login, logout } = useAuth()
 
-  const setTheme = useCallback((next) => {
+  const setTheme = useCallback((next: Theme) => {
     setThemeState(next)
     try {
       localStorage.setItem(THEME_KEY, next)
@@ -38,7 +41,7 @@ export default function App() {
     }
   }, [])
 
-  const addToast = useCallback((message, type = 'info', duration = 4000) => {
+  const addToast = useCallback((message: string, type: ToastType = 'info', duration = 4000) => {
     const id = Date.now() + Math.random()
     // Several requests can fail for the same reason at once: show each message only once
     setToasts(prev => prev.some(t => t.message === message) ? prev : [...prev, { id, message, type }])

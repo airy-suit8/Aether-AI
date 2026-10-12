@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
@@ -7,10 +7,13 @@ import {
   sendChat, sendChatStream, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages,
 } from '../../services/api'
+import type { DocumentRecord, Mode, Turn } from '../../services/api'
 import { useAuth } from '../../services/AuthContext'
 import { AmbientField, Lens } from '../../design/prism'
+import type { Theme } from '../../design/prism'
+import type { AddToast, AnswerMessage, ChatMessage } from './types'
 
-const THEMES = [
+const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'dark', label: 'Dark' },
 ]
@@ -22,13 +25,13 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 // An upload is read in the background; its status is checked this often, for at most ten minutes
 const POLL_MS = 1000
 const POLL_LIMIT = 600
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // The database has always called the default mode "original"
-const MODE_OF_STORED = { original: 'default' }
+const MODE_OF_STORED: Record<string, string> = { original: 'default' }
 
 /** A saved turn as the two messages the conversation shows: the question and its answer. */
-function turnToMessages(turn) {
+function turnToMessages(turn: Turn): ChatMessage[] {
   return [
     { id: `q${turn.turn_id}`, role: 'user', content: turn.question, timestamp: turn.created_at },
     {
@@ -40,6 +43,7 @@ function turnToMessages(turn) {
       toolUsed: turn.tool_used || null,
       mode: MODE_OF_STORED[turn.mode] || turn.mode,
       turnId: turn.turn_id,
+      feedback: turn.feedback === 1 || turn.feedback === -1 ? turn.feedback : 0,
       timestamp: turn.created_at,
     },
   ]
@@ -51,17 +55,24 @@ const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedi
  * ChatLayout — The main chat workspace with the library rail, the conversation and the composer.
  * Manages all chat state, the answer mode, sessions, and document lists.
  */
-export default function ChatLayout({ onNavigateHome, addToast, theme = 'system', onTheme = () => {} }) {
+interface ChatLayoutProps {
+  onNavigateHome: () => void
+  addToast: AddToast
+  theme?: Theme
+  onTheme?: (theme: Theme) => void
+}
+
+export default function ChatLayout({ onNavigateHome, addToast, theme = 'system', onTheme = () => {} }: ChatLayoutProps) {
   const { logout } = useAuth()
 
   // Messages
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [streamingPhase, setStreamingPhase] = useState('')
 
   // One answer mode at a time, plus whether to stream
-  const [mode, setMode] = useState('default') // default | hybrid | agent | langchain
+  const [mode, setMode] = useState<Mode>('default')
   const [streamingMode, setStreamingMode] = useState(true)
   const agentMode = mode === 'agent'
 
@@ -69,15 +80,15 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   const [sessionId, setSessionId] = useState(() => `session_${Date.now()}`)
 
   // Documents
-  const [documents, setDocuments] = useState([])
+  const [documents, setDocuments] = useState<DocumentRecord[]>([])
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(null)
+  const [uploadProgress, setUploadProgress] = useState<{ filename: string; status: string } | null>(null)
 
-  const streamRef = useRef(null)
-  const abortRef = useRef(null)
+  const streamRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const mountedRef = useRef(true)
   const touchedRef = useRef(false)  // the user has asked or started a thread: no restoring over it
 
@@ -132,12 +143,12 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   }, [streamingText])
 
   // ── Handle sending a message ──────────────────────────────────────────
-  const handleSend = useCallback(async (question) => {
+  const handleSend = useCallback(async (question: string) => {
     if (!question.trim() || isLoading) return
     touchedRef.current = true
 
-    const userMessage = {
-      id: Date.now(),
+    const userMessage: ChatMessage = {
+      id: `q${Date.now()}`,
       role: 'user',
       content: question,
       timestamp: new Date().toISOString(),
@@ -166,14 +177,15 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
             setStreamingText(fullText)
           },
           onDone: (data) => {
-            const aiMessage = {
-              id: Date.now() + 1,
+            const aiMessage: AnswerMessage = {
+              id: `a${Date.now()}`,
               role: 'assistant',
               content: fullText,
               sources: data.sources || [],
               confidence: data.confidence || 0,
               toolUsed: data.tool_used || null,
               turnId: data.turn_id ?? null,  // what feedback names it by
+              feedback: 0,
               mode,
               timestamp: new Date().toISOString(),
             }
@@ -194,21 +206,22 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
           signal: controller.signal,
         })
 
-        const aiMessage = {
-          id: Date.now() + 1,
+        const aiMessage: AnswerMessage = {
+          id: `a${Date.now()}`,
           role: 'assistant',
           content: result.answer,
           sources: result.sources || [],
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
           turnId: result.turn_id ?? null,
+          feedback: 0,
           mode,
           timestamp: new Date().toISOString(),
         }
         setMessages(prev => [...prev, aiMessage])
       }
     } catch (err) {
-      if (err.name !== 'AbortError') addToast(err.message || 'Failed to get response', 'error')
+      if (err instanceof Error && err.name !== 'AbortError') addToast(err.message || 'Failed to get response', 'error')
     } finally {
       // Always unlock the composer, whatever happened above
       abortRef.current = null
@@ -224,7 +237,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   }, [])
 
   // ── Handle file upload ────────────────────────────────────────────────
-  const handleUpload = useCallback(async (file) => {
+  const handleUpload = useCallback(async (file: File) => {
     if (file.size > MAX_UPLOAD_BYTES) {
       addToast(`${file.name} is larger than 50 MB, the most one file may be.`, 'error')
       return
@@ -240,7 +253,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
       }
       if (!mountedRef.current) return
       if (doc.status === 'ready') {
-        const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+        const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
         const replaced = accepted.replaces ? ' It replaced the earlier file of that name.' : ''
         addToast(`Added ${doc.filename}: ${count(doc.chunks, 'passage')} from ${count(doc.pages, 'page')}.${replaced}`, 'success')
       } else if (doc.status === 'failed') {
@@ -251,7 +264,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
         addToast(`Still reading ${doc.filename}. It will appear in your library when it is ready.`, 'info')
       }
     } catch (err) {
-      addToast(err.message || 'Upload failed', 'error')
+      addToast(err instanceof Error ? err.message : 'Upload failed', 'error')
     } finally {
       if (mountedRef.current) {
         setUploadProgress(null)
@@ -261,12 +274,12 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   }, [addToast, refreshDocuments])
 
   // ── Remove one document ───────────────────────────────────────────────
-  const handleRemoveDocument = useCallback(async (doc) => {
+  const handleRemoveDocument = useCallback(async (doc: DocumentRecord) => {
     try {
       await deleteDocument(doc.id)
       addToast(`Removed ${doc.filename}`, 'info')
     } catch (err) {
-      addToast(err.message || 'Could not remove the document', 'error')
+      addToast(err instanceof Error ? err.message : 'Could not remove the document', 'error')
     }
     await refreshDocuments()
   }, [addToast, refreshDocuments])
@@ -292,7 +305,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
       startThread()
       addToast('Conversation deleted', 'info')
     } catch (err) {
-      addToast(err.message || 'Could not delete the conversation', 'error')
+      addToast(err instanceof Error ? err.message : 'Could not delete the conversation', 'error')
     }
   }, [sessionId, startThread, addToast])
 

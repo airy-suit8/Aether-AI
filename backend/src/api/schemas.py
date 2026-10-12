@@ -144,7 +144,7 @@ class DocumentsCleared(BaseModel):
     status: Literal["cleared"]
     deleted: int  # chunks removed from the vector store
 
-# Sign-up rules (S7). The web app's sign-up form mirrors them (LandingPage.jsx).
+# Sign-up rules (S7). The web app's sign-up form mirrors them (LandingPage.tsx).
 USERNAME_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,50}")
 PASSWORD_MIN_CHARS = 8
 

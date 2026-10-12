@@ -1,12 +1,18 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import type { CSSProperties, InputHTMLAttributes, KeyboardEvent, ReactNode, Ref, RefObject } from 'react'
 import { usePointerLight } from './usePointerLight'
 import { sourceHue } from './spectrum'
 import './tokens.css'
 import './prism.css'
 
+/** Inline styles that set Prism's custom properties (--n, --hue, ...) as well as ordinary ones. */
+export type PrismStyle = CSSProperties & Record<`--${string}`, string | number | undefined>
+
+export type Theme = 'system' | 'dark'
+
 /** Root of every Prism screen: sets the theme and makes the glass react to the pointer. */
-export function PrismRoot({ theme = 'system', className = '', children }) {
-  const ref = useRef(null)
+export function PrismRoot({ theme = 'system', className = '', children }: { theme?: Theme; className?: string; children?: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
   usePointerLight(ref)
   return (
     <div ref={ref} className={`prism ${className}`} data-theme={theme === 'system' ? undefined : theme}>
@@ -16,7 +22,7 @@ export function PrismRoot({ theme = 'system', className = '', children }) {
 }
 
 /** The mark: white light enters a prism and leaves as a spectrum. */
-export function PrismMark({ size = 28 }) {
+export function PrismMark({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
       <path d="M2 19.5 12.2 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -28,8 +34,10 @@ export function PrismMark({ size = 28 }) {
   )
 }
 
+export type FieldState = 'idle' | 'retrieving' | 'streaming'
+
 /** Slow light behind the interface. state: idle | retrieving | streaming */
-export function AmbientField({ state = 'idle' }) {
+export function AmbientField({ state = 'idle' }: { state?: FieldState }) {
   return (
     <div className="p-field" data-state={state} aria-hidden="true">
       <i />
@@ -39,12 +47,22 @@ export function AmbientField({ state = 'idle' }) {
   )
 }
 
+export interface LensOption<T extends string> {
+  value: T
+  label: string
+}
+
 /** One sliding control for a single choice. Arrow keys move the selection. */
-export function Lens({ label, options, value, onChange }) {
+export function Lens<T extends string>({ label, options, value, onChange }: {
+  label: string
+  options: readonly LensOption<T>[]
+  value: T
+  onChange: (value: T) => void
+}) {
   const index = Math.max(0, options.findIndex((o) => o.value === value))
 
-  const onKeyDown = (event) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[event.key]
     if (!step) return
     event.preventDefault()
     const next = options[(index + step + options.length) % options.length]
@@ -53,14 +71,9 @@ export function Lens({ label, options, value, onChange }) {
     buttons[(index + step + options.length) % options.length]?.focus()
   }
 
+  const style: PrismStyle = { '--n': options.length, '--i': index }
   return (
-    <div
-      className="p-lens"
-      role="radiogroup"
-      aria-label={label}
-      style={{ '--n': options.length, '--i': index }}
-      onKeyDown={onKeyDown}
-    >
+    <div className="p-lens" role="radiogroup" aria-label={label} style={style} onKeyDown={onKeyDown}>
       <span className="p-lens__thumb" aria-hidden="true" />
       {options.map((option) => (
         <button
@@ -78,14 +91,17 @@ export function Lens({ label, options, value, onChange }) {
   )
 }
 
-const CLARITY_LABEL = { grounded: 'Grounded', uncertain: 'Uncertain', refused: 'Not in your documents' }
+export type ClarityState = 'grounded' | 'uncertain' | 'refused'
+
+const CLARITY_LABEL: Record<ClarityState, string> = { grounded: 'Grounded', uncertain: 'Uncertain', refused: 'Not in your documents' }
 
 /** Confidence as optical clarity: a sharp ring when grounded, a diffuse one when not. */
-export function ClarityRing({ value = 0, state = 'grounded' }) {
+export function ClarityRing({ value = 0, state = 'grounded' }: { value?: number; state?: ClarityState }) {
   const percent = Math.round(value * 100)
   const text = state === 'refused' ? CLARITY_LABEL.refused : `${CLARITY_LABEL[state]} · ${percent}%`
+  const style: PrismStyle = { '--v': state === 'refused' ? 0 : value }
   return (
-    <span className="p-clarity" data-state={state} style={{ '--v': state === 'refused' ? 0 : value }}>
+    <span className="p-clarity" data-state={state} style={style}>
       <svg viewBox="0 0 30 30" role="img" aria-label={`Confidence: ${text}`}>
         <circle className="track" cx="15" cy="15" r="12" pathLength="1" />
         <circle className="halo" cx="15" cy="15" r="12" pathLength="1" />
@@ -103,7 +119,13 @@ export function ClarityRing({ value = 0, state = 'grounded' }) {
 }
 
 /** The composer. Enter sends, Shift+Enter breaks the line; Send becomes Stop while busy. */
-export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your documents', leading = null }) {
+export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your documents', leading = null }: {
+  busy?: boolean
+  onSend: (text: string) => void
+  onStop?: () => void
+  placeholder?: string
+  leading?: ReactNode
+}) {
   const [text, setText] = useState('')
   const canSend = text.trim().length > 0
 
@@ -113,7 +135,7 @@ export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your
     setText('')
   }
 
-  const onKeyDown = (event) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
     event.preventDefault()
     send()
@@ -152,14 +174,20 @@ export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your
 }
 
 /** A citation marker in the answer: a small source of light in the colour of its source. */
-export function Cite({ n, active = false, onActivate, innerRef }) {
+export function Cite({ n, active = false, onActivate, innerRef }: {
+  n: number
+  active?: boolean
+  onActivate: (n: number | null) => void
+  innerRef?: Ref<HTMLButtonElement>
+}) {
+  const style: PrismStyle = { '--hue': sourceHue(n) }
   return (
     <button
       ref={innerRef}
       type="button"
       className="p-cite"
       data-active={active}
-      style={{ '--hue': sourceHue(n) }}
+      style={style}
       aria-label={`Source ${n}`}
       onPointerEnter={() => onActivate(n)}
       onPointerLeave={() => onActivate(null)}
@@ -171,19 +199,38 @@ export function Cite({ n, active = false, onActivate, innerRef }) {
   )
 }
 
+/** What a source card shows: the file, its page, the similarity score and the passage. */
+export interface SourceView {
+  source: string
+  page?: number | string | null
+  score?: number
+  snippet?: string
+}
+
 /**
  * Evidence in the margin. Shows the file, the page, the similarity score and the passage.
  * Hover or focus lights it (onActivate); a click can pin it open (open + onToggle).
  */
-export function SourceCard({ n, source, active = false, open = false, onActivate, onToggle, innerRef, order = 0, dispersing = false }) {
+export function SourceCard({ n, source, active = false, open = false, onActivate, onToggle, innerRef, order = 0, dispersing = false }: {
+  n: number
+  source: SourceView
+  active?: boolean
+  open?: boolean
+  onActivate?: (n: number | null) => void
+  onToggle?: () => void
+  innerRef?: Ref<HTMLButtonElement>
+  order?: number
+  dispersing?: boolean
+}) {
   const score = typeof source.score === 'number' ? source.score : 0
+  const style: PrismStyle = { '--hue': sourceHue(n), '--score': Math.max(0, Math.min(1, score)), '--k': order }
   return (
     <button
       ref={innerRef}
       type="button"
       className={`p-pane p-source${dispersing ? ' p-disperse' : ''}`}
       data-active={active || open}
-      style={{ '--hue': sourceHue(n), '--score': Math.max(0, Math.min(1, score)), '--k': order }}
+      style={style}
       aria-expanded={active || open}
       onClick={onToggle}
       onPointerEnter={() => onActivate?.(n)}
@@ -207,7 +254,13 @@ export function SourceCard({ n, source, active = false, open = false, onActivate
 }
 
 /** A switch whose knob is a point of light. */
-export function Switch({ label, checked, onChange, disabled = false, title }) {
+export function Switch({ label, checked, onChange, disabled = false, title }: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+  title?: string
+}) {
   return (
     <button
       type="button"
@@ -224,8 +277,16 @@ export function Switch({ label, checked, onChange, disabled = false, title }) {
   )
 }
 
+type FieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  label: string
+  hint?: string
+  error?: string
+  value: string
+  onChange: (value: string) => void
+}
+
 /** A text field: the label lifts on focus and the line beneath it splits into the spectrum. */
-export function Field({ label, hint, error, value, onChange, type = 'text', ...rest }) {
+export function Field({ label, hint, error, value, onChange, type = 'text', ...rest }: FieldProps) {
   const id = useId()
   const note = error || hint
   return (
@@ -252,7 +313,12 @@ export function Field({ label, hint, error, value, onChange, type = 'text', ...r
 }
 
 /** For actions that cannot be undone: nothing happens unless the press is held. */
-export function HoldButton({ onConfirm, holdMs = 1200, disabled = false, children }) {
+export function HoldButton({ onConfirm, holdMs = 1200, disabled = false, children }: {
+  onConfirm: () => void
+  holdMs?: number
+  disabled?: boolean
+  children?: ReactNode
+}) {
   const [holding, setHolding] = useState(false)
   const timer = useRef(0)
 
@@ -272,12 +338,13 @@ export function HoldButton({ onConfirm, holdMs = 1200, disabled = false, childre
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
+  const style: PrismStyle = { '--hold-ms': `${holdMs}ms` }
   return (
     <button
       type="button"
       className="p-btn p-hold"
       data-holding={holding}
-      style={{ '--hold-ms': `${holdMs}ms` }}
+      style={style}
       disabled={disabled}
       onPointerDown={start}
       onPointerUp={cancel}
@@ -294,16 +361,22 @@ export function HoldButton({ onConfirm, holdMs = 1200, disabled = false, childre
 }
 
 /** A modal sheet of glass. Escape and a click outside close it; Tab stays inside it. */
-export function Dialog({ title, onClose, width, children }) {
-  const ref = useRef(null)
+export function Dialog({ title, onClose, width, children }: {
+  title: string
+  onClose: () => void
+  width?: string
+  children?: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const node = ref.current
+    if (!node) return undefined
     const previous = document.activeElement
-    const focusables = () => [...node.querySelectorAll('a[href], button:not(:disabled), input, select, textarea, [tabindex="0"]')]
-    ;(node.querySelector('input, select, textarea') ?? node).focus()
+    const focusables = () => [...node.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input, select, textarea, [tabindex="0"]')]
+    ;(node.querySelector<HTMLElement>('input, select, textarea') ?? node).focus()
 
-    const onKeyDown = (event) => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose()
         return
@@ -329,6 +402,7 @@ export function Dialog({ title, onClose, width, children }) {
     }
   }, [onClose])
 
+  const style: PrismStyle | undefined = width ? { '--dialog-w': width } : undefined
   return (
     <div
       className="p-scrim"
@@ -343,7 +417,7 @@ export function Dialog({ title, onClose, width, children }) {
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        style={width ? { '--dialog-w': width } : undefined}
+        style={style}
       >
         <header className="p-dialog__head">
           <h2>{title}</h2>
@@ -359,6 +433,13 @@ export function Dialog({ title, onClose, width, children }) {
   )
 }
 
+export interface ThreadPair {
+  n: number
+  from: Element | null | undefined
+  to: Element | null | undefined
+  edge?: Element | null
+}
+
 /**
  * Lines of light from each citation to its source card.
  *
@@ -368,14 +449,19 @@ export function Dialog({ title, onClose, width, children }) {
  * against containerRef, so the SVG must be a child of that container. Paths use
  * pathLength=1, which lets CSS draw them with a single dash without measuring their length.
  */
-export function Threads({ containerRef, getPairs, active = null, epoch = 0 }) {
-  const [paths, setPaths] = useState([])
+export function Threads({ containerRef, getPairs, active = null, epoch = 0 }: {
+  containerRef: RefObject<HTMLElement | null>
+  getPairs: () => ThreadPair[]
+  active?: number | null
+  epoch?: number
+}) {
+  const [paths, setPaths] = useState<{ n: number; d: string }[]>([])
 
   const measure = useCallback(() => {
     const container = containerRef.current
     if (!container) return
     const box = container.getBoundingClientRect()
-    const next = []
+    const next: { n: number; d: string }[] = []
     for (const { n, from, to, edge } of getPairs()) {
       if (!from || !to) continue
       const a = from.getBoundingClientRect()
@@ -405,15 +491,19 @@ export function Threads({ containerRef, getPairs, active = null, epoch = 0 }) {
 
   return (
     <svg className="p-threads" data-dim={active != null} aria-hidden="true">
-      {paths.map((path, k) => (
-        <path
-          key={`${epoch}-${path.n}`}
-          d={path.d}
-          pathLength="1"
-          data-active={active === path.n}
-          style={{ '--hue': sourceHue(path.n), '--k': k }}
-        />
-      ))}
+      {paths.map((path, k) => {
+        const style: PrismStyle = { '--hue': sourceHue(path.n), '--k': k }
+        return (
+          <path
+            key={`${epoch}-${path.n}`}
+            d={path.d}
+            pathLength="1"
+            data-active={active === path.n}
+            style={style}
+          />
+        )
+      })}
     </svg>
   )
 }
+

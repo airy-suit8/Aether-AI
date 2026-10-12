@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import App from './App'
 import { AuthProvider } from './services/AuthContext'
 import * as api from './services/api'
+import { documentList, session, turn } from './test/fixtures'
 
 vi.mock('./services/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -19,12 +20,12 @@ function renderApp() {
 
 describe('App after a page reload', () => {
   beforeEach(() => {
-    vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [], count: 0 })
-    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [{ session_id: 'session_7' }] })
-    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_7', turns: [{
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([]))
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_7' })] })
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_7', turns: [turn({
       turn_id: 1, question: 'What did we discuss?', answer: 'The turbine schedule.', sources: [],
       confidence: 0.7, mode: 'hybrid', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
-    }] })
+    })] })
   })
 
   it('keeps the user signed in and restores the conversation', async () => {

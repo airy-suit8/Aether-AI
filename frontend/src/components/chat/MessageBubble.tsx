@@ -1,10 +1,13 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ClarityRing, SourceCard } from '../../design/prism'
+import type { ClarityState } from '../../design/prism'
+import type { AnswerMessage, ChatMessage } from './types'
 
 // Model output is untrusted: no remote images (they can leak text in a URL), and links open elsewhere
-const MARKDOWN = {
+const MARKDOWN: Components = {
   img: () => null,
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 }
@@ -13,7 +16,7 @@ const MARKDOWN = {
 // scored 0.67 to 0.80 and an unrelated question 0.50. To be calibrated on a dataset in Sprint 4.
 const GROUNDED_AT = 0.6
 
-function clarityOf(message) {
+function clarityOf(message: AnswerMessage): { state: ClarityState; value: number } | null {
   if (!message.sources?.length) return message.toolUsed ? null : { state: 'refused', value: 0 }
   const value = Math.max(0, Math.min(1, message.confidence || 0))
   return { state: value >= GROUNDED_AT ? 'grounded' : 'uncertain', value }
@@ -23,9 +26,15 @@ function clarityOf(message) {
  * MessageBubble — one message. A question is a heading; an answer carries its clarity,
  * its text and, in the margin, the passages it came from.
  */
-export default function MessageBubble({ message, isStreaming = false }) {
-  const [active, setActive] = useState(null)
-  const [open, setOpen] = useState(null)
+interface MessageBubbleProps {
+  message: ChatMessage
+  isStreaming?: boolean
+  streamingPhase?: string
+}
+
+export default function MessageBubble({ message, isStreaming = false, streamingPhase = '' }: MessageBubbleProps) {
+  const [active, setActive] = useState<number | null>(null)
+  const [open, setOpen] = useState<number | null>(null)
 
   if (message.role === 'user') {
     return <h2 className="x-question">{message.content}</h2>
@@ -38,7 +47,7 @@ export default function MessageBubble({ message, isStreaming = false }) {
           <div className="x-status">
             <span className="x-status__working" role="status">
               <i className="p-beam" aria-hidden="true" />
-              {message.streamingPhase || 'Writing'}
+              {streamingPhase || 'Writing'}
             </span>
           </div>
           <p className="p-answer">
