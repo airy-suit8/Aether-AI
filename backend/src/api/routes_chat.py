@@ -51,17 +51,21 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         confidence=result.get("confidence", 0.0),
         session_id=chat_request.session_id,
         tool_used=result.get("tool_used"),
+        turn_id=result.get("turn_id"),
     )
 
 
 @router.post("/api/v1/feedback", tags=["Chat"])
 def submit_feedback(request: Request, feedback_request: FeedbackRequest, user_id: int = Depends(get_current_user)):
-    """Submit thumbs up (1) or thumbs down (-1) for the most recent message in the session."""
+    """Thumbs up (1), down (-1) or neither (0) for one answer, named by the turn_id it came with
+    (F10). 404 for a turn that is not the user's."""
     try:
-        update_conversation_feedback(user_id, feedback_request.session_id, feedback_request.feedback)
+        found = update_conversation_feedback(user_id, feedback_request.turn_id, feedback_request.feedback)
     except Exception:
-        raise server_error(request, "feedback_failed", user_id=user_id, session=feedback_request.session_id)
-    log_event(request_logger, "feedback", user_id=user_id, session=feedback_request.session_id, value=feedback_request.feedback)
+        raise server_error(request, "feedback_failed", user_id=user_id, turn_id=feedback_request.turn_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="No such answer.")
+    log_event(request_logger, "feedback", user_id=user_id, turn_id=feedback_request.turn_id, value=feedback_request.feedback)
     return {"message": "Feedback recorded successfully."}
 
 

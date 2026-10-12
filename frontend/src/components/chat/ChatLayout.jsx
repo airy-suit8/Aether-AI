@@ -173,6 +173,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
               sources: data.sources || [],
               confidence: data.confidence || 0,
               toolUsed: data.tool_used || null,
+              turnId: data.turn_id ?? null,  // what feedback names it by
               mode,
               timestamp: new Date().toISOString(),
             }
@@ -200,6 +201,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
           sources: result.sources || [],
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
+          turnId: result.turn_id ?? null,
           mode,
           timestamp: new Date().toISOString(),
         }

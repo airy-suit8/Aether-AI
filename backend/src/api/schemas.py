@@ -29,9 +29,13 @@ class ChatResponse(BaseModel):
     confidence: Optional[float] = 0.0
     session_id: str = "default"
     tool_used: Optional[str] = None  # agent mode: which tools answered
+    turn_id: Optional[int] = None    # the saved turn, for POST /feedback; null when none was saved (a refusal)
 
 class FeedbackRequest(BaseModel):
-    session_id: str = SessionId
+    # Unknown fields are refused, so a client still sending the old session_id gets a 422 (F10)
+    model_config = ConfigDict(extra="forbid")
+
+    turn_id: int                 # from the answer: ChatResponse.turn_id, or the stream's done event
     feedback: Literal[-1, 0, 1]  # 1 for up, -1 for down, 0 to clear
 
 class UploadResponse(BaseModel):

@@ -30,7 +30,7 @@ def _user_id(headers):
 def _turns(user_id, session_id):
     conn = database._get_connection()
     rows = conn.execute(
-        "SELECT question, answer, confidence, mode, feedback FROM conversations "
+        "SELECT id, question, answer, confidence, mode, feedback FROM conversations "
         "WHERE user_id = ? AND session_id = ? ORDER BY id",
         (user_id, session_id),
     ).fetchall()
@@ -93,8 +93,9 @@ def test_end_to_end(client, make_user):
             assert turns[0]["confidence"] > 0
 
     # ── Feedback lands on the latest turn; clearing the session removes it ─────
+    turn_id = _turns(alice_id, "e2e-default")[0]["id"]
     assert client.post("/api/v1/feedback", headers=alice,
-                       json={"session_id": "e2e-default", "feedback": 1}).status_code == 200
+                       json={"turn_id": turn_id, "feedback": 1}).status_code == 200
     assert _turns(alice_id, "e2e-default")[0]["feedback"] == 1
     cleared = client.post("/api/v1/session/clear", headers=alice, json={"question": "", "session_id": "e2e-default"})
     assert cleared.status_code == 200
