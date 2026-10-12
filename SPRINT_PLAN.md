@@ -12,7 +12,7 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
-| 5 Hardening and API completion | Done on the branch `claude/confident-bell-h8c2ct` (12 Oct 2026), pull request open: waiting for the owner's review and the check on Windows | See below |
+| 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `claude/confident-bell-h8c2ct`) | See below |
 | 6 Frontend rebuild | Visual redesign done early; engineering items remain. **The next sprint for a cloud session** once Sprint 5 is merged | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
@@ -131,6 +131,16 @@ What Sprint 5 found, and where the plan was wrong:
 - **DESIGN.md placed "cancelling on the server" in Sprint 5**, but the plan's items do not include it, and it was not done: Stop still only ends the reply on the screen.
 - **A store at the old path is used, not moved.** Moving the owner's `backend/aether.db` and `backend/vector_store/` into `data/` is left to the owner (README, "Where data is kept").
 - **Chunks no record accounts for are kept, unsearchable**, by decision 1. There is no tool to remove them; the startup log counts them.
+
+Sprint 5 on the owner's Windows machine, before and after the merge (13 Oct 2026):
+
+- On the branch and again on the merged code in the project folder: `ruff` clean; `pytest` 566 passed, 99% coverage, no API key; `npm run lint` (0 errors), `npm test` 51 passed, and build.
+- The new code was started twice on a copy of the owner's database before the real one was touched: every earlier user unchanged and given a tenant id, the same ids on the second start, the conversation history kept, and the new routes (refresh, `/auth/me`, upload status, sessions, feedback by turn) walked with fake models. The database was backed up first, to `.backups/before-sprint-5/` (ignored by git).
+- A real `uvicorn` server with fake models and the built app, in Chromium: sign up, an upload read in the background, ask; reload: still signed in, with the conversation, its sources and the library back; New thread; remove a document. The only console error was the expected 401 from asking `/auth/refresh` while signed out.
+- With the real Gemini key and temp stores: an upload was ready in 4 s, and a hybrid streamed question was answered correctly with its source (confidence 0.74) and could be read back for a reload.
+- The owner's database was then upgraded in place by the first start: 4 users with tenant ids, 17 conversation turns kept. The stores are still at `backend/aether.db` and `backend/vector_store/`; the startup logs a note about the new default (`data/` at the project root) each time.
+- **A correction to earlier evidence in this file.** "The same 2 documents and 45 chunks as before" (Sprint 3) was read from `/health`, which counted database records. Those two records date from June 2026, belong to the locked `__legacy_migration__` user, and have no vectors: the old vector store was deleted on 11 Oct 2026 to recreate it with cosine distance, and `backend/vector_store/` has been empty since. No account has a searchable document on this machine until one is uploaded. Nothing was lost in Sprints 3 to 5; the count was never evidence of searchable data.
+- Anyone signed in before the merge must sign in again: tokens now carry the tenant id. Passwords are unchanged.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
