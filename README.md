@@ -183,8 +183,12 @@ All of these are created on first run and are ignored by git:
 | Path | Contents |
 |---|---|
 | `backend/.env` | Your API key and JWT secret |
-| `backend/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
-| `backend/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
+| `data/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
+| `data/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
 | `backend/logs/` | Request, upload and error logs (`AETHER_LOG_DIR`) |
+
+Before Sprint 5 the database and the vector store were kept in `backend/aether.db` and `backend/vector_store/`. If they are still there and nothing is in `data/` yet, the backend keeps using them and says so in `backend/logs/errors.log`. To move them, stop the backend and move both into a `data` folder in the project folder; nothing else needs to change.
+
+Each user's chunks are filed under a random tenant id from their user record, not under the user's number, because a new database hands the same numbers out again. A store made before this change is re-filed when the backend starts; this is safe to run any number of times and deletes nothing.
 
 Uploaded text and questions are sent to Google's Gemini API. Do not upload confidential documents until you have agreed with your mentor which documents and which API tier are allowed.

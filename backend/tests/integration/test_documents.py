@@ -9,7 +9,7 @@ from langchain_core.documents import Document
 from src.db import database
 from src.pipeline import documents
 from src.vectordb import vector_store
-from helpers import DOC_TEXT, ask, upload_text
+from helpers import DOC_TEXT, ask, tenant_of, upload_text
 
 LONG_TEXT = "\n\n".join(f"Section {i}. " + DOC_TEXT * 4 for i in range(4))  # several chunks
 
@@ -78,7 +78,7 @@ def _user_id(headers):
 
 def _chunks(headers):
     """The metadata of every chunk this user has in the vector store."""
-    return vector_store.store.chroma._collection.get(where={"user_id": _user_id(headers)}, include=["metadatas"])["metadatas"]
+    return vector_store.store.collection.get(where={"tenant_id": tenant_of(headers)}, include=["metadatas"])["metadatas"]
 
 
 def _listed(client, headers):
@@ -166,8 +166,8 @@ def test_a_replacement_that_fails_keeps_the_earlier_file(client, make_user, monk
 def test_a_document_stored_before_documents_had_ids_can_be_deleted(client, make_user):
     # Chunks ingested before Sprint 4 carry the file name but no document_id
     _, headers = make_user("legacy")
-    user_id = _user_id(headers)
-    vector_store.store.add_documents(user_id, [
+    user_id, tenant = _user_id(headers), tenant_of(headers)
+    vector_store.store.add_documents(tenant, [
         Document(page_content=f"Old chunk {i} of the turbine manual.", metadata={"source": "old.txt", "page": 1, "chunk_id": f"old-{user_id}-{i}"})
         for i in range(3)])
     old_id = database.save_document_record(user_id, "old.txt", pages=1, chunks=3)
@@ -176,7 +176,7 @@ def test_a_document_stored_before_documents_had_ids_can_be_deleted(client, make_
     assert old_id not in _listed(client, headers).values()
     assert [m.get("document_id") for m in _chunks(headers)] == [new_id]
 
-    vector_store.store.add_documents(user_id, [
+    vector_store.store.add_documents(tenant, [
         Document(page_content="Another old chunk.", metadata={"source": "older.txt", "page": 1, "chunk_id": f"older-{user_id}"})])
     document_id = database.save_document_record(user_id, "older.txt", pages=1, chunks=1)
     r = client.delete(f"/api/v1/documents/{document_id}", headers=headers)
@@ -207,6 +207,5 @@ def test_upload_with_the_langchain_loader_cites_pages_from_one(client, make_user
     r = client.post("/api/v1/upload", headers=headers, files={"file": ("two.pdf", pdf, "application/pdf")})
     assert r.status_code == 200, r.text
     assert r.json()["pages"] == 2
-    user_id = int(jwt.decode(headers["Authorization"].split()[1], options={"verify_signature": False})["sub"])
-    metas = vector_store.store.chroma._collection.get(where={"user_id": user_id}, include=["metadatas"])["metadatas"]
+    metas = _chunks(headers)
     assert sorted(m["page"] for m in metas) == [1, 2]

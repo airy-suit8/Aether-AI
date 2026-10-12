@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from src.agents.agent import run_agent
 from src.core.config import settings
+from src.db.database import get_tenant_id
 from src.llm import llm_client
 from src.memory.conversation import NO_HISTORY, memory
 from src.prompts.prompt_templates import CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context
@@ -93,13 +94,14 @@ def is_refusal(answer: str) -> bool:
 # ── The two retrieval-and-generation strategies ──────────────────────────────
 
 def retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
-    """The top chunks for the query, as {"text", "meta", "score"} hits."""
+    """The user's top chunks for the query, as {"text", "meta", "score"} hits."""
+    tenant = get_tenant_id(user_id)  # their chunks' key in the vector store (S2)
     if mode == "langchain":
-        docs = UserRetriever(user_id=user_id, k=settings.top_k).invoke(query)
+        docs = UserRetriever(tenant=tenant, k=settings.top_k).invoke(query)
         return [{"text": d.page_content, "meta": d.metadata, "score": d.metadata["score"]} for d in docs]
     if mode == "hybrid":
-        return retriever.search_hybrid(user_id, query, k=settings.top_k)
-    return retriever.search(user_id, query, k=settings.top_k)
+        return retriever.search_hybrid(tenant, query, k=settings.top_k)
+    return retriever.search(tenant, query, k=settings.top_k)
 
 
 def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace) -> Iterator[str]:

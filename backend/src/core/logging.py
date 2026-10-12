@@ -4,7 +4,7 @@ core/logging.py — Task 16: Production Logging (with rotation)
 Three named loggers, one file each, in settings.log_dir:
   requests.log  — all chat queries and responses
   uploads.log   — document upload events
-  errors.log    — all errors across the application
+  errors.log    — all errors and warnings across the application
 
 Importing this module creates no folder and opens no file: setup_logging() does that, and the
 app calls it from its lifespan hook. Each file rotates at 5MB, with 5 backup copies kept.
@@ -33,7 +33,7 @@ error_logger = logging.getLogger("aether.errors")
 _FILES = [
     (request_logger, "requests.log", logging.INFO),
     (upload_logger, "uploads.log", logging.INFO),
-    (error_logger, "errors.log", logging.ERROR),
+    (error_logger, "errors.log", logging.WARNING),
 ]
 
 
