@@ -110,6 +110,19 @@ class VectorStore:
         res = self.chroma._collection.get(where={"user_id": user_id}, include=["documents", "metadatas"])
         return res.get("documents", []), res.get("metadatas", [])
 
+    def delete_document_chunks(self, user_id: int, document_id: int, filename: str) -> int:
+        """Delete the chunks of one of a user's documents and return how many there were (R7)."""
+        coll = self.chroma._collection
+        chunk_ids = coll.get(where={"$and": [{"user_id": user_id}, {"document_id": document_id}]}, include=[])["ids"]
+        if not chunk_ids:
+            # Chunks stored before documents had an id carry only the file name
+            named = coll.get(where={"$and": [{"user_id": user_id}, {"source": filename}]}, include=["metadatas"])
+            chunk_ids = [i for i, meta in zip(named["ids"], named["metadatas"]) if "document_id" not in meta]
+        if chunk_ids:
+            coll.delete(ids=chunk_ids)
+        self._changed(user_id)
+        return len(chunk_ids)
+
     def delete_user_chunks(self, user_id: int) -> int:
         """Delete every chunk of one user and return how many there were. Errors propagate."""
         coll = self.chroma._collection

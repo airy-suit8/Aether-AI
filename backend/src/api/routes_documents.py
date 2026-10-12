@@ -13,9 +13,9 @@ from src.api.deps import get_current_user, limiter
 from src.api.schemas import UploadResponse
 from src.core.config import settings
 from src.core.logging import error_logger, upload_logger
-from src.db.database import check_duplicate_document, get_all_documents_detailed, save_document_record
+from src.db.database import check_duplicate_document, get_all_documents_detailed
 from src.ingestion.loader import SUPPORTED_EXTENSIONS
-from src.pipeline.documents import clear_documents, ingest_document, list_documents
+from src.pipeline.documents import add_document, clear_documents, delete_document, list_documents
 
 router = APIRouter()
 
@@ -67,7 +67,7 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
         # Re-ingesting would store every chunk twice and crowd the top results with copies
         raise HTTPException(
             status_code=409,
-            detail=f"This file was already uploaded as '{existing}'. Delete your documents first to upload it again.",
+            detail=f"This file is already in your library as '{existing}'.",
         )
 
     # Save to a temp file then ingest
@@ -78,17 +78,15 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
             tmp_path = tmp.name
 
         start_time = time.time()
-        result = ingest_document(user_id, tmp_path, filename)
+        # Stores the chunks and the SQLite record together, and replaces an earlier file of this name
+        result = add_document(user_id, tmp_path, filename, len(content), file_hash)
         elapsed = round(time.time() - start_time, 2)
 
         # Log successful upload
         upload_logger.info(
             f"UPLOAD OK | user={user_id} | file={filename} | pages={result['pages']} | "
-            f"chunks={result['chunks']} | time={elapsed}s | size={len(content)} bytes"
+            f"chunks={result['chunks']} | time={elapsed}s | size={len(content)} bytes | replaced={result['replaced']}"
         )
-
-        # Save to SQLite
-        save_document_record(user_id, filename, result["pages"], result["chunks"], len(content), file_hash)
 
     except ValueError as e:
         # The message is written for the user; the parser's own error, if any, is its cause
@@ -105,12 +103,16 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
             os.unlink(tmp_path)
 
     msg = f"Successfully ingested '{filename}' ({result['chunks']} chunks from {result['pages']} page(s))."
+    if result["replaced"]:
+        msg += " It replaced the earlier file of that name."
 
     return UploadResponse(
         filename=result["filename"],
         pages=result["pages"],
         chunks=result["chunks"],
         message=msg,
+        document_id=result["document_id"],
+        replaced=result["replaced"],
     )
 
 
@@ -134,6 +136,20 @@ def get_documents_detailed(user_id: int = Depends(get_current_user)):
         error_logger.error(f"DOCUMENT DETAILED LIST FAILED | error={str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     return {"documents": docs, "count": len(docs)}
+
+
+@router.delete("/api/v1/documents/{document_id}", tags=["Documents"])
+def delete_one_document(document_id: int, user_id: int = Depends(get_current_user)):
+    """Delete one document, by the id the detailed list gives it. 404 for an id that is not yours."""
+    try:
+        result = delete_document(user_id, document_id)
+    except Exception as e:
+        error_logger.error(f"DOCUMENT DELETE FAILED | document={document_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=404, detail="No such document.")
+    upload_logger.info(f"DOCUMENT DELETED | user={user_id} | file={result['filename']} | deleted={result['deleted']} chunks")
+    return {"message": f"Deleted '{result['filename']}' ({result['deleted']} chunks).", **result}
 
 
 @router.delete("/api/v1/documents", tags=["Documents"])

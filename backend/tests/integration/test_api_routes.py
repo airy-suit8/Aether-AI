@@ -78,8 +78,10 @@ def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
     _, headers = make_user("routes")
     up = upload_text(client, headers)
     assert up.status_code == 200
-    assert up.json() == {
-        "filename": "zephyr_manual.txt", "pages": 1, "chunks": 1,
+    body = up.json()
+    assert isinstance(body.pop("document_id"), int)
+    assert body == {
+        "filename": "zephyr_manual.txt", "pages": 1, "chunks": 1, "replaced": False,
         "message": "Successfully ingested 'zephyr_manual.txt' (1 chunks from 1 page(s)).",
     }
 
