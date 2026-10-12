@@ -133,17 +133,17 @@ def test_history_with_the_same_session_id_is_not_shared(client, tenants, fake_ll
 
 def test_feedback_lands_only_on_your_own_turn(client, tenants):
     owner, other = tenants
-    ask(client, owner["headers"], owner["doc"][2], session_id=SHARED)
+    owner_turn = ask(client, owner["headers"], owner["doc"][2], session_id=SHARED).json()["turn_id"]
 
-    # The other user has no turn in this session: feedback must not touch the owner's turn
-    r = client.post("/api/v1/feedback", headers=other["headers"], json={"session_id": SHARED, "feedback": -1})
-    assert r.status_code == 200
+    # The other user cannot rate the owner's turn, even knowing its id (F10)
+    r = client.post("/api/v1/feedback", headers=other["headers"], json={"turn_id": owner_turn, "feedback": -1})
+    assert r.status_code == 404
     assert _rows(owner["id"], SHARED)[0]["feedback"] == 0
 
-    # Once both have a turn, each one's feedback lands on their own
-    ask(client, other["headers"], other["doc"][2], session_id=SHARED)
-    client.post("/api/v1/feedback", headers=owner["headers"], json={"session_id": SHARED, "feedback": 1})
-    client.post("/api/v1/feedback", headers=other["headers"], json={"session_id": SHARED, "feedback": -1})
+    # Each one's feedback lands on their own turn
+    other_turn = ask(client, other["headers"], other["doc"][2], session_id=SHARED).json()["turn_id"]
+    client.post("/api/v1/feedback", headers=owner["headers"], json={"turn_id": owner_turn, "feedback": 1})
+    client.post("/api/v1/feedback", headers=other["headers"], json={"turn_id": other_turn, "feedback": -1})
     assert _rows(owner["id"], SHARED)[0]["feedback"] == 1
     assert _rows(other["id"], SHARED)[0]["feedback"] == -1
 

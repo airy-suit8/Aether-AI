@@ -43,7 +43,8 @@ class ConversationMemory:
 
     def add_turn(self, user_id: int, session_id: str, question: str, answer: str, confidence: float = 0.0,
                  mode: str = "original", sources: Optional[List[Dict[str, Any]]] = None, tool_used: Optional[str] = None):
-        """Append a Q&A turn to both cache and SQLite (with the sources and tool shown with the answer)."""
+        """Append a Q&A turn to both cache and SQLite (with the sources and tool shown with the answer).
+        Returns the turn's id, the turn_id the client rates it by."""
         key = self._cache_key(user_id, session_id)
         if key not in self._cache:
             self._cache[key] = get_conversation_history(user_id, session_id, limit=settings.memory_max_turns)
@@ -52,7 +53,7 @@ class ConversationMemory:
         if len(self._cache[key]) > settings.memory_max_turns:
             self._cache[key] = self._cache[key][-settings.memory_max_turns:]
         # Persist to SQLite
-        save_conversation(user_id, session_id, question, answer, confidence, mode, sources, tool_used)
+        return save_conversation(user_id, session_id, question, answer, confidence, mode, sources, tool_used)
 
     def clear_session(self, user_id: int, session_id: str):
         """Clear history from both cache and SQLite."""

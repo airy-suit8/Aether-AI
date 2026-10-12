@@ -90,14 +90,15 @@ def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
 
     r = ask(client, headers, QUESTION)
     assert r.status_code == 200
-    assert set(r.json()) == {"answer", "sources", "confidence", "session_id", "tool_used"}
+    assert set(r.json()) == {"answer", "sources", "confidence", "session_id", "tool_used", "turn_id"}
     assert r.json()["session_id"] == "s1"
+    turn_id = r.json()["turn_id"]
 
     status, events = ask_stream(client, headers, QUESTION)
     assert status == 200
     assert events[-1]["type"] == "done" and events[-1]["sources"]
 
-    r = client.post("/api/v1/feedback", headers=headers, json={"session_id": "s1", "feedback": -1})
+    r = client.post("/api/v1/feedback", headers=headers, json={"turn_id": turn_id, "feedback": -1})
     assert r.json() == {"message": "Feedback recorded successfully."}
 
     r = client.post("/api/v1/session/clear", headers=headers, json={"question": "", "session_id": "s1"})
@@ -179,7 +180,11 @@ def test_chat_routes_reject_bad_input(client, make_user, path, body):
     assert client.post(path, headers=headers, json=body).status_code == 422
 
 
-@pytest.mark.parametrize("body", [{}, {"session_id": "s1"}, {"feedback": 1, "session_id": ""}, {"feedback": "up"}])
+@pytest.mark.parametrize("body", [
+    {}, {"turn_id": 1}, {"feedback": 1}, {"turn_id": 1, "feedback": "up"}, {"turn_id": "one", "feedback": 1},
+    {"session_id": "s1", "feedback": 1},              # the old shape: rated "the latest turn of the session" (F10)
+    {"turn_id": 1, "feedback": 1, "session_id": "s1"},
+])
 def test_feedback_rejects_bad_input(client, make_user, body):
     _, headers = make_user("badfb")
     assert client.post("/api/v1/feedback", headers=headers, json=body).status_code == 422
@@ -262,7 +267,7 @@ def test_storage_failure_is_500(client, make_user, monkeypatch, method, path, mo
         raise RuntimeError("database is locked")
 
     monkeypatch.setattr(module, target, broken)
-    kwargs = {"json": {"session_id": "s1", "feedback": 1}} if method == "post" else {}
+    kwargs = {"json": {"turn_id": 1, "feedback": 1}} if method == "post" else {}
     r = getattr(client, method)(path, headers=headers, **kwargs)
     assert r.status_code == 500
     assert "database is locked" not in r.text and r.headers["x-request-id"] in r.json()["detail"]

@@ -441,7 +441,7 @@
           "Chat"
         ],
         "summary": "Submit Feedback",
-        "description": "Submit thumbs up (1) or thumbs down (-1) for the most recent message in the session.",
+        "description": "Thumbs up (1), down (-1) or neither (0) for one answer, named by the turn_id it came with\n(F10). 404 for a turn that is not the user's.",
         "operationId": "submit_feedback_api_v1_feedback_post",
         "requestBody": {
           "content": {
@@ -804,6 +804,17 @@
               }
             ],
             "title": "Tool Used"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
           }
         },
         "type": "object",
@@ -875,13 +886,9 @@
       },
       "FeedbackRequest": {
         "properties": {
-          "session_id": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9_.:-]+$",
-            "title": "Session Id",
-            "default": "default"
+          "turn_id": {
+            "type": "integer",
+            "title": "Turn Id"
           },
           "feedback": {
             "type": "integer",
@@ -893,8 +900,10 @@
             "title": "Feedback"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
+          "turn_id",
           "feedback"
         ],
         "title": "FeedbackRequest"

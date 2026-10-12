@@ -252,6 +252,19 @@ export async function sendChatStream({ question, sessionId = 'default', mode = '
 }
 
 /**
+ * Rate one answer: 1 up, -1 down, 0 to take a rating back. turnId comes with the answer (turn_id).
+ */
+export async function sendFeedback(turnId, feedback) {
+  const res = await authFetch(`${BASE_URL}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ turn_id: turnId, feedback }),
+  });
+  await checkResponse(res, 'Failed to record feedback');
+  return res.json();
+}
+
+/**
  * Get list of documents
  */
 export async function getDocuments() {

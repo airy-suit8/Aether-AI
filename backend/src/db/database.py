@@ -197,17 +197,19 @@ def get_document_owners() -> List[Dict[str, Any]]:
 def save_conversation(user_id: int, session_id: str, question: str, answer: str,
                       confidence: float = 0.0, mode: str = "original",
                       sources: Optional[List[Dict[str, Any]]] = None, tool_used: Optional[str] = None):
-    """Save a Q&A turn to the database, with the sources and tool shown with the answer."""
+    """Save a Q&A turn to the database, with the sources and tool shown with the answer. Returns its id."""
     with _db_lock:
         conn = _get_connection()
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO conversations (user_id, session_id, question, answer, confidence, mode, created_at, "
             "sources, tool_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user_id, session_id, question, answer, confidence, mode, datetime.now().isoformat(),
              json.dumps(sources if sources is not None else []), tool_used)
         )
         conn.commit()
+        turn_id = cursor.lastrowid
         conn.close()
+    return turn_id
 
 
 def get_sessions(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
@@ -259,16 +261,15 @@ def clear_conversation(user_id: int, session_id: str):
         conn.close()
 
 
-def update_conversation_feedback(user_id: int, session_id: str, feedback: int):
-    """Update feedback (1=up, -1=down) for the most recent turn in a session."""
+def update_conversation_feedback(user_id: int, turn_id: int, feedback: int) -> bool:
+    """Set the feedback (1 up, -1 down, 0 none) on one of a user's turns. False when they have no such turn."""
     with _db_lock:
         conn = _get_connection()
-        # Find the max ID for the session to update the latest message
-        row = conn.execute("SELECT MAX(id) as max_id FROM conversations WHERE user_id = ? AND session_id = ?", (user_id, session_id)).fetchone()
-        if row and row["max_id"]:
-            conn.execute("UPDATE conversations SET feedback = ? WHERE id = ?", (feedback, row["max_id"]))
-            conn.commit()
+        updated = conn.execute("UPDATE conversations SET feedback = ? WHERE id = ? AND user_id = ?",
+                               (feedback, turn_id, user_id)).rowcount
+        conn.commit()
         conn.close()
+    return updated == 1
 
 
 # ── Document Operations ───────────────────────────────────────────────────────

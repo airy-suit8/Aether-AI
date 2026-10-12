@@ -46,6 +46,7 @@ const CALLS = {
   uploadDocument: () => api.uploadDocument(new File(['hello'], 'a.txt', { type: 'text/plain' })),
   sendChat: () => api.sendChat({ question: 'q', sessionId: 's1', mode: 'hybrid' }),
   sendChatStream: () => api.sendChatStream({ question: 'q', sessionId: 's1' }),
+  sendFeedback: () => api.sendFeedback(12, -1),
   getDocuments: () => api.getDocuments(),
   getDocumentsDetailed: () => api.getDocumentsDetailed(),
   getDocument: () => api.getDocument(7),
