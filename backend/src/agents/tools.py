@@ -1,5 +1,5 @@
 """
-tools.py — LangChain Tools for the Aether AI Knowledge Assistant Agent
+agents/tools.py — LangChain Tools for the Aether AI Knowledge Assistant Agent
 Task 9:  Calculator Tool (safe math evaluation via AST)
 Task 10: Date-Time Tool (current date/time, day computations)
 """

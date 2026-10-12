@@ -34,7 +34,7 @@ from slowapi.errors import RateLimitExceeded
 from rag_engine import ingest_document, query_rag, query_rag_stream, list_documents, clear_documents
 from src.memory.conversation import clear_session
 from rag_langchain import query_rag_langchain, query_rag_langchain_stream
-from agent import run_agent
+from src.agents.agent import run_agent
 
 # Task 16: Logging
 from src.core.logging import request_logger, upload_logger, error_logger, setup_logging
@@ -300,7 +300,8 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
 
     try:
         if chat_request.use_agent:
-            result = run_agent(user_id, chat_request.question, session_id=chat_request.session_id)
+            result = run_agent(user_id, chat_request.question, chat_request.session_id,
+                               search_documents=lambda q: query_rag(user_id, q, session_id=chat_request.session_id, save_turn=False))
         elif chat_request.use_langchain:
             result = query_rag_langchain(user_id, chat_request.question, session_id=chat_request.session_id)
         else:
@@ -366,7 +367,8 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
         try:
             if chat_request.use_agent:
                 # Agent doesn't have a streaming LCEL pipeline in this architecture yet, fallback to fake streaming
-                result = run_agent(user_id, chat_request.question, session_id=chat_request.session_id)
+                result = run_agent(user_id, chat_request.question, chat_request.session_id,
+                               search_documents=lambda q: query_rag(user_id, q, session_id=chat_request.session_id, save_turn=False))
                 answer = result["answer"]
                 words = answer.split(" ")
                 for i, word in enumerate(words):

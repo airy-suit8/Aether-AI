@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from helpers import ask
 
-import agent
+from src.core.config import settings
 
 
 def test_agent_uses_the_calculator(client, make_user, fake_llm):
@@ -32,7 +32,7 @@ def test_agent_loop_is_bounded(client, make_user, fake_llm, monkeypatch):
     # Without a limit (default 10,000 steps) this loop would make about 5,000 model calls.
     assert r.status_code == 200, r.text
     assert "need more steps" in r.json()["answer"]
-    assert len(fake_llm.prompts) <= agent.AGENT_RECURSION_LIMIT
+    assert len(fake_llm.prompts) <= settings.agent_recursion_limit
 
 
 def test_agent_uses_the_datetime_tool(client, make_user, fake_llm):

@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from tools import calculator
+from src.agents.tools import calculator
 
 
 def calc(expression: str) -> str:
