@@ -4,7 +4,8 @@ Aether AI is a multi-tenant RAG chatbot built as internship work: FastAPI, LangC
 
 ## Where the plan is
 
-- `SPRINT_PLAN.md` is the roadmap. Its Status table says which sprint is next. Do one sprint per session and stop at its end.
+- `SPRINT_PLAN.md` is the roadmap. Its Status table says which sprint is next. Do one sprint per session and stop at its end, unless the owner's prompt names more than one.
+- When the prompt names several sprints, do them in the order given. Each gets its own branch and its own pull request; start a later sprint's branch from the earlier sprint's branch, and say in its pull request which earlier ones it contains. Finish a sprint completely (checks pass, its "Done when" list is met or each gap is stated, the Status table is updated, the pull request is open) before starting the next. Commit and push after every task, so nothing is lost if the session ends early. If a sprint cannot be finished, stop there and say why; do not start the next.
 - `AUDIT_REPORT.md` holds the findings the plan cites (B1, R4, S3 and so on), with file, line, evidence and intended fix. Do not edit it.
 - In `SPRINT_PLAN.md`, tick a seam-checklist box only when a passing test proves it, and update the Status table at the end of a sprint.
 - `DESIGN.md` is the design language (Prism) and its rules. Every screen uses it. Any change to the interface must use the tokens and components in `frontend/src/design/` and follow those rules; do not add another styling approach, a UI kit or a font.

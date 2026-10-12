@@ -14,7 +14,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
 | 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `claude/confident-bell-h8c2ct`) | See below |
 | 6 Frontend rebuild | Visual redesign done early; engineering items remain. **This is the next sprint for a cloud session**: Sprint 5 is merged, and the decisions for it are written | See "Decisions already made" under Sprint 6 |
-| 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
+| 7 Ship and document | Not started. Docker items deferred at the owner's request (11 Oct 2026). A cloud session does items 3, 4 and 7 after Sprint 6 | See "Decisions already made" under Sprint 7 |
+| 8 Follow-ups and observability | Not started. Proposed 13 Oct 2026; for a cloud session after Sprint 7 | See Sprint 8 |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
 
@@ -410,10 +411,52 @@ Items 1 and 2 (Docker) are deferred at the owner's request, 11 Oct 2026. Do not 
 6. Rehearse the demo on the office network with the billed key, with the organisation's root CA installed if needed. Prepare a recorded fallback. (B10)
 7. Re-run the audit prompt from the appendix of `AUDIT_REPORT.md` and fix what it finds.
 
+Decisions already made for this sprint (do not reopen them; say so in the pull request if one turns out to be wrong):
+
+1. **A cloud session does items 3, 4 and 7, and the checklist in decision 6.** Docker (items 1 and 2) stays deferred unless the owner's prompt says it is no longer deferred. Items 5 and 6 need the owner, the mentor and the office network.
+2. **The report (item 3) is `project_report.md`, rewritten in place** for the system as it is when the sprint starts. Every claim names the test, the file or the measured number behind it. The architecture diagram is Mermaid in the Markdown, so it needs no image tool and stays editable.
+3. **No number is invented.** The evaluation section explains the harness and how each metric is computed. It reports the observations already recorded in this file (similarity scores, latency, the uncalibrated threshold), labelled as observations from single runs. The results table is left empty with the note "to be filled from `docs/evaluation.md`", because the dataset and the measurements are not done.
+4. **Facts only the owner knows are marked, not guessed**: the mentor's name, the internship dates, the department, the documents allowed (item 5). Write `[OWNER: what is needed]` at each place and list every marker in the pull request.
+5. **Screenshots** are taken with Playwright against the backend running fake models, of screens that do not show a model's answer: the start page, sign-in, the library with documents, the thread list, settings, at desktop and phone width, light and dark. Screens that show an answer are left as `[OWNER: screenshot of ...]`, to be taken on the owner's machine with real answers.
+6. **In place of the rehearsal (item 6), write `docs/demo-checklist.md`**: one page the owner can follow on the office network. It must cover the billed key, the organisation's root certificate (finding B10: the owner's error log has `CERTIFICATE_VERIFY_FAILED ... self-signed certificate in certificate chain` entries from July 2026), the two settings to close first (`AETHER_INVITE_CODE`, `AETHER_ENVIRONMENT=production`), the questions to ask, and what to show if the network fails.
+7. **Attribution (item 4)**, used everywhere a document names an author: "Built by Tirth Ganatra during an internship at Netweb Software, Vadodara, with the help of an AI coding assistant." This is the wording `SDLC_PLAN.md` already uses, extended with the company. The owner may change it; then change it everywhere.
+8. **The second audit (item 7) goes in `AUDIT_REPORT_2.md`**; the first report is never edited. Run the prompt in the first report's appendix against the code as it is. For every finding of the first audit, say fixed, open or changed, with the test or file that shows it. New findings get ids that do not clash (prefix `N`). Fix what is small, one commit per fix with its test; list what is not fixed and why.
+9. **Tidy the other documents**: `frontend/README.md` is still Vite's template; replace it with a short real one. One version number across the API, `package.json` and the interface. `SDLC_PLAN.md` stays as the historical log it is marked as.
+10. **No behaviour changes** in this sprint other than fixes that come out of the second audit.
+
 **Done when**
 - `docker compose up` on a clean machine gives a working app at one URL, and data survives a restart.
 - Every statement in the report can be traced to a test, a measured number or a file.
 - You can answer the ten reviewer questions in section 9 of the audit report without notes.
+
+## Sprint 8 — Follow-ups and observability (about 3 days)
+
+Proposed by Claude on 13 October 2026, when the owner asked for more work to give a cloud session. Every item comes from something already recorded: a finding of Sprint 5, a thing Sprint 6 left out on purpose, or the audit's list "to distinguish it" (section 7, items 18 to 20). The owner can strike any item.
+
+**Goal:** close the loose ends the earlier sprints named, and show what each answer cost.
+
+1. **What an answer cost.** For every chat request, write each stage's seconds and tokens to `requests.log` (the pipeline's `Trace` already measures them), and return them with the answer as an optional `usage` field. The interface shows one quiet line under an answer, for example "4.2 s, 1,240 tokens", with the stages on demand. (Audit 7.19)
+2. **A tool trace for agent answers.** The agent's reply lists its steps in order: the tool, what it was asked, and a short form of what it returned. The interface shows them above the answer. Which mode is the default does not change. (Audit 7.20; left out of Sprint 6 by its decision 12)
+3. **Rename and delete a thread.** Two routes and their controls in the thread list; delete uses the two-click remove already used for documents. (Left out of Sprint 6 by its decision 8)
+4. **Sign out everywhere.** Refresh tokens are recorded on the server; signing out revokes the current one, and "Sign out everywhere" in settings revokes all of a user's. A revoked or unknown refresh token is refused. (Sprint 5 finding: a refresh token is not revoked on the server)
+5. **Feedback into the evaluation set.** `python -m src.evaluation.export_feedback` writes each thumbs-down turn (the question, the answer given, its sources) as a candidate line for `dataset.jsonl`, for the owner to label. Nothing is added to the dataset automatically. (Audit 7.18)
+6. **A housekeeping command.** `python -m src.maintenance` reports chunks no document record accounts for and document records with no chunks, and removes them only with `--apply`. (Sprint 5 finding: unclaimed chunks are kept with no tool to remove them. The owner's database has two such records from June 2026.)
+
+Decisions already made for this sprint (do not reopen them; say so in the pull request if one turns out to be wrong):
+
+1. Every API change is made on both sides in one commit: the route, the OpenAPI snapshot, the generated types, the client and the contract test. The Playwright journey gains a step for items 1 to 4.
+2. No new dependency.
+3. New interface follows `DESIGN.md`, as in Sprint 6: its tokens and components, a screenshot in `docs/design/`, a row in the component table.
+4. Item 4 needs a new table. Create it in `init_db()` the way the other tables are created. Refresh tokens issued before this sprint are not in the table: treat them as revoked, so everyone signs in once more, and say so in the pull request.
+5. Item 5's output holds users' questions. It is written under the data folder, which git ignores, and never printed to the log.
+6. Item 6 deletes nothing unless `--apply` is given, prints what it would delete first, and has a test for both modes on a temp store.
+7. `usage` (item 1) reports what the model's API returned. Do not turn tokens into money: prices change, and the app does not know the owner's tier.
+8. Leave alone: the evaluation harness's metrics, `answer_from`, the confidence threshold, and the Docker items.
+
+**Done when**
+- Each item has tests, and the Playwright journey covers items 1 to 4.
+- A thumbs-down given in the journey appears in the export.
+- `python -m src.maintenance` on a store with one orphan chunk and one empty record reports both, and removes both only with `--apply`.
 
 ---
 
@@ -454,5 +497,6 @@ These recommendations are based on the skills' descriptions; none has been run o
 | 5 Hardening and API completion | 4 days | 3 |
 | 6 Frontend rebuild | 5 days | 5 |
 | 7 Ship and document | 3 days | 4, 6 |
+| 8 Follow-ups and observability | 3 days | 6 |
 
 About 28 working days. If time is short, the order to cut from the end is: Sprint 6 down to items 1, 3, 4 and 8; then Sprint 5 down to items 1, 2, 7 and 8. Do not cut Sprints 0, 1, 2 or 4.
