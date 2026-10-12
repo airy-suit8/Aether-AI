@@ -18,7 +18,6 @@ from langchain_core.output_parsers import StrOutputParser
 
 # Reuse the existing vector store and memory — no duplication
 from rag_engine import (
-    _store,
     _memory,
     RAGResponse,
     CONFIDENCE_THRESHOLD,
@@ -26,7 +25,8 @@ from rag_engine import (
 )
 
 from src.llm import llm_client
-from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
+from src.retrieval.retriever import retriever, rewrite_question
+from src.prompts.prompt_templates import RAG_PROMPT, SUMMARIZE_PROMPT, format_context
 
 
 # ── Gemini clients (same models as original) ─────────────────────────────────
@@ -53,10 +53,9 @@ def _retrieve_and_format(user_id: int, question: str, session_id: str) -> Dict[s
     search_query = question
     
     if history != "(No previous conversation)":
-        llm = llm_client.get_llm()
-        search_query = (REWRITE_PROMPT | llm | StrOutputParser()).invoke({"history": history, "question": question}).strip()
+        search_query = rewrite_question(question, history)
 
-    results = _store.search(user_id, search_query, k=TOP_K)
+    results = retriever.search(user_id, search_query, k=TOP_K)
 
     if not results:
         return {
