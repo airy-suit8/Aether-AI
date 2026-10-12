@@ -136,7 +136,8 @@ def run_agent(user_id: int, question: str, session_id: str,
     # Confidence is how close the retrieved passages were; an answer that searched no document
     # has none (it used to claim 1.0). The database column is a number, so it records 0.
     confidence = metadata_store["confidence"]
-    _memory.add_turn(user_id, session_id, question, final_answer, confidence or 0.0, mode="agent")
+    _memory.add_turn(user_id, session_id, question, final_answer, confidence or 0.0, mode="agent",
+                     sources=unique_sources, tool_used=tools_used_str)
 
     return {
         "answer": final_answer,

@@ -13,12 +13,12 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.api.deps import limiter, user_for
-from src.api.schemas import Token, UserRegister
+from src.api.deps import get_current_user, limiter, user_for
+from src.api.schemas import Me, Token, UserRegister
 from src.core.config import settings
 from src.core.logging import auth_logger, log_event
 from src.core.security import REFRESH, decode_access_token, get_password_hash, tokens_for, unknown_user_hash, verify_password
-from src.db.database import create_user, get_user_by_username
+from src.db.database import create_user, get_user_by_id, get_user_by_username
 
 router = APIRouter()
 
@@ -110,3 +110,9 @@ def logout(request: Request, response: Response):
                            secure=settings.cookie_secure)
     log_event(auth_logger, "logout")
     return {"message": "Signed out"}
+
+
+@router.get("/api/v1/auth/me", response_model=Me, tags=["Auth"])
+def me(user_id: int = Depends(get_current_user)):
+    """Who the access token belongs to (F8): a reloaded page knows its token but not the name."""
+    return get_user_by_id(user_id)

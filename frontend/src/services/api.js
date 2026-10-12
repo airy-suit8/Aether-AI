@@ -132,6 +132,15 @@ export async function refreshSession() {
 }
 
 /**
+ * Who is signed in: { username, created_at }. A reloaded page knows its token, not the name.
+ */
+export async function getMe() {
+  const res = await authFetch(`${BASE_URL}/auth/me`);
+  await checkResponse(res, 'Failed to load your account');
+  return res.json();
+}
+
+/**
  * Sign out on the server too: it removes the refresh cookie, so a reload stays signed out.
  */
 export async function logout() {
@@ -289,7 +298,25 @@ export async function deleteAllDocuments() {
 }
 
 /**
- * Clear session conversation memory
+ * The user's conversations, most recently used first: [{ session_id, title, turns, started_at, updated_at }]
+ */
+export async function getSessions() {
+  const res = await authFetch(`${BASE_URL}/sessions`);
+  await checkResponse(res, 'Failed to load your conversations');
+  return res.json();
+}
+
+/**
+ * Every turn of one conversation, oldest first, with the sources and tool shown with each answer
+ */
+export async function getSessionMessages(sessionId) {
+  const res = await authFetch(`${BASE_URL}/sessions/${encodeURIComponent(sessionId)}/messages`);
+  await checkResponse(res, 'Failed to load the conversation');
+  return res.json();
+}
+
+/**
+ * Delete a conversation from the server (Settings: Clear conversation). New thread keeps it.
  */
 export async function clearSession(sessionId) {
   const res = await authFetch(`${BASE_URL}/session/clear`, {

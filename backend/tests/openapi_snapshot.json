@@ -128,6 +128,33 @@
         }
       }
     },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Me",
+        "description": "Who the access token belongs to (F8): a reloaded page knows its token but not the name.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -542,6 +569,107 @@
           }
         ]
       }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "List Sessions",
+        "description": "The user's conversations, most recently used first, each titled by its first question.",
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/messages": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Session Messages",
+        "description": "Every turn of one of the user's conversations, oldest first, with the sources and tool\nshown with each answer. Empty for a session with no turns, or one that is not the user's.",
+        "operationId": "session_messages_api_v1_sessions__session_id__messages_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionMessages"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -784,6 +912,95 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "Me": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "created_at"
+        ],
+        "title": "Me",
+        "description": "The signed-in user, for a page that was reloaded and knows only its token."
+      },
+      "SessionList": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "type": "array",
+            "title": "Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "title": "SessionList"
+      },
+      "SessionMessages": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/Turn"
+            },
+            "type": "array",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "turns"
+        ],
+        "title": "SessionMessages"
+      },
+      "SessionSummary": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          },
+          "started_at": {
+            "type": "string",
+            "title": "Started At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "title",
+          "turns",
+          "started_at",
+          "updated_at"
+        ],
+        "title": "SessionSummary"
+      },
       "Token": {
         "properties": {
           "access_token": {
@@ -806,6 +1023,73 @@
           "expires_in"
         ],
         "title": "Token"
+      },
+      "Turn": {
+        "properties": {
+          "turn_id": {
+            "type": "integer",
+            "title": "Turn Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "sources": {
+            "items": {},
+            "type": "array",
+            "title": "Sources"
+          },
+          "tool_used": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Used"
+          },
+          "feedback": {
+            "type": "integer",
+            "title": "Feedback"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn_id",
+          "question",
+          "answer",
+          "mode",
+          "sources",
+          "feedback",
+          "created_at"
+        ],
+        "title": "Turn",
+        "description": "One question and its answer, as they were shown."
       },
       "UploadResponse": {
         "properties": {

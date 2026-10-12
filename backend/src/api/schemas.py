@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from src.core.security import PASSWORD_MAX_BYTES
 
 # Session ids become cache keys, database values and log text: keep them short and plain
-SessionId = Field(default="default", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
+SESSION_ID_PATTERN = r"^[A-Za-z0-9_.:-]+$"
+SessionId = Field(default="default", min_length=1, max_length=100, pattern=SESSION_ID_PATTERN)
 
 
 class ChatRequest(BaseModel):
@@ -92,3 +93,39 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     expires_in: int  # seconds until the access token expires; renew it at /auth/refresh
+
+
+class Me(BaseModel):
+    """The signed-in user, for a page that was reloaded and knows only its token."""
+    username: str
+    created_at: str
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str      # the conversation's first question
+    turns: int
+    started_at: str
+    updated_at: str
+
+
+class SessionList(BaseModel):
+    sessions: list[SessionSummary]  # most recently used first
+
+
+class Turn(BaseModel):
+    """One question and its answer, as they were shown."""
+    turn_id: int
+    question: str
+    answer: str
+    confidence: Optional[float] = None
+    mode: str
+    sources: list
+    tool_used: Optional[str] = None
+    feedback: int
+    created_at: str
+
+
+class SessionMessages(BaseModel):
+    session_id: str
+    turns: list[Turn]  # oldest first

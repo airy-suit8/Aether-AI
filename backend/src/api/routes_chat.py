@@ -4,15 +4,15 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 
 from src.api.deps import get_current_user, limiter
 from src.api.errors import reference, server_error
-from src.api.schemas import ChatRequest, ChatResponse, FeedbackRequest
+from src.api.schemas import ChatRequest, ChatResponse, FeedbackRequest, SessionList, SessionMessages, SESSION_ID_PATTERN
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, request_logger
-from src.db.database import update_conversation_feedback
+from src.db.database import get_session_turns, get_sessions, update_conversation_feedback
 from src.memory.conversation import clear_session
 from src.pipeline import rag
 
@@ -107,3 +107,20 @@ def clear_chat_session(chat_request: ChatRequest, user_id: int = Depends(get_cur
     clear_session(user_id, chat_request.session_id)
     log_event(request_logger, "session_cleared", user_id=user_id, session=chat_request.session_id)
     return {"message": "Session cleared", "session_id": chat_request.session_id}
+
+
+# ── Conversations (Task 5, F8): listed and read back, so a reloaded page can show them again ──
+
+@router.get("/api/v1/sessions", response_model=SessionList, tags=["Session"])
+def list_sessions(user_id: int = Depends(get_current_user), limit: int = Query(50, ge=1, le=200)):
+    """The user's conversations, most recently used first, each titled by its first question."""
+    return {"sessions": get_sessions(user_id, limit)}
+
+
+@router.get("/api/v1/sessions/{session_id}/messages", response_model=SessionMessages, tags=["Session"])
+def session_messages(session_id: str = Path(max_length=100, pattern=SESSION_ID_PATTERN),
+                     user_id: int = Depends(get_current_user)):
+    """Every turn of one of the user's conversations, oldest first, with the sources and tool
+    shown with each answer. Empty for a session with no turns, or one that is not the user's."""
+    turns = [{**t, "turn_id": t["id"]} for t in get_session_turns(user_id, session_id)]
+    return {"session_id": session_id, "turns": turns}

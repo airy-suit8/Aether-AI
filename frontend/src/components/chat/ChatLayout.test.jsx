@@ -14,6 +14,8 @@ vi.mock('../../services/api', async (importOriginal) => ({
   sendChat: vi.fn(),
   uploadDocument: vi.fn(),
   clearSession: vi.fn(),
+  getSessions: vi.fn(),
+  getSessionMessages: vi.fn(),
 }))
 
 const SOURCE = {
@@ -45,6 +47,10 @@ describe('ChatLayout', () => {
     vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [{ id: 7, filename: 'zephyr_manual.txt' }], count: 1 })
     vi.mocked(api.deleteDocument).mockReset()
     vi.mocked(api.sendChatStream).mockReset()
+    vi.mocked(api.clearSession).mockReset()
+    vi.mocked(api.getSessions).mockReset()
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
+    vi.mocked(api.getSessionMessages).mockReset()
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {
@@ -193,5 +199,51 @@ describe('ChatLayout', () => {
     expect(await screen.findByText('Reading')).toBeTruthy()
     expect(screen.getByText('Could not be read').getAttribute('title')).toBe('It is damaged.')
     expect(screen.getAllByText(/Reading|Could not be read/)).toHaveLength(2)
+  })
+
+  it('picks up the latest conversation, with its sources, after a reload', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [{ session_id: 'session_42', title: 'How often?', turns: 1 }] })
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', turns: [{
+      turn_id: 5, question: 'How often are the blades inspected?', answer: 'Every **90 days**.',
+      sources: [SOURCE], confidence: 0.81, mode: 'original', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
+    }] })
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone({ sources: [], confidence: 0 }))
+    renderChat()
+    expect(await screen.findByText('How often are the blades inspected?')).toBeTruthy()
+    expect((await screen.findByText('90 days')).tagName).toBe('STRONG')
+    expect(within(screen.getByText('Sources').parentElement).getByText(SOURCE.snippet)).toBeTruthy()
+    expect(screen.getByText('default mode')).toBeTruthy()
+    expect(api.getSessionMessages).toHaveBeenCalledWith('session_42')
+
+    // The next question goes on in the same conversation
+    await ask('And who inspects them?')
+    expect(api.sendChatStream.mock.calls[0][0].sessionId).toBe('session_42')
+  })
+
+  it('starts a new thread without deleting the old one from the server', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken('An answer.')
+      onDone({ sources: [], confidence: 0 })
+    })
+    const { addToast } = renderChat()
+    await ask('A first question')
+    const before = api.sendChatStream.mock.calls[0][0].sessionId
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'New thread' }))
+    expect(api.clearSession).not.toHaveBeenCalled()
+    expect(addToast).toHaveBeenCalledWith('New thread started', 'info')
+    expect(screen.queryByText('A first question')).toBeNull()
+    await ask('A second question')
+    expect(api.sendChatStream.mock.calls[1][0].sessionId).not.toBe(before)
+  })
+
+  it('deletes the conversation from the server only when asked to in Settings', async () => {
+    vi.mocked(api.clearSession).mockResolvedValue({ message: 'Session cleared' })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Clear conversation' }))
+    expect(api.clearSession).toHaveBeenCalledTimes(1)
+    expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
   })
 })
