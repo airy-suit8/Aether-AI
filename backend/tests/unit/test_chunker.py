@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 import rag_engine
+from src.vectordb import vector_store
 from filemakers import make_pdf
 from src.chunking import chunker
 from src.core.config import settings
@@ -19,7 +20,7 @@ LONG_TEXT = " ".join(SENTENCES)  # about 4,700 characters, no newlines
 def captured(monkeypatch):
     """Capture what ingest_document hands to the vector store, without embedding it."""
     stored = []
-    monkeypatch.setattr(rag_engine._store, "add_documents", lambda user_id, docs: stored.extend(docs))
+    monkeypatch.setattr(vector_store.store, "add_documents", lambda user_id, docs: stored.extend(docs))
     return stored
 
 
@@ -80,7 +81,7 @@ def test_stored_chunks_are_tagged_with_the_user(tmp_path):
     path = tmp_path / "tagged.txt"
     path.write_text(LONG_TEXT, encoding="utf-8")
     rag_engine.ingest_document(user, str(path), "tagged.txt")
-    metas = rag_engine._store.chroma._collection.get(where={"user_id": user}, include=["metadatas"])["metadatas"]
+    metas = vector_store.store.chroma._collection.get(where={"user_id": user}, include=["metadatas"])["metadatas"]
     assert metas and all(m["user_id"] == user and m["source"] == "tagged.txt" for m in metas)
 
 
@@ -102,7 +103,7 @@ def test_langchain_ingest_stores_searchable_chunks(tmp_path, monkeypatch):
     path.write_text("The Halcyon register records every blade inspection.", encoding="utf-8")
     monkeypatch.setattr(settings, "document_loader", "langchain")
     assert rag_engine.ingest_document(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
-    hits = rag_engine._store.search(user, "Halcyon register", k=1)
+    hits = vector_store.store.search(user, "Halcyon register", k=1)
     assert hits[0]["meta"]["source"] == "lc.txt"
     with pytest.raises(ValueError):
         empty = tmp_path / "empty.txt"

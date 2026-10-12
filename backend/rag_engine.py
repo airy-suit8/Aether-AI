@@ -8,15 +8,10 @@ rag_engine.py — Core RAG pipeline
 - Prompt injection protection and context sanitization
 """
 
-from pathlib import Path
 from typing import List, Dict, Any
 
-import numpy as np
-from rank_bm25 import BM25Okapi
 
 
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 
 from pydantic import BaseModel, Field
@@ -30,22 +25,16 @@ from src.db.database import (
 )
 
 from src.core.config import settings
-from src.embeddings import embedder
 from src.llm import llm_client
 from src.chunking.chunker import split_documents
 from src.ingestion.loader import load_document
+from src.vectordb.vector_store import store as _store
 from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
 
 # ── Constants ────────────────────────────────────────────────────────────────
-STORE_DIR     = Path(settings.vector_store_dir)
 TOP_K         = settings.top_k
 CONFIDENCE_THRESHOLD = settings.confidence_threshold  # Task 7: minimum cosine similarity to proceed
 MEMORY_MAX_TURNS = settings.memory_max_turns  # Task 4: max conversation turns to remember
-
-STORE_DIR.mkdir(parents=True, exist_ok=True)
-
-# ── Gemini clients ────────────────────────────────────────────────────────────
-
 
 # ── Task 2: Structured Output Schema ─────────────────────────────────────────
 
@@ -54,127 +43,6 @@ class RAGResponse(BaseModel):
     answer: str = Field(description="The answer to the user's question based on the document context")
     sources: List[Dict[str, Any]] = Field(default_factory=list, description="Source documents used")
     confidence: float = Field(default=0.0, description="Confidence score from 0.0 to 1.0 based on retrieval similarity")
-
-# ── Chroma Vector Store ──────────────────────────────────────────────────────
-
-class ChromaVectorStoreWrapper:
-    """
-    Production-grade vector store using ChromaDB.
-    Persists to disk seamlessly and replaces the legacy numpy store.
-    """
-    def __init__(self):
-        self.persist_directory = str(STORE_DIR / "chroma_db")
-        self.collection_name = "aether_collection"
-        self._chroma = None
-
-    @property
-    def chroma(self) -> Chroma:
-        """Open the store on first use, so importing this module needs no API key."""
-        if self._chroma is None:
-            self._init_chroma()
-        return self._chroma
-
-    def _init_chroma(self):
-        self._chroma = Chroma(
-            collection_name=self.collection_name,
-            embedding_function=embedder.get_embeddings(),
-            persist_directory=self.persist_directory,
-            # Cosine distance, so relevance scores are cosine similarity (Chroma's default is L2).
-            # Only applies when the collection is created: delete an old vector_store/ to switch.
-            collection_configuration={"hnsw": {"space": "cosine"}},
-        )
-
-    def add_documents(self, user_id: int, documents: List[Document]):
-        """Directly add Document objects to Chroma, tagged with user_id."""
-        for doc in documents:
-            doc.metadata["user_id"] = user_id
-        self.chroma.add_documents(documents)
-
-    def search(self, user_id: int, query: str, k: int = TOP_K) -> List[Dict]:
-        """Search by text query, filtered by user_id."""
-        results = self.chroma.similarity_search_with_relevance_scores(query, k=k, filter={"user_id": user_id})
-        formatted = []
-        for doc, score in results:
-            formatted.append({
-                "text": doc.page_content,
-                "meta": doc.metadata,
-                "score": float(score),
-            })
-        return formatted
-
-    def search_bm25(self, user_id: int, query: str, k: int = TOP_K) -> List[Dict]:
-        """Perform BM25 sparse keyword search on user's documents."""
-        try:
-            coll = self.chroma._collection
-            res = coll.get(where={"user_id": user_id}, include=["documents", "metadatas"])
-            docs = res.get("documents", [])
-            metas = res.get("metadatas", [])
-            if not docs:
-                return []
-            
-            tokenized_corpus = [doc.lower().split() for doc in docs]
-            bm25 = BM25Okapi(tokenized_corpus)
-            tokenized_query = query.lower().split()
-            scores = bm25.get_scores(tokenized_query)
-            
-            top_indices = np.argsort(scores)[::-1][:k]
-            results = []
-            for idx in top_indices:
-                if scores[idx] > 0:
-                    results.append({
-                        "text": docs[idx],
-                        "meta": metas[idx],
-                        "score": float(scores[idx]),
-                    })
-            return results
-        except Exception:
-            return []
-
-    def search_hybrid(self, user_id: int, query: str, k: int = TOP_K, rrf_k: int = 60) -> List[Dict]:
-        """
-        Reciprocal Rank Fusion (RRF) combining Dense Vector Search & BM25 Sparse Search.
-        RRF Score = 1 / (rrf_k + rank_dense) + 1 / (rrf_k + rank_bm25)
-        """
-        dense_results = self.search(user_id, query, k=k*2)
-        bm25_results = self.search_bm25(user_id, query, k=k*2)
-        
-        if not dense_results and not bm25_results:
-            return []
-        if not bm25_results:
-            return dense_results[:k]
-        if not dense_results:
-            return bm25_results[:k]
-
-        rrf_scores = {}
-        doc_map = {}
-        
-        for rank, r in enumerate(dense_results, start=1):
-            key = r["text"][:120]
-            doc_map[key] = r
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
-            
-        for rank, r in enumerate(bm25_results, start=1):
-            key = r["text"][:120]
-            doc_map[key] = r
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
-            
-        sorted_keys = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)[:k]
-        
-        final_results = []
-        for key in sorted_keys:
-            item = doc_map[key].copy()
-            # Normalize RRF score relative to max theoretical RRF score (2 / (rrf_k + 1))
-            normalized_score = round(rrf_scores[key] / (2.0 / (rrf_k + 1)), 3)
-            item["score"] = max(0.1, min(1.0, normalized_score))
-            final_results.append(item)
-            
-        return final_results
-
-
-
-
-# Module-level singleton — opens the store on first use
-_store = ChromaVectorStoreWrapper()
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 
@@ -420,13 +288,10 @@ def list_documents(user_id: int) -> List[str]:
 def clear_documents(user_id: int) -> Dict[str, Any]:
     """Delete a user's documents from ChromaDB, then SQLite. Returns the number of chunks deleted."""
     # Clear from ChromaDB vector store (errors propagate: the caller reports them)
-    coll = _store.chroma._collection
-    chunk_ids = coll.get(where={"user_id": user_id}, include=[])["ids"]
-    if chunk_ids:
-        coll.delete(where={"user_id": user_id})
+    deleted = _store.delete_user_chunks(user_id)
     # Clear from SQLite metadata only once the vectors are gone
     clear_user_documents(user_id)
-    return {"status": "cleared", "deleted": len(chunk_ids)}
+    return {"status": "cleared", "deleted": deleted}
 
 # ── Session Management ────────────────────────────────────────────────────────
 

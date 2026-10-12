@@ -10,6 +10,7 @@ import pytest
 
 from src.db import database
 import rag_engine
+from src.vectordb import vector_store
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 ALICE_DOC = ("zephyr_manual.txt", DOC_TEXT, "How often is the Zephyr turbine blade inspection?", "90 days")
@@ -40,7 +41,7 @@ def _rows(user_id, session_id):
 
 
 def _chunks_of(user_id):
-    return rag_engine._store.chroma._collection.get(where={"user_id": user_id}, include=[])["ids"]
+    return vector_store.store.chroma._collection.get(where={"user_id": user_id}, include=[])["ids"]
 
 
 @pytest.fixture(params=["alice_owns", "bob_owns"])
@@ -84,7 +85,7 @@ def test_search_never_returns_the_other_users_chunks(client, tenants, modes):
 def test_store_searches_are_filtered_by_user(tenants):
     owner, other = tenants
     owner_file, owner_text, owner_question, _ = owner["doc"]
-    store = rag_engine._store
+    store = vector_store.store
     # Query with the owner's exact text: the strongest possible match for the owner's chunk
     for search in (store.search, store.search_bm25, store.search_hybrid):
         for query in (owner_text, owner_question):
