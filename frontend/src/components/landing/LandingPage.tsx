@@ -179,7 +179,7 @@ export default function LandingPage({ theme = 'system', onTheme = () => {} }: La
         </section>
 
         <footer className="l-foot">
-          <span>Built by Tirth Ganatra · Guided by Dr. Amit Ganatra</span>
+          <span>Built by Tirth Ganatra during an internship at Netweb Software, Vadodara.</span>
           <span>Powered by Google Gemini</span>
         </footer>
       </div>
