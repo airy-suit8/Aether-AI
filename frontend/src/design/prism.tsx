@@ -183,10 +183,12 @@ export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your
 }
 
 /** A citation marker in the answer: a small source of light in the colour of its source. */
-export function Cite({ n, active = false, onActivate, innerRef }: {
+export function Cite({ n, active = false, onActivate, onClick, label, innerRef }: {
   n: number
   active?: boolean
   onActivate: (n: number | null) => void
+  onClick?: () => void
+  label?: string
   innerRef?: Ref<HTMLButtonElement>
 }) {
   const style: PrismStyle = { '--hue': sourceHue(n) }
@@ -197,7 +199,8 @@ export function Cite({ n, active = false, onActivate, innerRef }: {
       className="p-cite"
       data-active={active}
       style={style}
-      aria-label={`Source ${n}`}
+      aria-label={label ?? `Source ${n}`}
+      onClick={onClick}
       onPointerEnter={() => onActivate(n)}
       onPointerLeave={() => onActivate(null)}
       onFocus={() => onActivate(n)}
