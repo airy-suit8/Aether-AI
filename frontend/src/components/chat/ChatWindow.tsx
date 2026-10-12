@@ -1,5 +1,6 @@
-import React from 'react'
+import type { RefObject } from 'react'
 import MessageBubble from './MessageBubble'
+import type { ChatMessage } from './types'
 
 const IDEAS = ['Summarise the main points', 'List the key dates and numbers', 'What is still unclear or missing?']
 
@@ -7,7 +8,17 @@ const IDEAS = ['Summarise the main points', 'List the key dates and numbers', 'W
  * ChatWindow — the scrollable conversation. Each question is a heading; its answer and
  * evidence sit under it.
  */
-export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, streamRef, hasDocuments, onSuggest }) {
+interface ChatWindowProps {
+  messages: ChatMessage[]
+  streamingText: string
+  streamingPhase: string
+  isLoading: boolean
+  streamRef: RefObject<HTMLDivElement | null>
+  hasDocuments: boolean
+  onSuggest: (question: string) => void
+}
+
+export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, streamRef, hasDocuments, onSuggest }: ChatWindowProps) {
   const isEmpty = messages.length === 0 && !streamingText && !isLoading
 
   return (
@@ -45,7 +56,8 @@ export default function ChatWindow({ messages, streamingText, streamingPhase, is
             {/* The reply in progress */}
             {(isLoading || streamingText) && (
               <MessageBubble
-                message={{ id: 'streaming', role: 'assistant', content: streamingText, streamingPhase }}
+                message={{ id: 'streaming', role: 'assistant', content: streamingText, sources: [], confidence: null, toolUsed: null, mode: '', turnId: null, feedback: 0 }}
+                streamingPhase={streamingPhase}
                 isStreaming
               />
             )}

@@ -1,4 +1,4 @@
-/* Layout of the self-playing bench (DemoBench.jsx). */
+/* Layout of the self-playing bench (DemoBench.tsx). */
 
 .demo-stage {
   padding: clamp(20px, 3.4vw, 44px);

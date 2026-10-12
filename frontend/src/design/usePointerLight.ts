@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { RefObject } from 'react'
 
 /**
  * Makes glass catch the pointer.
@@ -8,28 +9,28 @@ import { useEffect } from 'react'
  * that contain it; the CSS paints the lit edge and the glint from those two numbers.
  * It also writes --px (0 to 1 across the viewport) on the root for reactive type.
  */
-export function usePointerLight(rootRef) {
+export function usePointerLight(rootRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const root = rootRef.current
     if (!root) return undefined
 
     let frame = 0
-    let last = null
+    let last: PointerEvent | null = null
 
     const paint = () => {
       frame = 0
       if (!last) return
       root.style.setProperty('--px', (last.clientX / window.innerWidth).toFixed(3))
-      let pane = last.target instanceof Element ? last.target.closest('.p-pane') : null
+      let pane = last.target instanceof Element ? last.target.closest<HTMLElement>('.p-pane') : null
       while (pane) {
         const rect = pane.getBoundingClientRect()
         pane.style.setProperty('--mx', `${Math.round(last.clientX - rect.left)}px`)
         pane.style.setProperty('--my', `${Math.round(last.clientY - rect.top)}px`)
-        pane = pane.parentElement ? pane.parentElement.closest('.p-pane') : null
+        pane = pane.parentElement ? pane.parentElement.closest<HTMLElement>('.p-pane') : null
       }
     }
 
-    const onMove = (event) => {
+    const onMove = (event: PointerEvent) => {
       last = event
       if (!frame) frame = requestAnimationFrame(paint)
     }

@@ -1,16 +1,30 @@
-import React, { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
+import type { ChangeEvent, DragEvent } from 'react'
 import { useAuth } from '../../services/AuthContext'
+import type { DocumentRecord } from '../../services/api'
 import { PrismMark } from '../../design/prism'
 
 const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
 const DISARM_MS = 4000
 
-const KINDS = { pdf: 'PDF', docx: 'DOC', txt: 'TXT', md: 'MD', markdown: 'MD', csv: 'CSV', xlsx: 'XLS', xls: 'XLS' }
-const kindOf = (filename) => KINDS[filename.split('.').pop().toLowerCase()] || 'FILE'
+const KINDS: Record<string, string> = { pdf: 'PDF', docx: 'DOC', txt: 'TXT', md: 'MD', markdown: 'MD', csv: 'CSV', xlsx: 'XLS', xls: 'XLS' }
+const kindOf = (filename: string) => KINDS[(filename.split('.').pop() ?? '').toLowerCase()] || 'FILE'
 
 /**
  * Sidebar — the library rail: brand, new thread, document drop zone, the user's documents, settings.
  */
+interface SidebarProps {
+  isOpen: boolean
+  onToggle: () => void
+  documents: DocumentRecord[]
+  onRemoveDocument: (doc: DocumentRecord) => Promise<void>
+  onUpload: (file: File) => Promise<void>
+  uploadProgress: { filename: string; status: string } | null
+  onNewThread: () => void
+  onOpenSettings: () => void
+  onNavigateHome: () => void
+}
+
 export default function Sidebar({
   isOpen,
   onToggle,
@@ -21,27 +35,27 @@ export default function Sidebar({
   onNewThread,
   onOpenSettings,
   onNavigateHome,
-}) {
-  const fileInputRef = useRef(null)
+}: SidebarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
-  const [armed, setArmed] = useState(null)       // id of the document one click from being removed
-  const [removing, setRemoving] = useState(null) // id of the document being removed now
+  const [armed, setArmed] = useState<number | null>(null)       // id of the document one click from being removed
+  const [removing, setRemoving] = useState<number | null>(null) // id of the document being removed now
   const { username } = useAuth()
 
   // Several files are ingested one after another, so each gets its own progress and result
-  const uploadAll = useCallback(async (fileList) => {
+  const uploadAll = useCallback(async (fileList: FileList) => {
     for (const file of Array.from(fileList)) {
       await onUpload(file)
     }
   }, [onUpload])
 
-  const handleFileChange = useCallback((e) => {
+  const handleFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files?.length) uploadAll(files)
     e.target.value = ''
   }, [uploadAll])
 
-  const handleDrop = useCallback((e) => {
+  const handleDrop = useCallback((e: DragEvent<HTMLButtonElement>) => {
     e.preventDefault()
     setDragOver(false)
     if (e.dataTransfer.files?.length) uploadAll(e.dataTransfer.files)
@@ -55,7 +69,7 @@ export default function Sidebar({
     return () => clearTimeout(timer)
   }, [armed])
 
-  const handleRemove = useCallback(async (doc) => {
+  const handleRemove = useCallback(async (doc: DocumentRecord) => {
     if (armed !== doc.id) {
       setArmed(doc.id)
       return

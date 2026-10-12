@@ -1,16 +1,17 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { AmbientField, ClarityRing, Field, HoldButton, Lens, PrismMark, PrismRoot, Switch } from '../prism'
+import type { FieldState, PrismStyle, Theme } from '../prism'
 import DemoBench from '../DemoBench'
 import './lab.css'
 
 /** Design lab: every Prism component with sample data. Nothing here talks to the backend. */
 
-const THEMES = [
+const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'dark', label: 'Dark' },
 ]
 
-const ROLES = [
+const ROLES: { name: string; token: string; on?: string; note: string }[] = [
   { name: 'Surface', token: '--p-surface', note: 'Content sits here' },
   { name: 'Surface 2', token: '--p-surface-2', note: 'One step up' },
   { name: 'Surface 3', token: '--p-surface-3', note: 'Controls at rest' },
@@ -22,8 +23,8 @@ const ROLES = [
 ]
 
 export default function DesignLab() {
-  const [theme, setTheme] = useState('system')
-  const [phase, setPhase] = useState('idle')
+  const [theme, setTheme] = useState<Theme>('system')
+  const [phase, setPhase] = useState<FieldState>('idle')
   const [stream, setStream] = useState(true)
   const [name, setName] = useState('')
   const [held, setHeld] = useState(0)
@@ -60,7 +61,7 @@ export default function DesignLab() {
           <h2>Neutral by default. Colour only when it means something.</h2>
           <div className="lab-swatches">
             {ROLES.map((role) => (
-              <div key={role.name} className="lab-swatch" style={{ '--c': `var(${role.token})`, '--on': role.on ? `var(${role.on})` : undefined }}>
+              <div key={role.name} className="lab-swatch" style={{ '--c': `var(${role.token})`, '--on': role.on ? `var(${role.on})` : undefined } as PrismStyle}>
                 <b>{role.name}</b>
                 <span>{role.note}</span>
               </div>
@@ -68,7 +69,7 @@ export default function DesignLab() {
           </div>
           <div className="lab-spectrum" role="img" aria-label="The five source hues, equal in lightness">
             {[1, 2, 3, 4, 5].map((n) => (
-              <i key={n} style={{ '--c': `var(--p-s${n})` }} />
+              <i key={n} style={{ '--c': `var(--p-s${n})` } as PrismStyle} />
             ))}
           </div>
           <p className="lab-note">The source spectrum: five hues at one lightness, so no source looks more important than another.</p>

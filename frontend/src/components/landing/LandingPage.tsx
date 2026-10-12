@@ -1,10 +1,12 @@
-import React, { useCallback, useState } from 'react'
+import { useCallback, useState } from 'react'
+import type { FormEvent } from 'react'
 import { useAuth } from '../../services/AuthContext'
 import { login, register } from '../../services/api'
 import { AmbientField, Dialog, Field, Lens, PrismMark } from '../../design/prism'
+import type { FieldState, PrismStyle, Theme } from '../../design/prism'
 import DemoBench from '../../design/DemoBench'
 
-const THEMES = [
+const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'dark', label: 'Dark' },
 ]
@@ -22,19 +24,25 @@ const USERNAME_RULE = /^[A-Za-z0-9_-]{3,50}$/
  * LandingPage — the start page. The product demonstrates itself with sample data, then
  * explains the path a document takes, and opens the sign-in sheet.
  */
-export default function LandingPage({ onStartChat, theme = 'system', onTheme = () => {} }) {
+interface LandingPageProps {
+  onStartChat: () => void
+  theme?: Theme
+  onTheme?: (theme: Theme) => void
+}
+
+export default function LandingPage({ onStartChat, theme = 'system', onTheme = () => {} }: LandingPageProps) {
   const { isAuthenticated, login: setAuth } = useAuth()
   const [showModal, setShowModal] = useState(false)
   const [isLoginView, setIsLoginView] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [inviteCode, setInviteCode] = useState('')
-  const [fieldErrors, setFieldErrors] = useState({})
+  const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({})
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [phase, setPhase] = useState('idle')
+  const [phase, setPhase] = useState<FieldState>('idle')
 
-  const open = (loginView) => {
+  const open = (loginView: boolean) => {
     if (isAuthenticated) {
       onStartChat()
       return
@@ -54,8 +62,8 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
   }
 
   // Mirrors the server's rules, so a mistake is caught before a request is made
-  const validate = (name) => {
-    const problems = {}
+  const validate = (name: string) => {
+    const problems: { username?: string; password?: string } = {}
     if (isLoginView) {
       if (!name) problems.username = 'Enter your username'
       if (!password) problems.password = 'Enter your password'
@@ -67,7 +75,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
     return problems
   }
 
-  const handleAuth = async (e) => {
+  const handleAuth = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const name = username.trim()
     const problems = validate(name)
@@ -82,8 +90,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
       setAuth(data.access_token, name)
       onStartChat()
     } catch (err) {
-      const msg = typeof err === 'string' ? err : err?.message || String(err || 'Authentication failed')
-      setError(msg)
+      setError(err instanceof Error ? err.message : 'Authentication failed')
     } finally {
       setIsLoading(false)
     }
@@ -131,7 +138,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
           <h2 className="p-h2">One line of light, from your document to your answer.</h2>
           <ol className="l-path">
             {STEPS.map((step) => (
-              <li key={step.n} className="l-step" style={{ '--node': step.node }}>
+              <li key={step.n} className="l-step" style={{ '--node': step.node } as PrismStyle}>
                 <span className="p-mono">{step.n}</span>
                 <h3>{step.title}</h3>
                 <p>{step.text}</p>

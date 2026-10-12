@@ -51,20 +51,20 @@ One material, optical glass: a translucent pane with a hairline edge. A highligh
 
 | Component | File | Behaviour |
 |---|---|---|
-| `PrismRoot` | `prism.jsx` | Sets the theme and wires pointer light |
-| `AmbientField` | `prism.jsx` | Corner light that tightens while retrieving and relaxes when answered |
-| `Aperture` | `prism.jsx` | The composer: widens on focus, glows while busy, Send morphs into Stop |
-| `Lens` | `prism.jsx` | One sliding control for a single choice; arrow keys move it |
-| `ClarityRing` | `prism.jsx` | Confidence as optical clarity: sharp when grounded, diffuse when uncertain, hollow when refused |
-| `Cite` | `prism.jsx` | A citation marker in the hue of its source |
-| `SourceCard` | `prism.jsx` | Evidence in the margin: file, page, score and passage |
-| `Threads` | `prism.jsx` | Lines of light from each citation to its source, routed through the gutter |
-| `Switch` | `prism.jsx` | A toggle whose knob is a point of light |
-| `Field` | `prism.jsx` | A text field: the label lifts on focus and the line under it splits into the spectrum |
-| `HoldButton` | `prism.jsx` | For actions that cannot be undone: nothing happens unless the press is held |
-| Library row remove | `Sidebar.jsx`, `app.css` (`.x-doc__remove`) | For removing one document, in a row too small for a hold: a quiet cross that shows with the row; one click arms it ("Remove?", in the status red), a second confirms; it disarms after four seconds or when focus leaves |
-| `Dialog` | `prism.jsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards |
-| `DemoBench` | `DemoBench.jsx` | The self-playing demonstration used on the start page and in the lab |
+| `PrismRoot` | `prism.tsx` | Sets the theme and wires pointer light |
+| `AmbientField` | `prism.tsx` | Corner light that tightens while retrieving and relaxes when answered |
+| `Aperture` | `prism.tsx` | The composer: widens on focus, glows while busy, Send morphs into Stop |
+| `Lens` | `prism.tsx` | One sliding control for a single choice; arrow keys move it |
+| `ClarityRing` | `prism.tsx` | Confidence as optical clarity: sharp when grounded, diffuse when uncertain, hollow when refused |
+| `Cite` | `prism.tsx` | A citation marker in the hue of its source |
+| `SourceCard` | `prism.tsx` | Evidence in the margin: file, page, score and passage |
+| `Threads` | `prism.tsx` | Lines of light from each citation to its source, routed through the gutter |
+| `Switch` | `prism.tsx` | A toggle whose knob is a point of light |
+| `Field` | `prism.tsx` | A text field: the label lifts on focus and the line under it splits into the spectrum |
+| `HoldButton` | `prism.tsx` | For actions that cannot be undone: nothing happens unless the press is held |
+| Library row remove | `Sidebar.tsx`, `app.css` (`.x-doc__remove`) | For removing one document, in a row too small for a hold: a quiet cross that shows with the row; one click arms it ("Remove?", in the status red), a second confirms; it disarms after four seconds or when focus leaves |
+| `Dialog` | `prism.tsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards |
+| `DemoBench` | `DemoBench.tsx` | The self-playing demonstration used on the start page and in the lab |
 
 Some interaction ideas (the light-point toggle, the floating-label field, hold to confirm) were prompted by browsing the open-source gallery at uiverse.io. They were written from scratch in this language; no code was copied.
 

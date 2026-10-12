@@ -1,7 +1,9 @@
-import React, { useRef } from 'react'
+import { useRef } from 'react'
+import type { ChangeEvent } from 'react'
 import { Aperture, Lens, Switch } from '../../design/prism'
+import type { Mode } from '../../services/api'
 
-const MODES = [
+const MODES: { value: Mode; label: string }[] = [
   { value: 'default', label: 'Default' },
   { value: 'hybrid', label: 'Hybrid' },
   { value: 'agent', label: 'Agent' },
@@ -13,11 +15,22 @@ const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
 /**
  * ChatComposer — the dock: one answer mode, whether to stream, and the Aperture to ask through.
  */
-export default function ChatComposer({ onSend, onStop, isLoading, mode, onMode, streaming, onStreaming, onUpload }) {
-  const fileInputRef = useRef(null)
+interface ChatComposerProps {
+  onSend: (question: string) => void
+  onStop: () => void
+  isLoading: boolean
+  mode: Mode
+  onMode: (mode: Mode) => void
+  streaming: boolean
+  onStreaming: (streaming: boolean) => void
+  onUpload: (file: File) => void
+}
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
+export default function ChatComposer({ onSend, onStop, isLoading, mode, onMode, streaming, onStreaming, onUpload }: ChatComposerProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (file) onUpload(file)
     e.target.value = ''
   }

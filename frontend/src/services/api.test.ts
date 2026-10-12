@@ -1,31 +1,56 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getDocuments, refreshSession, sendChatStream, setToken, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from './api'
+import type { Mock } from 'vitest'
+import {
+  ApiError, getDocuments, getMe, refreshSession, sendChatStream, setToken, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE,
+} from './api'
+import type { DoneEvent, Mode } from './api'
+import { asResponse } from '../test/fixtures'
 
 const encoder = new TextEncoder()
 
+type FetchMock = Mock<typeof fetch>
+
+/** Install a fetch double and return it, typed as a mock. */
+function mockFetch(impl: (url: string, init?: RequestInit) => Promise<Response>): FetchMock {
+  const fake = vi.fn((input: RequestInfo | URL, init?: RequestInit) => impl(String(input), init))
+  globalThis.fetch = fake
+  return fake
+}
+
 /** A fetch Response whose body arrives in the given pieces (strings or byte arrays). */
-function streamResponse(pieces, { status = 200, json = {} } = {}) {
+function streamResponse(pieces: (string | Uint8Array)[], { status = 200, json = {} }: { status?: number; json?: object } = {}): Response {
   let i = 0
-  return {
+  return asResponse({
     ok: status >= 200 && status < 300,
     status,
     json: async () => json,
     body: {
       getReader: () => ({
-        read: async () => (i < pieces.length
-          ? { done: false, value: typeof pieces[i] === 'string' ? encoder.encode(pieces[i++]) : pieces[i++] }
-          : { done: true, value: undefined }),
+        read: async () => {
+          if (i >= pieces.length) return { done: true, value: undefined }
+          const piece = pieces[i++]
+          return { done: false, value: typeof piece === 'string' ? encoder.encode(piece) : piece }
+        },
       }),
     },
-  }
+  })
 }
 
-const event = (data) => `data: ${JSON.stringify(data)}\n\n`
+const event = (data: object) => `data: ${JSON.stringify(data)}\n\n`
+
+/** The headers a request was sent with, as a plain record. */
+const headersOf = (fetch: FetchMock, call: number) => (fetch.mock.calls[call][1]?.headers ?? {}) as Record<string, string>
+
+interface Calls {
+  tokens: string[]
+  done: DoneEvent[]
+  errors: string[]
+}
 
 /** Run sendChatStream against the given response and record every callback. */
-async function run(response, options = {}) {
-  globalThis.fetch = vi.fn(async () => response)
-  const calls = { tokens: [], done: [], errors: [] }
+async function run(response: Response, options: { mode?: Mode } = {}): Promise<Calls> {
+  mockFetch(async () => response)
+  const calls: Calls = { tokens: [], done: [], errors: [] }
   await sendChatStream({
     question: 'How often?',
     sessionId: 'session_1',
@@ -49,18 +74,19 @@ describe('sendChatStream', () => {
   })
 
   it('posts the question and mode with the token', async () => {
-    await run(streamResponse([event({ type: 'done', sources: [], confidence: 0 })]), { mode: 'hybrid' })
-    const [url, init] = globalThis.fetch.mock.calls[0]
+    await run(streamResponse([event({ type: 'done', sources: [], confidence: 0, turn_id: null })]), { mode: 'hybrid' })
+    const fetch = globalThis.fetch as FetchMock
+    const [url, init] = fetch.mock.calls[0]
     expect(url).toBe('/api/v1/chat/stream')
-    expect(init.method).toBe('POST')
-    expect(init.headers.Authorization).toBe('Bearer token-123')
-    expect(JSON.parse(init.body)).toEqual({
+    expect(init?.method).toBe('POST')
+    expect(headersOf(fetch, 0).Authorization).toBe('Bearer token-123')
+    expect(JSON.parse(String(init?.body))).toEqual({
       question: 'How often?', session_id: 'session_1', mode: 'hybrid',
     })
   })
 
   it('reassembles events split across chunks, including a split character', async () => {
-    const done = { type: 'done', sources: [{ source: 'café.txt', page: 1 }], confidence: 0.8 }
+    const done = { type: 'done', sources: [{ source: 'café.txt', page: 1, snippet: '', score: 0.8 }], confidence: 0.8, turn_id: 4 }
     const bytes = encoder.encode(event({ type: 'token', content: 'Every ' }) + event({ type: 'token', content: '90 days, café' }) + event(done))
     const cafe = bytes.indexOf(0xc3)  // first byte of the two-byte é
     const pieces = [bytes.slice(0, 7), bytes.slice(7, 40), bytes.slice(40, cafe + 1), bytes.slice(cafe + 1)]
@@ -131,7 +157,7 @@ describe('sendChatStream', () => {
 
     // The token is gone: the next request carries no Authorization header and does not log out again
     const again = await run(streamResponse([], { status: 401 }))
-    expect(globalThis.fetch.mock.calls[0][1].headers.Authorization).toBeUndefined()
+    expect(headersOf(globalThis.fetch as FetchMock, 0).Authorization).toBeUndefined()
     expect(again.errors).toEqual([SESSION_EXPIRED_MESSAGE])
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
@@ -147,20 +173,21 @@ describe('sendChatStream', () => {
   })
 
   it('reports a network failure', async () => {
-    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
-    const errors = []
+    mockFetch(async () => { throw new TypeError('Failed to fetch') })
+    const errors: string[] = []
     await sendChatStream({ question: 'q', onError: (e) => errors.push(e.message) })
     expect(errors).toEqual(['Failed to fetch'])
   })
 })
 
 /** A fetch that answers each call with the next response in the list, recording the calls. */
-function answers(...responses) {
-  globalThis.fetch = vi.fn(async () => responses.shift())
-  return globalThis.fetch
+function answers(...responses: Response[]): FetchMock {
+  return mockFetch(async () => responses.shift() ?? json(500, {}))
 }
 
-const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body })
+const json = (status: number, body: object, headers: Record<string, string> = {}) => asResponse({
+  ok: status >= 200 && status < 300, status, json: async () => body, headers: new Headers(headers),
+})
 
 describe('renewing the access token', () => {
   afterEach(() => {
@@ -182,8 +209,8 @@ describe('renewing the access token', () => {
     expect(fetch.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
       ['/api/v1/documents', 'GET'], ['/api/v1/auth/refresh', 'POST'], ['/api/v1/documents', 'GET'],
     ])
-    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer expired')
-    expect(fetch.mock.calls[2][1].headers.Authorization).toBe('Bearer renewed')
+    expect(headersOf(fetch, 0).Authorization).toBe('Bearer expired')
+    expect(headersOf(fetch, 2).Authorization).toBe('Bearer renewed')
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
@@ -200,12 +227,13 @@ describe('renewing the access token', () => {
   it('shares one renewal between requests that expire together', async () => {
     setToken('expired')
     let refreshes = 0
-    globalThis.fetch = vi.fn(async (url, init) => {
+    mockFetch(async (url, init) => {
       if (url === '/api/v1/auth/refresh') {
         refreshes += 1
         return json(200, { access_token: 'renewed' })
       }
-      return init.headers.Authorization === 'Bearer renewed' ? json(200, { documents: [] }) : json(401, {})
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      return headers.Authorization === 'Bearer renewed' ? json(200, { documents: [] }) : json(401, {})
     })
     await Promise.all([getDocuments(), getDocuments(), getDocuments()])
     expect(refreshes).toBe(1)
@@ -213,12 +241,46 @@ describe('renewing the access token', () => {
 
   it('restores a session from the refresh cookie after a reload, or says there is none', async () => {
     answers(json(200, { access_token: 'from-cookie', token_type: 'bearer', expires_in: 1800 }))
-    expect((await refreshSession()).access_token).toBe('from-cookie')
+    expect((await refreshSession())?.access_token).toBe('from-cookie')
     const fetch = answers(json(200, { documents: [] }))
     await getDocuments()
-    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer from-cookie')
+    expect(headersOf(fetch, 0).Authorization).toBe('Bearer from-cookie')
 
     answers(json(401, { detail: 'Not signed in.' }))
     expect(await refreshSession()).toBeNull()
+  })
+})
+
+describe('the request wrapper', () => {
+  afterEach(() => {
+    setToken(null)
+    setUnauthorizedHandler(null)
+    vi.restoreAllMocks()
+  })
+
+  it('asks the user to wait for as long as Retry-After says', async () => {
+    setToken('t')
+    answers(json(429, { error: 'Rate limit exceeded: 120 per 1 minute' }, { 'Retry-After': '42' }))
+    await expect(getMe()).rejects.toThrow('Too many requests. Please wait 42 seconds and try again.')
+  })
+
+  it('asks the user to wait a moment when a 429 says nothing of how long', async () => {
+    setToken('t')
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    answers(json(429, { error: 'Rate limit exceeded: 120 per 1 minute' }))
+    const error = await getMe().catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(429)
+    expect((error as ApiError).message).toBe('Too many requests. Please wait a moment and try again.')
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
+  it('shows a server error with its reference, and a bare failure by its status', async () => {
+    setToken('t')
+    answers(json(500, { detail: 'Something went wrong on the server. Please try again. Reference: 3f2a9c' }))
+    await expect(getMe()).rejects.toThrow('Something went wrong on the server. Please try again. Reference: 3f2a9c')
+    answers(json(502, {}))
+    await expect(getMe()).rejects.toThrow('The request failed (error 502). Please try again.')
   })
 })

@@ -1,14 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getDocumentsDetailed, deleteAllDocuments, getHealth } from '../../services/api'
+import type { DocumentRecord, Schemas } from '../../services/api'
 import { Dialog, HoldButton, Lens } from '../../design/prism'
+import type { AddToast } from '../chat/types'
 
-const TABS = [
+type Tab = 'general' | 'documents' | 'health'
+
+const TABS: { value: Tab; label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'documents', label: 'Documents' },
   { value: 'health', label: 'System' },
 ]
 
-const formatSize = (bytes) => {
+const formatSize = (bytes: number) => {
   if (!bytes) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
@@ -16,12 +20,19 @@ const formatSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-const formatDate = (isoString) => (isoString ? new Date(isoString).toLocaleString() : 'Unknown')
+const formatDate = (isoString: string) => (isoString ? new Date(isoString).toLocaleString() : 'Unknown')
 
-export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation }) {
-  const [activeTab, setActiveTab] = useState('general')
-  const [docs, setDocs] = useState([])
-  const [health, setHealth] = useState(null)
+interface SettingsModalProps {
+  onClose: () => void
+  addToast: AddToast
+  onDocumentsChanged: () => void
+  onClearConversation: () => void
+}
+
+export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation }: SettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<Tab>('general')
+  const [docs, setDocs] = useState<DocumentRecord[]>([])
+  const [health, setHealth] = useState<Schemas['Health'] | null>(null)
   const [healthFailed, setHealthFailed] = useState(false)
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
 
