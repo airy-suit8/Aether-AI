@@ -12,8 +12,8 @@ import pytest
 from langchain_core.documents import Document
 
 import rag_engine
-import rag_langchain
-from filemakers import make_docx, make_pdf, make_xls, make_xlsx
+from filemakers import make_docx, make_xls, make_xlsx
+from src.ingestion import loader
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 from fakes import ScriptedChatModel
 from langchain_core.messages import AIMessage
@@ -24,7 +24,7 @@ def known(reason):
 
 
 def load(path):
-    return rag_engine.load_document(str(path), path.name)
+    return loader.load_document(str(path), path.name)
 
 
 # ── R3: hybrid search ─────────────────────────────────────────────────────────
@@ -197,11 +197,3 @@ def test_refused_streamed_answer_lists_no_sources(client, make_user, refusing_mo
     _, events = ask_stream(client, headers, "How often is the Zephyr turbine blade inspection?")
     assert "".join(e["content"] for e in events if e["type"] == "token") == REFUSAL
     assert events[-1]["sources"] == []
-
-
-# ── Found in Sprint 2 (not in the audit) ──────────────────────────────────────
-
-@known("New in Sprint 2: the LangChain PDF loader keeps PyPDFLoader's 0-based page numbers (cites p. 0)")
-def test_langchain_pdf_pages_are_numbered_from_one(tmp_path):
-    docs = rag_langchain.load_document_langchain(str(make_pdf(tmp_path / "two.pdf", ["one", "two"])), "two.pdf")
-    assert [d.metadata["page"] for d in docs] == [1, 2]

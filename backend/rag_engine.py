@@ -13,11 +13,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 import numpy as np
-import pandas as pd
 from rank_bm25 import BM25Okapi
 
-from pypdf import PdfReader
-from docx import Document as DocxDoc
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -37,6 +34,7 @@ from src.db.database import (
 from src.core.config import settings
 from src.embeddings import embedder
 from src.llm import llm_client
+from src.ingestion.loader import load_document
 from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -180,96 +178,6 @@ class ChromaVectorStoreWrapper:
 
 # Module-level singleton — opens the store on first use
 _store = ChromaVectorStoreWrapper()
-
-# ── Document Parsing ──────────────────────────────────────────────────────────
-
-def _parse_pdf(file_path: str, filename: str) -> List[Document]:
-    """Extract text page-by-page using pypdf (pure Python)."""
-    docs = []
-    reader = PdfReader(file_path)
-    for page_num, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        if text:
-            docs.append(Document(
-                page_content=text,
-                metadata={"source": filename, "page": page_num, "type": "pdf"},
-            ))
-    return docs
-
-
-def _parse_docx(file_path: str, filename: str) -> List[Document]:
-    """Extract text from a Word .docx file using python-docx."""
-    doc = DocxDoc(file_path)
-    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    if not paragraphs:
-        return []
-    text = "\n".join(paragraphs)
-    return [Document(
-        page_content=text,
-        metadata={"source": filename, "page": 1, "type": "docx"},
-    )]
-
-
-def _parse_text(file_path: str, filename: str) -> List[Document]:
-    """Read plain text or Markdown files."""
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        text = f.read().strip()
-    if not text:
-        return []
-    return [Document(
-        page_content=text,
-        metadata={"source": filename, "page": 1, "type": "text"},
-    )]
-
-
-def _parse_tabular(file_path: str, filename: str, ext: str) -> List[Document]:
-    """Read CSV or Excel and convert each row to a natural-language line for better embeddings."""
-    if ext == ".csv":
-        df = pd.read_csv(file_path)
-    else:
-        df = pd.read_excel(file_path)
-
-    if df.empty:
-        return []
-
-    columns = list(df.columns)
-    docs = []
-    # Convert each row to a readable sentence: "Column1: val1, Column2: val2, ..."
-    chunk_lines = []
-    for idx, row in df.iterrows():
-        line = ", ".join(f"{col}: {row[col]}" for col in columns if pd.notna(row[col]))
-        chunk_lines.append(line)
-        # Group every 50 rows into one Document to keep chunk sizes manageable
-        if len(chunk_lines) >= 50:
-            docs.append(Document(
-                page_content="\n".join(chunk_lines),
-                metadata={"source": filename, "page": len(docs) + 1, "type": ext.lstrip(".")},
-            ))
-            chunk_lines = []
-
-    # Flush remaining rows
-    if chunk_lines:
-        docs.append(Document(
-            page_content="\n".join(chunk_lines),
-            metadata={"source": filename, "page": len(docs) + 1, "type": ext.lstrip(".")},
-        ))
-
-    return docs
-
-
-def load_document(file_path: str, filename: str) -> List[Document]:
-    """Dispatch to the correct parser based on file extension."""
-    ext = Path(filename).suffix.lower()
-    if ext == ".pdf":
-        return _parse_pdf(file_path, filename)
-    elif ext == ".docx":
-        return _parse_docx(file_path, filename)
-    elif ext in (".txt", ".md", ".markdown"):
-        return _parse_text(file_path, filename)
-    elif ext in (".csv", ".xlsx", ".xls"):
-        return _parse_tabular(file_path, filename, ext)
-    else:
-        raise ValueError(f"Unsupported file type '{ext}'. Allowed: pdf, docx, txt, md, csv, xlsx, xls")
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 
