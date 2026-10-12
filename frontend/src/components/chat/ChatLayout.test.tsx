@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import ChatLayout from './ChatLayout'
 import { AuthProvider } from '../../services/AuthContext'
 import * as api from '../../services/api'
+import { version } from '../../../package.json'
+import snapshot from '../../../../backend/tests/openapi_snapshot.json'
 import { chatReply, documentList, documentRecord, documentStatus, done, session, SOURCE, turn } from '../../test/fixtures'
 
 vi.mock('../../services/api', async (importOriginal) => ({
@@ -599,5 +601,14 @@ describe('ChatLayout', () => {
     await act(async () => read(documentStatus({ id: 12, filename: 'plan.pdf', status: 'ready', pages: 2, chunks: 5 })))
     await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Added plan.pdf: 5 passages from 2 pages.', 'success'))
     expect(screen.getByText('Add a document')).toBeTruthy()
+  })
+
+  it('shows the version, the same as the API\'s, under Settings, System', async () => {
+    renderChat('/settings')
+    const user = userEvent.setup()
+    const sheet = await screen.findByRole('dialog', { name: 'Settings' })
+    await user.click(within(sheet).getByRole('radio', { name: 'System' }))
+    expect(screen.getByText('Version').previousElementSibling?.textContent).toBe(version)
+    expect(version).toBe(snapshot.info.version)
   })
 })
