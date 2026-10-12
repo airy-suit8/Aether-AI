@@ -17,9 +17,9 @@ QUESTION = "How often is the Zephyr turbine blade inspection?"
 
 MODES = {
     "default": ({}, "original"),
-    "hybrid": ({"use_hybrid": True}, "hybrid"),
-    "agent": ({"use_agent": True}, "agent"),
-    "langchain": ({"use_langchain": True}, "langchain"),
+    "hybrid": ({"mode": "hybrid"}, "hybrid"),
+    "agent": ({"mode": "agent"}, "agent"),
+    "langchain": ({"mode": "langchain"}, "langchain"),
 }
 
 

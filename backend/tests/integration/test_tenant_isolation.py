@@ -22,7 +22,7 @@ BOB_DOC = (
     "45 days",
 )
 
-MODES = [{}, {"use_hybrid": True}, {"use_langchain": True}, {"use_agent": True}]
+MODES = [{}, {"mode": "hybrid"}, {"mode": "langchain"}, {"mode": "agent"}]
 MODE_IDS = ["default", "hybrid", "langchain", "agent"]
 SHARED = "shared-session"
 

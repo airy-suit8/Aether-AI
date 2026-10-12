@@ -14,7 +14,7 @@ def test_agent_uses_the_calculator(client, make_user, fake_llm):
     _, headers = make_user("calc")
     fake_llm.tool_name = "calculator_wrapper"
     fake_llm.tool_input = "max(3, 5)"
-    r = ask(client, headers, "What is the larger of 3 and 5?", use_agent=True)
+    r = ask(client, headers, "What is the larger of 3 and 5?", mode="agent")
     assert r.status_code == 200, r.text
     assert "max(3, 5) = 5" in r.json()["answer"]
     assert r.json()["tool_used"] == "calculator"
@@ -26,7 +26,7 @@ def test_agent_loop_is_bounded(client, make_user, fake_llm, monkeypatch):
     monkeypatch.setattr(ScriptedChatModel, "_reply", lambda self, messages: AIMessage(
         content="", tool_calls=[{"name": "calculator_wrapper", "args": {"expression": "1+1"}, "id": f"c{len(messages)}"}]))
     t0 = time.perf_counter()
-    r = ask(client, headers, "Loop forever", use_agent=True)
+    r = ask(client, headers, "Loop forever", mode="agent")
     assert time.perf_counter() - t0 < 10
     # LangGraph's prebuilt agent stops just before the limit with its own message.
     # Without a limit (default 10,000 steps) this loop would make about 5,000 model calls.
@@ -38,7 +38,7 @@ def test_agent_loop_is_bounded(client, make_user, fake_llm, monkeypatch):
 def test_agent_uses_the_datetime_tool(client, make_user, fake_llm):
     _, headers = make_user("date")
     fake_llm.tool_name = "datetime_wrapper"
-    r = ask(client, headers, "What day is it today?", use_agent=True)
+    r = ask(client, headers, "What day is it today?", mode="agent")
     assert r.status_code == 200, r.text
     assert r.json()["tool_used"] == "datetime"
     assert "Date answer." in r.json()["answer"]
@@ -49,9 +49,9 @@ def test_agent_sees_the_earlier_turns_of_the_session(client, make_user, fake_llm
     _, headers = make_user("agenthist")
     fake_llm.tool_name = "calculator_wrapper"
     fake_llm.tool_input = "2 + 2"
-    assert ask(client, headers, "First question about the Halcyon register", session_id="h", use_agent=True).status_code == 200
+    assert ask(client, headers, "First question about the Halcyon register", session_id="h", mode="agent").status_code == 200
     fake_llm.prompts.clear()
-    assert ask(client, headers, "And the second?", session_id="h", use_agent=True).status_code == 200
+    assert ask(client, headers, "And the second?", session_id="h", mode="agent").status_code == 200
     assert "First question about the Halcyon register" in fake_llm.prompts[0]
     assert "Agent answer." in fake_llm.prompts[0]  # the earlier answer is in the history too
 
@@ -65,7 +65,7 @@ def test_empty_final_answer_falls_back_to_the_tool_output(client, make_user, mon
         return AIMessage(content="", tool_calls=[{"name": "calculator_wrapper", "args": {"expression": "6 * 7"}, "id": "c1"}])
 
     monkeypatch.setattr(ScriptedChatModel, "_reply", reply)
-    r = ask(client, headers, "What is six times seven?", use_agent=True)
+    r = ask(client, headers, "What is six times seven?", mode="agent")
     assert r.status_code == 200, r.text
     assert r.json()["answer"] == "The result is: 6 * 7 = 42"
 
@@ -73,7 +73,7 @@ def test_empty_final_answer_falls_back_to_the_tool_output(client, make_user, mon
 def test_empty_answer_without_a_tool_says_so(client, make_user, monkeypatch):
     _, headers = make_user("emptyd")
     monkeypatch.setattr(ScriptedChatModel, "_reply", lambda self, messages: AIMessage(content=""))
-    r = ask(client, headers, "Say nothing", use_agent=True)
+    r = ask(client, headers, "Say nothing", mode="agent")
     assert r.status_code == 200, r.text
     assert r.json()["answer"] == "I executed the tool but encountered an issue formatting the final answer."
     assert r.json()["tool_used"] == "agent_direct"

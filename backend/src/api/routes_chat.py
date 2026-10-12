@@ -31,7 +31,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
     if len(chat_request.question) > settings.max_question_chars:
         raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
-    mode = chat_request.mode()
+    mode = chat_request.mode
     start_time = time.time()
 
     try:
@@ -83,7 +83,7 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
     if len(chat_request.question) > settings.max_question_chars:
         raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
-    mode = chat_request.mode()
+    mode = chat_request.mode
 
     request_logger.info(f"STREAM REQUEST | mode={mode} | question={chat_request.question[:80]}")
 

@@ -153,6 +153,79 @@
         ]
       }
     },
+    "/api/v1/documents": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get Documents",
+        "description": "List all ingested document filenames.",
+        "operationId": "get_documents_api_v1_documents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Delete Documents",
+        "description": "Clear all documents from the vector store for the user.",
+        "operationId": "delete_documents_api_v1_documents_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/documents/detailed": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get Documents Detailed",
+        "description": "List detailed information of all ingested documents.",
+        "operationId": "get_documents_detailed_api_v1_documents_detailed_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chat": {
       "post": {
         "tags": [
@@ -334,79 +407,6 @@
           }
         ]
       }
-    },
-    "/api/v1/documents": {
-      "get": {
-        "tags": [
-          "Documents"
-        ],
-        "summary": "Get Documents",
-        "description": "List all ingested document filenames.",
-        "operationId": "get_documents_api_v1_documents_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Documents"
-        ],
-        "summary": "Delete Documents",
-        "description": "Clear all documents from the vector store for the user.",
-        "operationId": "delete_documents_api_v1_documents_delete",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/documents/detailed": {
-      "get": {
-        "tags": [
-          "Documents"
-        ],
-        "summary": "Get Documents Detailed",
-        "description": "List detailed information of all ingested documents.",
-        "operationId": "get_documents_detailed_api_v1_documents_detailed_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
     }
   },
   "components": {
@@ -498,22 +498,19 @@
             "title": "Session Id",
             "default": "default"
           },
-          "use_agent": {
-            "type": "boolean",
-            "title": "Use Agent",
-            "default": false
-          },
-          "use_langchain": {
-            "type": "boolean",
-            "title": "Use Langchain",
-            "default": false
-          },
-          "use_hybrid": {
-            "type": "boolean",
-            "title": "Use Hybrid",
-            "default": false
+          "mode": {
+            "type": "string",
+            "enum": [
+              "default",
+              "hybrid",
+              "agent",
+              "langchain"
+            ],
+            "title": "Mode",
+            "default": "default"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "question"
