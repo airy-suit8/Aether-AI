@@ -15,8 +15,11 @@ One pipeline, four modes:
   agent      the tool-calling agent (Task 11); its document search runs this pipeline in
              default mode without saving a turn
 Every mode shares the prompts, the memory, the confidence threshold and the source list.
+A refusal lists no sources. With settings.answer_from = "chunks" there is no summary step in
+any mode: the answer is written from the numbered chunks and its sources are the ones it cites.
 """
 
+import re
 import time
 from contextlib import contextmanager
 from operator import itemgetter
@@ -30,7 +33,7 @@ from src.agents.agent import run_agent
 from src.core.config import settings
 from src.llm import llm_client
 from src.memory.conversation import NO_HISTORY, memory
-from src.prompts.prompt_templates import RAG_PROMPT, SUMMARIZE_PROMPT, format_context
+from src.prompts.prompt_templates import CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context
 from src.retrieval.retriever import UserRetriever, retriever, rewrite_question
 
 Mode = Literal["default", "hybrid", "agent", "langchain"]
@@ -98,9 +101,21 @@ def retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
     return retriever.search(user_id, query, k=settings.top_k)
 
 
-def _generate(mode: Mode, context: str, question: str, chat_history: str, trace: Trace) -> Iterator[str]:
-    """Summarize the context, then stream the answer from the summary (Task 3)."""
+def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace) -> Iterator[str]:
+    """
+    Stream the answer. settings.answer_from decides what it is written from: "summary" summarizes
+    the chunks and answers from the summary (Task 3); "chunks" answers from the numbered chunks
+    in one call, citing them as [1], [2] (R4, R5).
+    """
     llm = llm_client.get_llm()
+    if settings.answer_from == "chunks":
+        with trace.stage("answer") as config:
+            yield from (CITED_RAG_PROMPT | llm | StrOutputParser()).stream(
+                {"context": format_context(results, numbered=True), "question": question, "chat_history": chat_history},
+                config=config)
+        return
+
+    context = format_context(results)
     if mode == "langchain":
         # Task 15: the whole step as one LCEL chain; the summary feeds the answer prompt
         chain = (
@@ -124,23 +139,46 @@ def _generate(mode: Mode, context: str, question: str, chat_history: str, trace:
             {"context": summary, "question": question, "chat_history": chat_history}, config=config)
 
 
+def _source(r: Dict[str, Any]) -> Dict[str, Any]:
+    snippet = r["text"]
+    return {
+        "source": r["meta"].get("source", "Unknown"),
+        "page": r["meta"].get("page", "?"),
+        "snippet": snippet[:SNIPPET_CHARS] + ("…" if len(snippet) > SNIPPET_CHARS else ""),
+        "score": round(r["score"], 3),
+    }
+
+
 def _sources(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """One source per (file, page), in retrieval order, with a snippet of the chunk."""
     sources, seen = [], set()
     for r in results:
-        src = r["meta"].get("source", "Unknown")
-        page = r["meta"].get("page", "?")
-        key = f"{src}::{page}"
+        source = _source(r)
+        key = f"{source['source']}::{source['page']}"
         if key not in seen:
             seen.add(key)
-            snippet = r["text"]
-            sources.append({
-                "source": src,
-                "page": page,
-                "snippet": snippet[:SNIPPET_CHARS] + ("…" if len(snippet) > SNIPPET_CHARS else ""),
-                "score": round(r["score"], 3),
-            })
+            sources.append(source)
     return sources
+
+
+def cited_numbers(answer: str, available: int) -> List[int]:
+    """The chunk numbers an answer cites as [n], in order, without repeats or numbers that were not offered."""
+    numbers = (int(n) for n in re.findall(r"\[(\d+)\]", answer))
+    return sorted({n for n in numbers if 1 <= n <= available})
+
+
+def _answer_sources(answer: str, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    The sources to show for an answer. None for a refusal: it used no passage (R5). With
+    settings.answer_from = "chunks", the chunks the answer cites, each with its "number"; when
+    it cites none, every chunk retrieved, since there is no telling which it used.
+    """
+    if is_refusal(answer):
+        return []
+    cited = cited_numbers(answer, len(results)) if settings.answer_from == "chunks" else []
+    if cited:
+        return [{"number": n, **_source(results[n - 1])} for n in cited]
+    return _sources(results)
 
 
 def _refusal(text: str, confidence: float) -> Iterator[Dict[str, Any]]:
@@ -187,14 +225,14 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         return
 
     answer_text = ""
-    for chunk in _generate(mode, format_context(results), question, history, trace):
+    for chunk in _generate(mode, results, question, history, trace):
         answer_text += chunk
         yield {"type": "token", "content": chunk}
     trace.refused = is_refusal(answer_text)
 
     if save_turn:
         memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode])
-    yield {"type": "done", "sources": _sources(results), "confidence": confidence}
+    yield {"type": "done", "sources": _answer_sources(answer_text, results), "confidence": confidence}
 
 
 def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict[str, Any]]:

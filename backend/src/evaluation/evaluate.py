@@ -284,6 +284,7 @@ def run(dataset_path: Path, documents_dir: Path, label: str, modes: Iterable[str
             "embedding_model": settings.embedding_model, "top_k": settings.top_k,
             "confidence_threshold": settings.confidence_threshold,
             "chunk_size": settings.chunk_size, "chunk_overlap": settings.chunk_overlap,
+            "answer_from": settings.answer_from,
         },
         "modes": {mode: summarise([r for r in records if r["mode"] == mode], settings.top_k) for mode in modes},
         # From dense scores only: the threshold is applied to dense similarity
@@ -359,8 +360,8 @@ def build_report(results_dir: Path) -> str:
         lines.append(row(f"Seconds, {name} (median)", lambda r, t, name=name: _show(t["stages"].get(name, {}).get("median_seconds"))))
     lines += [row("Tokens in / out per question (mean)", lambda r, t: tokens(t)), "", "## Runs", ""]
     lines += [
-        "| Run | Date | Questions | Answers by | Judged by | Embeddings | top k | Threshold in use | Chunk size / overlap | Suggested threshold |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| Run | Date | Questions | Answers by | Written from | Judged by | Embeddings | top k | Threshold in use | Chunk size / overlap | Suggested threshold |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         s, t = r["settings"], r["threshold"]
@@ -369,6 +370,7 @@ def build_report(results_dir: Path) -> str:
         lines.append(
             f"| {r['label']} | {r['created'][:10]} | {r['dataset']['questions']} | "
             f"{'no answers (retrieval only)' if r['retrieval_only'] else s['llm_model']} | "
+            f"{'-' if r['retrieval_only'] else s['answer_from']} | "
             f"{s['judge_model'] or 'not judged'} | {s['embedding_model']} | {s['top_k']} | "
             f"{s['confidence_threshold']} | {s['chunk_size']} / {s['chunk_overlap']} | {suggested} |"
         )

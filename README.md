@@ -174,6 +174,8 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 
 Each run is saved as `docs\evaluation\<label>.json`, and `docs\evaluation.md` is rebuilt to show every saved run side by side, with a section explaining how each number is computed.
 
+To compare two settings, run it once for each with a different label. For example, `AETHER_ANSWER_FROM=chunks` in `backend\.env` makes the app write its answer straight from the retrieved passages and cite them as [1], [2], with no summary step (one model call per answer, not two). The default stays `summary` until a run shows which is better.
+
 ## Where data is kept
 
 All of these are created on first run and are ignored by git:
