@@ -608,6 +608,33 @@ describe('ChatLayout', () => {
     expect(screen.getByText('None: it answered directly')).toBeTruthy()
   })
 
+  it('lists an agent answer\'s steps in order above it, in place of the tools row (Sprint 8, item 2)', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('The inspection is due in 12 days.')
+      onDone?.(done({
+        sources: [SOURCE], confidence: 0.8, tool_used: 'datetime + document_search', turn_id: 43,
+        steps: [
+          { tool: 'document_search', input: 'last blade inspection date', output: 'The last inspection was on 2026-07-24.' },
+          { tool: 'datetime', input: '90 days after 2026-07-24', output: '90 days after 2026-07-24 is 2026-10-22.' },
+        ],
+      }))
+    })
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: 'Agent' }))
+    await ask('When is the next inspection?')
+
+    const steps = await screen.findByRole('list', { name: 'Steps the agent took' })
+    expect(within(steps).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Document searchlast blade inspection dateThe last inspection was on 2026-07-24.',
+      'Date and time90 days after 2026-07-2490 days after 2026-07-24 is 2026-10-22.',
+    ])
+    expect(screen.queryByText('Tools used')).toBeNull()
+    // Above the answer: the list comes before the answer's text in the page
+    const answer = screen.getByText('The inspection is due in 12 days.')
+    expect(steps.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('shows no tools row for an answer that did not come from the agent', async () => {
     vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
       onToken?.('Every 90 days.')

@@ -4,7 +4,7 @@ pipeline/rag.py — the one question-answering pipeline.
 events() yields what the client sees, in order:
   {"type": "token", "content": str}                      zero or more pieces of the answer
   {"type": "done", "sources": [...], "confidence": float, "turn_id": int | None, "usage": {...}}
-                                                         last; agent answers add "tool_used"
+                                                         last; agent answers add "tool_used" and "steps"
 turn_id names the saved turn, for feedback (F10); None when no turn was saved (a refusal, or the
 agent's own document search). A turn is saved only after its last token: a stream the client
 closes early (Stop) is not run to the end, so it saves no turn.
@@ -68,6 +68,7 @@ class RAGResponse(BaseModel):
     tool_used: Optional[str] = Field(default=None, description="Agent mode: which tools answered")
     turn_id: Optional[int] = Field(default=None, description="The saved turn, for feedback; None when none was saved")
     usage: Optional[Dict[str, Any]] = Field(default=None, description="Seconds and tokens, in all and by stage")
+    steps: Optional[List[Dict[str, str]]] = Field(default=None, description="Agent mode: each tool call, in order")
 
 
 # ── What one question did (read by the evaluation harness) ───────────────────
@@ -304,12 +305,13 @@ def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, st
     turn_id = memory.add_turn(user_id, session_id, question, result["answer"], result["confidence"] or 0.0,
                               mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
-           "tool_used": result["tool_used"], "turn_id": turn_id, "usage": _usage(trace, started, searches)}
+           "tool_used": result["tool_used"], "steps": result["steps"], "turn_id": turn_id,
+           "usage": _usage(trace, started, searches)}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
            save_turn: bool = True, trace: Optional[Trace] = None) -> Dict[str, Any]:
-    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "turn_id", "usage"}."""
+    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "steps", "turn_id", "usage"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
     for event in events(user_id, question, session_id, mode, save_turn, trace):
@@ -322,6 +324,7 @@ def answer(user_id: int, question: str, session_id: str = "default", mode: Mode 
         sources=done.get("sources", []),
         confidence=done.get("confidence", 0.0),
         tool_used=done.get("tool_used"),
+        steps=done.get("steps"),
         turn_id=done.get("turn_id"),
         usage=done.get("usage"),
     ).model_dump()

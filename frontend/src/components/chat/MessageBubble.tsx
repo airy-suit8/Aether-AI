@@ -4,7 +4,7 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Cite, ClarityRing, SourceCard } from '../../design/prism'
 import type { ClarityState } from '../../design/prism'
-import type { FeedbackValue, Source, Usage } from '../../services/api'
+import type { AgentStep, FeedbackValue, Source, Usage } from '../../services/api'
 import { remarkCitations } from './citations'
 import type { AnswerMessage, ChatMessage } from './types'
 
@@ -134,6 +134,27 @@ function UsageLine({ usage }: { usage: Usage }) {
   )
 }
 
+/**
+ * What an agent did, above its answer: each tool call in the order it ran, with what the tool
+ * was asked and the start of what it returned. A saved answer read back has only the tools row.
+ */
+function AgentSteps({ steps }: { steps: AgentStep[] }) {
+  return (
+    <div className="x-steps">
+      <p className="p-eyebrow">Steps</p>
+      <ol aria-label="Steps the agent took">
+        {steps.map((step, index) => (
+          <li key={index}>
+            <span className="x-tool">{TOOL_NAMES[step.tool] ?? step.tool.replace(/_/g, ' ')}</span>
+            <span className="x-steps__asked">{step.input || '(no input)'}</span>
+            <span className="x-steps__got">{step.output}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 const RATINGS: { value: Exclude<FeedbackValue, 0>; label: string; path: string }[] = [
   { value: 1, label: 'Helpful', path: 'M6 8.5V15H3.5V8.5H6Zm0 0 3-5.5c1.2 0 2 .9 1.8 2.1L10.4 7.5h3.7c.9 0 1.6.9 1.4 1.8l-1.1 4.6c-.2.7-.8 1.1-1.5 1.1H6' },
   { value: -1, label: 'Not helpful', path: 'M6 9.5V3H3.5v6.5H6Zm0 0 3 5.5c1.2 0 2-.9 1.8-2.1l-.4-2.4h3.7c.9 0 1.6-.9 1.4-1.8l-1.1-4.6C13.2 3.4 12.6 3 11.9 3H6' },
@@ -232,7 +253,7 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
             {clarity && <ClarityRing value={clarity.value} state={clarity.state} />}
             {message.mode && <span className="p-mono">{message.mode} mode</span>}
           </div>
-          {message.toolUsed && <ToolsUsed toolUsed={message.toolUsed} />}
+          {message.steps?.length ? <AgentSteps steps={message.steps} /> : message.toolUsed && <ToolsUsed toolUsed={message.toolUsed} />}
           <AnswerText content={message.content} cited={numbered ? [...byNumber.keys()].join(',') : ''} />
           {message.turnId != null && onRate && <Rating message={message} onRate={onRate} />}
           {message.usage && <UsageLine usage={message.usage} />}

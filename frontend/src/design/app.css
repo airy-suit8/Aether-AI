@@ -335,6 +335,21 @@
   background: var(--p-surface-3);
 }
 
+/* An agent's steps above its answer: the tool's chip, what it was asked, the start of its reply. */
+.x-steps { margin: -2px 0 14px; font-size: var(--p-text-sm); }
+.x-steps ol { display: grid; gap: 8px; margin: 6px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.x-steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  align-items: baseline;
+  counter-increment: step;
+}
+.x-steps li::before { content: counter(step); grid-row: span 3; font-family: var(--p-mono); color: var(--p-ink-3); }
+.x-steps .x-tool { justify-self: start; font-weight: 560; }
+.x-steps__asked { grid-column: 2; color: var(--p-ink); overflow-wrap: anywhere; }
+.x-steps__got { grid-column: 2; color: var(--p-ink-3); overflow-wrap: anywhere; }
+
 /* Rating: two quiet icon buttons under an answer; the chosen one is pressed, in the tonal fill. */
 .x-rate { display: flex; gap: 2px; margin: 10px 0 0 -10px; }
 .x-rate .p-icon-btn { color: var(--p-ink-3); }

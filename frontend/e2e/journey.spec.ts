@@ -12,6 +12,7 @@ import AxeBuilder from '@axe-core/playwright'
 
 const QUESTION = 'How often is the Zephyr turbine blade inspection?'
 const SECOND = 'Who carries out the inspection?'
+const AGENT_QUESTION = 'Where is the Zephyr blade inspection logged?'
 const WIDE = { width: 1280, height: 800 }
 const PHONE = { width: 375, height: 812 }
 const NARROW = { width: 360, height: 740 }  // item 8: usable from 360 px
@@ -122,6 +123,16 @@ test('the whole journey, with the accessibility gate', async ({ page }) => {
   await expect(page.getByRole('heading', { name: SECOND })).toBeVisible()
   await expect(page.locator('.x-margin').getByText('Sources')).toBeVisible()
   const secondThread = new URL(page.url()).pathname
+
+  // An agent answer lists its steps above it (Sprint 8, item 2)
+  await page.getByRole('radio', { name: 'Agent' }).click()
+  await composer.fill(AGENT_QUESTION)
+  await composer.press('Enter')
+  const agentSteps = page.getByRole('list', { name: 'Steps the agent took' })
+  await expect(agentSteps.getByRole('listitem')).toHaveCount(1)
+  await expect(agentSteps).toContainText('Document search')
+  await expect(agentSteps).toContainText(AGENT_QUESTION)
+  await page.getByRole('radio', { name: 'Default' }).click()
 
   const threads = page.getByRole('navigation', { name: 'Conversations' })
   await expect(threads.getByRole('link')).toHaveCount(2)
