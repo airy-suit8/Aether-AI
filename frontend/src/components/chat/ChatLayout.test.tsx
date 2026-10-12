@@ -547,4 +547,36 @@ describe('ChatLayout', () => {
     const margin = screen.getByText('Sources').parentElement as HTMLElement
     expect(within(margin).getByRole('button').querySelector('.p-source__n')?.textContent).toBe('1')
   })
+
+  it('names the tools an agent answer used, in a labelled row', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('The inspection is due in 12 days.')
+      onDone?.(done({ sources: [SOURCE], confidence: 0.8, tool_used: 'calculator + document_search', turn_id: 40 }))
+    })
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: 'Agent' }))
+    await ask('When is the next inspection?')
+    const row = (await screen.findByText('Tools used')).parentElement as HTMLElement
+    expect(row.textContent).toBe('Tools usedCalculatorDocument search')
+
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Hello.')
+      onDone?.(done({ tool_used: 'agent_direct', confidence: null, turn_id: 41 }))
+    })
+    await ask('Hello')
+    await vi.waitFor(() => expect(screen.getAllByText('Tools used')).toHaveLength(2))
+    expect(screen.getByText('None: it answered directly')).toBeTruthy()
+  })
+
+  it('shows no tools row for an answer that did not come from the agent', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Every 90 days.')
+      onDone?.(done({ sources: [SOURCE], confidence: 0.8, turn_id: 42 }))
+    })
+    renderChat()
+    await ask('How often?')
+    expect(await screen.findByText('Every 90 days.')).toBeTruthy()
+    expect(screen.queryByText('Tools used')).toBeNull()
+  })
 })

@@ -312,6 +312,19 @@
 
 .x-status__working { display: inline-flex; align-items: center; gap: 12px; color: var(--p-ink-2); }
 
+/* Tools used: the agent's tools as a labelled row of quiet chips above its answer. */
+.x-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 14px;
+  font-size: var(--p-text-sm);
+  font-weight: 560;
+}
+
+.x-tools .p-eyebrow { margin-right: 2px; }
+
 .x-tool {
   display: inline-flex;
   align-items: center;

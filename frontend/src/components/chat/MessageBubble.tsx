@@ -71,6 +71,28 @@ const AnswerText = memo(function AnswerText({ content, cited }: { content: strin
   )
 })
 
+// What the agent's tools are called in a sentence. tool_used joins their names with " + ";
+// "agent_direct" means the agent used none.
+const TOOL_NAMES: Record<string, string> = {
+  document_search: 'Document search',
+  calculator: 'Calculator',
+  datetime: 'Date and time',
+  agent_direct: 'None: it answered directly',
+}
+
+/** A labelled row naming the tools an agent answer used, in the order the server lists them. */
+function ToolsUsed({ toolUsed }: { toolUsed: string }) {
+  const tools = toolUsed.split('+').map((name) => name.trim()).filter(Boolean)
+  return (
+    <p className="x-tools">
+      <span className="p-eyebrow">Tools used</span>
+      {tools.map((name) => (
+        <span key={name} className="x-tool">{TOOL_NAMES[name] ?? name.replace(/_/g, ' ')}</span>
+      ))}
+    </p>
+  )
+}
+
 const RATINGS: { value: Exclude<FeedbackValue, 0>; label: string; path: string }[] = [
   { value: 1, label: 'Helpful', path: 'M6 8.5V15H3.5V8.5H6Zm0 0 3-5.5c1.2 0 2 .9 1.8 2.1L10.4 7.5h3.7c.9 0 1.6.9 1.4 1.8l-1.1 4.6c-.2.7-.8 1.1-1.5 1.1H6' },
   { value: -1, label: 'Not helpful', path: 'M6 9.5V3H3.5v6.5H6Zm0 0 3 5.5c1.2 0 2-.9 1.8-2.1l-.4-2.4h3.7c.9 0 1.6-.9 1.4-1.8l-1.1-4.6C13.2 3.4 12.6 3 11.9 3H6' },
@@ -164,9 +186,9 @@ export default function MessageBubble({ message, isStreaming = false, streamingP
         <div>
           <div className="x-status">
             {clarity && <ClarityRing value={clarity.value} state={clarity.state} />}
-            {message.toolUsed && <span className="x-tool p-mono">tool · {message.toolUsed}</span>}
             {message.mode && <span className="p-mono">{message.mode} mode</span>}
           </div>
+          {message.toolUsed && <ToolsUsed toolUsed={message.toolUsed} />}
           <AnswerText content={message.content} cited={numbered ? [...byNumber.keys()].join(',') : ''} />
           {message.turnId != null && onRate && <Rating message={message} onRate={onRate} />}
         </div>
