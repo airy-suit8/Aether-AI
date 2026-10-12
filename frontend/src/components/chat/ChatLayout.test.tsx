@@ -579,4 +579,25 @@ describe('ChatLayout', () => {
     expect(await screen.findByText('Every 90 days.')).toBeTruthy()
     expect(screen.queryByText('Tools used')).toBeNull()
   })
+
+  it('says whether an upload is being sent or being read', async () => {
+    let accept: (reply: Awaited<ReturnType<typeof api.uploadDocument>>) => void = () => {}
+    let read: (doc: Awaited<ReturnType<typeof api.getDocument>>) => void = () => {}
+    vi.mocked(api.uploadDocument).mockImplementationOnce(() => new Promise((resolve) => { accept = resolve }))
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockImplementationOnce(() => new Promise((resolve) => { read = resolve }))
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    expect(await screen.findByText('Sending plan.pdf')).toBeTruthy()
+    expect(screen.getByText('Uploading the file')).toBeTruthy()
+
+    await act(async () => accept({ document_id: 12, filename: 'plan.pdf', status: 'processing', replaces: false, message: "Reading 'plan.pdf'." }))
+    expect(await screen.findByText('Reading plan.pdf')).toBeTruthy()
+    expect(screen.getByText('Splitting it into passages')).toBeTruthy()
+
+    await act(async () => read(documentStatus({ id: 12, filename: 'plan.pdf', status: 'ready', pages: 2, chunks: 5 })))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Added plan.pdf: 5 passages from 2 pages.', 'success'))
+    expect(screen.getByText('Add a document')).toBeTruthy()
+  })
 })

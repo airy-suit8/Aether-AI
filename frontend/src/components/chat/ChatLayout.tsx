@@ -12,7 +12,7 @@ import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '
 import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
-import type { AddToast, AnswerMessage, ChatMessage, Failure } from './types'
+import type { AddToast, AnswerMessage, ChatMessage, Failure, UploadProgress } from './types'
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -100,7 +100,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
-  const [uploadProgress, setUploadProgress] = useState<{ filename: string; status: string } | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
 
   const streamRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -328,6 +328,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     setUploadProgress({ filename: file.name, status: 'uploading' })
     try {
       const accepted = await uploadDocument(file)
+      setUploadProgress({ filename: file.name, status: 'reading' })
       refreshDocuments()  // it shows in the library as being read
       let doc = await getDocument(accepted.document_id)
       for (let tries = 0; doc.status === 'processing' && tries < POLL_LIMIT && mountedRef.current; tries++) {
