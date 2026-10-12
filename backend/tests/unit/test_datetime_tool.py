@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-import tools
+from src.agents import tools
 
 
 def test_the_model_is_given_the_current_date_and_the_question(fake_llm):

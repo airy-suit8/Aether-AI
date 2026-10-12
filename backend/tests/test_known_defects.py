@@ -11,9 +11,10 @@ import tempfile
 import pytest
 from langchain_core.documents import Document
 
-import rag_engine
-import rag_langchain
-from filemakers import make_docx, make_pdf, make_xls, make_xlsx
+from src.retrieval import retriever
+from src.vectordb import vector_store
+from filemakers import make_docx, make_xls, make_xlsx
+from src.ingestion import loader
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 from fakes import ScriptedChatModel
 from langchain_core.messages import AIMessage
@@ -24,7 +25,7 @@ def known(reason):
 
 
 def load(path):
-    return rag_engine.load_document(str(path), path.name)
+    return loader.load_document(str(path), path.name)
 
 
 # ── R3: hybrid search ─────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ def test_fusion_keeps_different_chunks_that_share_an_opening(monkeypatch):
     assert len(opening) > 120
     first = {"text": opening + "Applies to turbines.", "meta": {"chunk_id": "c1", "source": "a.txt"}, "score": 0.9}
     second = {"text": opening + "Applies to pumps.", "meta": {"chunk_id": "c2", "source": "a.txt"}, "score": 0.8}
-    store = rag_engine.ChromaVectorStoreWrapper()
+    store = retriever.Retriever(vector_store.store)
     monkeypatch.setattr(store, "search", lambda user_id, query, k: [first, second])
     monkeypatch.setattr(store, "search_bm25", lambda user_id, query, k: [second])
     hits = store.search_hybrid(1, "lockout procedure", k=5)
@@ -43,7 +44,7 @@ def test_fusion_keeps_different_chunks_that_share_an_opening(monkeypatch):
 
 
 def _add_chunks(user_id, texts):
-    rag_engine._store.add_documents(user_id, [
+    vector_store.store.add_documents(user_id, [
         Document(page_content=t, metadata={"source": f"doc{i}.txt", "page": 1, "chunk_id": f"{user_id}-{i}"})
         for i, t in enumerate(texts)
     ])
@@ -52,13 +53,13 @@ def _add_chunks(user_id, texts):
 @known("R3: BM25 finds nothing for a user with a single chunk (every term's idf is negative)")
 def test_bm25_finds_the_only_chunk():
     _add_chunks(860001, ["The north gate opens at six every morning"])
-    assert rag_engine._store.search_bm25(860001, "north gate", k=5)
+    assert retriever.retriever.search_bm25(860001, "north gate", k=5)
 
 
 @known("R3: BM25 finds nothing for a user with two chunks when the word is in one (idf is zero)")
 def test_bm25_finds_one_of_two_chunks():
     _add_chunks(860002, ["The north gate opens at six every morning", "Lunch is served in the canteen"])
-    hits = rag_engine._store.search_bm25(860002, "gate", k=5)
+    hits = retriever.retriever.search_bm25(860002, "gate", k=5)
     assert [h["meta"]["source"] for h in hits] == ["doc0.txt"]
 
 
@@ -73,13 +74,13 @@ CORPUS = [
 def test_bm25_control_matches_a_plain_word():
     # Same corpus as the next test: a word without punctuation is found, so BM25 itself works here
     _add_chunks(860003, CORPUS)
-    assert [h["meta"]["source"] for h in rag_engine._store.search_bm25(860003, "canteen", k=5)] == ["doc1.txt"]
+    assert [h["meta"]["source"] for h in retriever.retriever.search_bm25(860003, "canteen", k=5)] == ["doc1.txt"]
 
 
 @known("R3: the BM25 tokenizer is lower().split(), so 'gate' never matches 'gate.'")
 def test_bm25_matches_a_word_next_to_punctuation():
     _add_chunks(860004, CORPUS)
-    assert [h["meta"]["source"] for h in rag_engine._store.search_bm25(860004, "gate", k=5)] == ["doc0.txt"]
+    assert [h["meta"]["source"] for h in retriever.retriever.search_bm25(860004, "gate", k=5)] == ["doc0.txt"]
 
 
 # ── R9: parsing ───────────────────────────────────────────────────────────────
@@ -181,7 +182,7 @@ def refusing_model(monkeypatch):
 
 
 @known("R5 / Status: a refused answer still lists every retrieved chunk as a source")
-@pytest.mark.parametrize("modes", [{}, {"use_hybrid": True}, {"use_langchain": True}], ids=["default", "hybrid", "langchain"])
+@pytest.mark.parametrize("modes", [{}, {"mode": "hybrid"}, {"mode": "langchain"}], ids=["default", "hybrid", "langchain"])
 def test_refused_answer_lists_no_sources(client, make_user, refusing_model, modes):
     _, headers = make_user("refuse")
     upload_text(client, headers, text=DOC_TEXT)
@@ -197,11 +198,3 @@ def test_refused_streamed_answer_lists_no_sources(client, make_user, refusing_mo
     _, events = ask_stream(client, headers, "How often is the Zephyr turbine blade inspection?")
     assert "".join(e["content"] for e in events if e["type"] == "token") == REFUSAL
     assert events[-1]["sources"] == []
-
-
-# ── Found in Sprint 2 (not in the audit) ──────────────────────────────────────
-
-@known("New in Sprint 2: the LangChain PDF loader keeps PyPDFLoader's 0-based page numbers (cites p. 0)")
-def test_langchain_pdf_pages_are_numbered_from_one(tmp_path):
-    docs = rag_langchain.load_document_langchain(str(make_pdf(tmp_path / "two.pdf", ["one", "two"])), "two.pdf")
-    assert [d.metadata["page"] for d in docs] == [1, 2]

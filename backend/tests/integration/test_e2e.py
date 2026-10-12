@@ -9,7 +9,7 @@ a temp database and a temp vector store (see conftest.py). No API key, no networ
 import jwt
 import pytest
 
-import database
+from src.db import database
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 FILENAME = "zephyr_manual.txt"
@@ -17,9 +17,9 @@ QUESTION = "How often is the Zephyr turbine blade inspection?"
 
 MODES = {
     "default": ({}, "original"),
-    "hybrid": ({"use_hybrid": True}, "hybrid"),
-    "agent": ({"use_agent": True}, "agent"),
-    "langchain": ({"use_langchain": True}, "langchain"),
+    "hybrid": ({"mode": "hybrid"}, "hybrid"),
+    "agent": ({"mode": "agent"}, "agent"),
+    "langchain": ({"mode": "langchain"}, "langchain"),
 }
 
 

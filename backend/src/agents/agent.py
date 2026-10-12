@@ -1,43 +1,41 @@
 """
-agent.py — Task 11.5: Multi-Step Agent Execution Layer
-Uses LangGraph's create_react_agent to allow the LLM to chain multiple tools together
+agents/agent.py — Task 11.5: Multi-Step Agent Execution Layer
+Uses LangChain's create_agent (a LangGraph agent loop) to allow the LLM to chain multiple tools together
 (e.g., Search RAG -> Calculate Math -> Web Search -> Final Answer) while preserving
 structured metadata for the UI.
 """
 
-import os
-from dotenv import load_dotenv
+from typing import Callable
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.agents import create_agent
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
+from langgraph.errors import GraphRecursionError
 
-from tools import calculator, datetime_tool
-from rag_engine import query_rag
+from src.core.config import settings
+from src.llm import llm_client
+from src.memory.conversation import memory as _memory
+from src.agents.tools import calculator, datetime_tool
+from src.prompts.prompt_templates import AGENT_SYSTEM_PROMPT
 
-load_dotenv(override=False)
-
-
-# Maximum LangGraph steps per question (each tool call takes two). LangGraph's default is
-# 10,000, so a model that keeps calling tools would run, and bill, almost without limit.
-AGENT_RECURSION_LIMIT = 12
-
-
-def _get_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
-        temperature=0.0,
-    )
+# The answer when the agent hits settings.agent_recursion_limit
+OUT_OF_STEPS = "Sorry, need more steps to process this request."
 
 
-def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
+
+
+def run_agent(user_id: int, question: str, session_id: str,
+              search_documents: Callable[[str], dict]) -> dict:
     """
     Agent Decision Layer — uses an Execution Loop (ReAct / Tool Calling).
     
     We define closure-based wrappers for our tools so we can dynamically track
     which tools the agent uses and intercept structured metadata from the RAG 
     engine (like sources and confidence) without losing them in the LLM loop.
+
+    search_documents(query) answers a sub-question from the user's documents and returns
+    {"answer", "sources", "confidence"}; the pipeline passes it in, and must not save the
+    sub-question as a turn (run_agent saves the user's turn).
     """
     
     metadata_store = {
@@ -52,8 +50,7 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     def document_search_wrapper(query: str) -> str:
         """Search the user's uploaded documents for factual questions, general knowledge, summarizing content, or anything related to user documents."""
         metadata_store["tool_used"].add("document_search")
-        # save_turn=False: this is the agent's internal sub-query; run_agent saves the user's turn
-        rag_result = query_rag(user_id, query, session_id=session_id, save_turn=False)
+        rag_result = search_documents(query)
         
         # Merge sources and track minimum confidence across all searches
         metadata_store["sources"].extend(rag_result["sources"])
@@ -81,22 +78,9 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
         document_search_wrapper
     ]
     
-    llm = _get_llm()
-    
-    system_prompt = (
-        "You are the Aether AI Knowledge Assistant. You can chain multiple tools together to answer complex user questions.\n"
-        "- If you need information from uploaded documents, use document_search_wrapper.\n"
-        "- If you need to do math, use calculator_wrapper.\n"
-        "- If you need date/time info, use datetime_wrapper.\n"
-        "- If you need real-world facts, flight distances, prices, or general knowledge that is NOT in the user's documents, DO NOT attempt to search the web. Instead, rely on your own vast internal knowledge base to provide the data.\n"
-        "Think step-by-step. Use the tools to gather necessary data, then synthesize the outputs into a clear final conversational answer.\n"
-        "CRITICAL: After using a tool, you MUST output a final text response. NEVER return an empty string."
-    )
-    
-    from langchain_core.messages import HumanMessage, AIMessage
-    from rag_engine import _memory
-    
-    agent = create_react_agent(llm, tools, prompt=system_prompt)
+    llm = llm_client.get_llm(temperature=settings.tool_temperature)
+
+    agent = create_agent(llm, tools, system_prompt=AGENT_SYSTEM_PROMPT)
     
     # Inject conversation history so the agent understands context (e.g. "assume 1890 km")
     history = _memory.get_history(user_id, session_id)
@@ -106,13 +90,19 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
         messages.append(AIMessage(content=turn["answer"]))
     messages.append(HumanMessage(content=question))
     
-    # Run the multi-step execution loop. Errors propagate to the API, which reports
-    # them as errors instead of saving and showing them as an answer.
-    result = agent.invoke({"messages": messages}, config={"recursion_limit": AGENT_RECURSION_LIMIT})
-    
+    # Run the multi-step execution loop. LangGraph's default limit is 10,000 steps, so a model
+    # that keeps calling tools would run, and bill, almost without limit; the setting caps it.
+    # Other errors propagate to the API, which reports them as errors instead of saving and
+    # showing them as an answer.
+    try:
+        result = agent.invoke({"messages": messages}, config={"recursion_limit": settings.agent_recursion_limit})
+    except GraphRecursionError:
+        # create_agent raises at the limit; the old create_react_agent answered with this text
+        result = {"messages": [AIMessage(content=OUT_OF_STEPS)]}
+
     # Extract the final answer from the LLM (.text joins content blocks into one string)
     final_answer = result["messages"][-1].text
-    
+
     # Fallback: Sometimes Gemini fails to synthesize a final string after a tool call.
     # If the final text is empty, check if the previous message was a ToolMessage and use its raw output.
     if not final_answer.strip() and len(result["messages"]) > 1:

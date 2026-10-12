@@ -3,7 +3,7 @@
 import jwt
 import pytest
 
-import database
+from src.db import database
 from helpers import upload_text, ask, ask_stream
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
@@ -22,9 +22,9 @@ def _rows(headers, session_id):
 
 MODES = [
     ({}, "original"),
-    ({"use_hybrid": True}, "hybrid"),
-    ({"use_langchain": True}, "langchain"),
-    ({"use_agent": True}, "agent"),
+    ({"mode": "hybrid"}, "hybrid"),
+    ({"mode": "langchain"}, "langchain"),
+    ({"mode": "agent"}, "agent"),
 ]
 
 

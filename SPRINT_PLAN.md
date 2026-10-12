@@ -10,8 +10,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 1 Make it work end to end | Done, merged 11 Oct 2026 (PR #1) | See below |
 | 2 Safety net | Done, merged 12 Oct 2026 | See below |
 | Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
-| 3 Restructure and connect | Next | |
-| 4 and 5 | Not started | |
+| 3 Restructure and connect | Done, in review (branch `sprint-3`) | See below |
+| 4 and 5 | Not started; 4 is next | |
 | 6 Frontend rebuild | Visual redesign done early; engineering items remain | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
@@ -46,6 +46,23 @@ What Sprint 2 found, to act on later:
 - **A corrupt PDF gives 500 without a path; a corrupt DOCX gives 500 with the temp path.** The audit said both leak the path. Strict xfail for both (R9).
 - **Requests that fail validation never reach the rate limiter**, so 422s do not count towards a limit. Harmless for login today (no password is checked); keep it in mind for Sprint 5 item 3.
 
+Evidence for Sprint 3, checked on Linux (Python 3.12, Node 22):
+
+- `python -m pytest`: 307 passed, 20 xfailed, with no API key and no `JWT_SECRET` in the environment. The same in a fresh virtual environment built only from `requirements-dev.txt`.
+- `ruff check .`: all checks passed. Coverage: 99% in total; every module in the CI list at 90% or above.
+- Frontend: `npm ci`, `npm run lint` (0 errors), `npm test` (26 passed), `npm run build`.
+- The OpenAPI snapshot's only change is the chat request: three booleans out, one `mode` field in.
+- `python -m uvicorn main:app` from `backend/` starts without a Gemini key and answers `/health`; the lifespan hook created only the database and the log folder.
+- `grep -rn "gemini-" backend/src` returns two lines, both in `core/config.py`: the chat model id and the embedding model id. Each id is written once.
+
+What Sprint 3 changed that later sprints should know:
+
+- **The LangChain loaders are wired in** behind `load_document()`, chosen by `AETHER_DOCUMENT_LOADER` (`native` by default). Their 0-based PDF page is fixed. Sprint 4 item 9 (parsing) should decide whether one loader set can go.
+- **`langchain-community` is still a dependency**, and still prints its deprecation warning, because the LangChain loaders live only there. No standalone package provides PyPDFLoader, Docx2txtLoader, TextLoader or CSVLoader yet.
+- **One strict xfail is gone** (LangChain PDF pages from 0, fixed here); 20 remain, all for Sprints 4 and 5.
+- **The agent uses `langchain.agents.create_agent`** (`langchain==1.3.11`). At the step limit it raises; the agent catches that and gives the old answer.
+- **Model calls now have a 120 s timeout and an 8192-token output cap; embeddings a 60 s timeout.** Not yet checked against the real API.
+
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
 The old sprint log recorded what was written. These sprints record what was proven.
@@ -73,7 +90,7 @@ Seam checklist. Tick each when its test exists and passes.
 - [x] Service → database: a chat turn is saved with its real confidence and mode
 - [x] Tenant isolation: user B cannot read, search or delete user A's data (both directions, including history and feedback, since Sprint 2)
 - [x] Every chat mode: default, hybrid and agent each answer in the end-to-end test
-- [ ] Config: the model id appears in exactly one place
+- [x] Config: the model id appears in exactly one place (`tests/test_no_orphans.py::test_each_model_id_is_written_in_exactly_one_place`; the no-orphan check also fails if anything but `core/config.py` reads the environment)
 - [x] Backend → UI: `GET /` returns the built React app
 - [ ] Docker: `docker compose up` passes the same end-to-end test (deferred with the Docker work)
 - [ ] Evaluation: the harness imports and calls the real pipeline

@@ -12,8 +12,9 @@ from datetime import timedelta
 import jwt
 import pytest
 
-import auth
-import main
+from src.api import routes_chat, routes_documents
+from src.core import security
+from src.core.config import settings
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
@@ -32,8 +33,8 @@ def _bearer(token):
 BAD_TOKENS = {
     "garbage": "not-a-jwt",
     "wrong_secret": jwt.encode({"sub": "1"}, "a-different-secret-that-is-at-least-32-bytes", algorithm="HS256"),
-    "no_subject": auth.create_access_token({"name": "x"}, expires_delta=timedelta(minutes=5)),
-    "expired": auth.create_access_token({"sub": "1"}, expires_delta=timedelta(seconds=-10)),
+    "no_subject": security.create_access_token({"name": "x"}, expires_delta=timedelta(minutes=5)),
+    "expired": security.create_access_token({"sub": "1"}, expires_delta=timedelta(seconds=-10)),
 }
 
 
@@ -157,7 +158,8 @@ def test_upload_without_a_file_is_422(client, make_user):
 @pytest.mark.parametrize("body", [
     {},                                                  # no question
     {"question": 42},                                    # not a string
-    {"question": "hi", "use_agent": "sometimes"},        # not a boolean
+    {"question": "hi", "mode": "sometimes"},             # not a mode
+    {"question": "hi", "use_agent": True},               # the old flags are gone
     {"question": "hi", "session_id": "has space"},       # bad session id
 ])
 def test_chat_routes_reject_bad_input(client, make_user, path, body):
@@ -187,7 +189,7 @@ def test_upload_rejections(client, make_user, filename, content, status):
 
 def test_upload_over_the_size_limit_is_rejected(client, make_user, monkeypatch):
     _, headers = make_user("big")
-    monkeypatch.setattr(main, "MAX_FILE_SIZE", 100)
+    monkeypatch.setattr(settings, "max_upload_bytes", 100)
     r = upload_text(client, headers, text="x" * 101)
     assert r.status_code == 400
     assert "too large" in r.json()["detail"]
@@ -199,7 +201,7 @@ def test_upload_ingestion_failure_is_500_and_records_nothing(client, make_user, 
     def broken(*args, **kwargs):
         raise RuntimeError("embedding service down")
 
-    monkeypatch.setattr(main, "ingest_document", broken)
+    monkeypatch.setattr(routes_documents, "ingest_document", broken)
     assert upload_text(client, headers).status_code == 500
     assert client.get("/api/v1/documents", headers=headers).json()["count"] == 0
 
@@ -219,18 +221,18 @@ def test_chat_failure_is_500(client, make_user, fake_llm):
     assert r.json()["detail"].startswith("Query failed")
 
 
-@pytest.mark.parametrize("method,path,target", [
-    ("post", "/api/v1/feedback", "update_conversation_feedback"),
-    ("get", "/api/v1/documents", "list_documents"),
-    ("get", "/api/v1/documents/detailed", "get_all_documents_detailed"),
+@pytest.mark.parametrize("method,path,module,target", [
+    ("post", "/api/v1/feedback", routes_chat, "update_conversation_feedback"),
+    ("get", "/api/v1/documents", routes_documents, "list_documents"),
+    ("get", "/api/v1/documents/detailed", routes_documents, "get_all_documents_detailed"),
 ])
-def test_storage_failure_is_500(client, make_user, monkeypatch, method, path, target):
+def test_storage_failure_is_500(client, make_user, monkeypatch, method, path, module, target):
     _, headers = make_user("dbfail")
 
     def broken(*args, **kwargs):
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr(main, target, broken)
+    monkeypatch.setattr(module, target, broken)
     kwargs = {"json": {"session_id": "s1", "feedback": 1}} if method == "post" else {}
     assert getattr(client, method)(path, headers=headers, **kwargs).status_code == 500
 

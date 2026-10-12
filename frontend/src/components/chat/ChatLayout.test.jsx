@@ -56,7 +56,7 @@ describe('ChatLayout', () => {
 
     expect(api.sendChatStream).toHaveBeenCalledTimes(1)
     expect(api.sendChatStream.mock.calls[0][0]).toMatchObject({
-      question: 'How often are the blades inspected?', useAgent: false, useLangchain: false, useHybrid: false,
+      question: 'How often are the blades inspected?', mode: 'default',
     })
     expect(screen.getByText('How often are the blades inspected?')).toBeTruthy()
 
@@ -100,6 +100,6 @@ describe('ChatLayout', () => {
     // The answer mode is one radio group now, not four toggle buttons
     await user.click(screen.getByRole('radio', { name: /hybrid/i }))
     await ask('Hybrid please')
-    expect(api.sendChatStream.mock.calls[0][0].useHybrid).toBe(true)
+    expect(api.sendChatStream.mock.calls[0][0].mode).toBe('hybrid')
   })
 })

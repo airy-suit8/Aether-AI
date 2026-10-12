@@ -1,13 +1,17 @@
-"""The chunker inside ingest_document (and its LangChain twin): sizes, overlap, metadata."""
+"""The chunker that ingest_document uses for every upload: sizes, overlap, metadata."""
 
 import re
 import uuid
 
 import pytest
 
-import rag_engine
-import rag_langchain
+from src.retrieval import retriever
+from src.vectordb import vector_store
 from filemakers import make_pdf
+from src.chunking import chunker
+from src.core.config import settings
+from src.ingestion import loader
+from src.pipeline.documents import ingest_document
 
 SENTENCES = [f"Sentence number {i} describes maintenance step {i} in detail." for i in range(80)]
 LONG_TEXT = " ".join(SENTENCES)  # about 4,700 characters, no newlines
@@ -17,14 +21,14 @@ LONG_TEXT = " ".join(SENTENCES)  # about 4,700 characters, no newlines
 def captured(monkeypatch):
     """Capture what ingest_document hands to the vector store, without embedding it."""
     stored = []
-    monkeypatch.setattr(rag_engine._store, "add_documents", lambda user_id, docs: stored.extend(docs))
+    monkeypatch.setattr(vector_store.store, "add_documents", lambda user_id, docs: stored.extend(docs))
     return stored
 
 
 def _ingest(tmp_path, text, name="long.txt"):
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
-    return rag_engine.ingest_document(1, str(path), name)
+    return ingest_document(1, str(path), name)
 
 
 def test_short_text_is_one_chunk(tmp_path, captured):
@@ -36,7 +40,7 @@ def test_short_text_is_one_chunk(tmp_path, captured):
 def test_long_text_is_split_within_the_size_limit_and_loses_nothing(tmp_path, captured):
     result = _ingest(tmp_path, LONG_TEXT)
     assert result["chunks"] == len(captured) > 4
-    assert all(len(c.page_content) <= rag_engine.CHUNK_SIZE for c in captured)
+    assert all(len(c.page_content) <= settings.chunk_size for c in captured)
     joined = " ".join(c.page_content for c in captured)
     assert all(s.rstrip(".") in joined for s in SENTENCES)
 
@@ -48,7 +52,7 @@ def test_consecutive_chunks_overlap_by_at_most_the_overlap_setting(tmp_path, cap
         shared = f"Sentence number {first_number} "
         assert shared in before.page_content, "no overlap between consecutive chunks"
         overlap = before.page_content[before.page_content.index(shared):]
-        assert len(overlap) <= rag_engine.CHUNK_OVERLAP
+        assert len(overlap) <= settings.chunk_overlap
 
 
 def test_chunks_keep_source_page_and_type_and_get_unique_ids(tmp_path, captured):
@@ -62,7 +66,7 @@ def test_chunks_keep_source_page_and_type_and_get_unique_ids(tmp_path, captured)
 
 def test_chunks_keep_their_pdf_page(tmp_path, captured):
     path = make_pdf(tmp_path / "two.pdf", ["Page one text", "Page two text"])
-    result = rag_engine.ingest_document(1, str(path), "two.pdf")
+    result = ingest_document(1, str(path), "two.pdf")
     assert result == {"filename": "two.pdf", "pages": 2, "chunks": 2}
     assert [(c.page_content, c.metadata["page"]) for c in captured] == [("Page one text", 1), ("Page two text", 2)]
 
@@ -77,31 +81,32 @@ def test_stored_chunks_are_tagged_with_the_user(tmp_path):
     user = 880001
     path = tmp_path / "tagged.txt"
     path.write_text(LONG_TEXT, encoding="utf-8")
-    rag_engine.ingest_document(user, str(path), "tagged.txt")
-    metas = rag_engine._store.chroma._collection.get(where={"user_id": user}, include=["metadatas"])["metadatas"]
+    ingest_document(user, str(path), "tagged.txt")
+    metas = vector_store.store.chroma._collection.get(where={"user_id": user}, include=["metadatas"])["metadatas"]
     assert metas and all(m["user_id"] == user and m["source"] == "tagged.txt" for m in metas)
 
 
-# ── LangChain splitter (rag_langchain, Task 13) ───────────────────────────────
+# ── LangChain loaders and the shared splitter (Tasks 12, 13) ──────────────────
 
 def test_langchain_splitter_numbers_its_chunks(tmp_path):
     path = tmp_path / "long.txt"
     path.write_text(LONG_TEXT, encoding="utf-8")
-    chunks = rag_langchain.split_documents_langchain(rag_langchain.load_document_langchain(str(path), "long.txt"))
+    chunks = chunker.split_documents(loader.load_document_langchain(str(path), "long.txt"))
     assert len(chunks) > 4
     assert [c.metadata["chunk_index"] for c in chunks] == list(range(1, len(chunks) + 1))
     assert {c.metadata["total_chunks"] for c in chunks} == {len(chunks)}
-    assert all(len(c.page_content) <= rag_engine.CHUNK_SIZE for c in chunks)
+    assert all(len(c.page_content) <= settings.chunk_size for c in chunks)
 
 
-def test_langchain_ingest_stores_searchable_chunks(tmp_path):
+def test_langchain_ingest_stores_searchable_chunks(tmp_path, monkeypatch):
     user = 880002
     path = tmp_path / "lc.txt"
     path.write_text("The Halcyon register records every blade inspection.", encoding="utf-8")
-    assert rag_langchain.ingest_document_langchain(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
-    hits = rag_engine._store.search(user, "Halcyon register", k=1)
+    monkeypatch.setattr(settings, "document_loader", "langchain")
+    assert ingest_document(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
+    hits = retriever.retriever.search(user, "Halcyon register", k=1)
     assert hits[0]["meta"]["source"] == "lc.txt"
     with pytest.raises(ValueError):
         empty = tmp_path / "empty.txt"
         empty.write_text("", encoding="utf-8")
-        rag_langchain.ingest_document_langchain(user, str(empty), "empty.txt")
+        ingest_document(user, str(empty), "empty.txt")
