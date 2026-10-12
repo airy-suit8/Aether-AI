@@ -8,6 +8,7 @@ data, and makes no call to Google. The temp folder is removed when the server st
 Playwright starts it (frontend/playwright.config.js). By hand, from backend/:
 
     python tests/e2e_server.py --port 8765
+    python tests/e2e_server.py --answer-from chunks     (answers cite their passages as [1], [2])
 
 Settings a developer's backend/.env may hold that would change the journey (an invite code, a
 production environment, HTTPS-only cookies) are set here for this process only.
@@ -29,6 +30,8 @@ sys.path.insert(0, str(HERE))         # tests/, for fakes
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aether AI backend with fake models, for the browser journey")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--answer-from", choices=["summary", "chunks"], default="summary",
+                        help="AETHER_ANSWER_FROM for this server; chunks shows citation markers")
     args = parser.parse_args()
 
     data = Path(tempfile.mkdtemp(prefix="aether_e2e_"))
@@ -43,7 +46,7 @@ def main() -> None:
         "AETHER_INVITE_CODE": "",
         "AETHER_ENVIRONMENT": "development",
         "AETHER_COOKIE_SECURE": "false",
-        "AETHER_ANSWER_FROM": "summary",
+        "AETHER_ANSWER_FROM": args.answer_from,
     })
 
     from fakes import HashingEmbeddings, ScriptedChatModel

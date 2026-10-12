@@ -404,15 +404,26 @@ export function Dialog({ title, onClose, width, children }: {
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const scrimRef = useRef<HTMLDivElement>(null)
+  // What had focus when the dialog opened, read before anything is made inert (which would move it)
+  const [returnTo] = useState(() => document.activeElement)
 
-  useEffect(() => (scrimRef.current ? inertAround(scrimRef.current) : undefined), [])
+  // On opening: the page behind becomes inert and focus moves in; on closing, both are undone
+  useEffect(() => {
+    const node = ref.current
+    const scrim = scrimRef.current
+    if (!node || !scrim) return undefined
+    const undoInert = inertAround(scrim)
+    ;(node.querySelector<HTMLElement>('input, select, textarea') ?? node).focus()
+    return () => {
+      undoInert()
+      if (returnTo instanceof HTMLElement) returnTo.focus()
+    }
+  }, [returnTo])
 
   useEffect(() => {
     const node = ref.current
     if (!node) return undefined
-    const previous = document.activeElement
     const focusables = () => [...node.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input, select, textarea, [tabindex="0"]')]
-    ;(node.querySelector<HTMLElement>('input, select, textarea') ?? node).focus()
 
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -434,10 +445,7 @@ export function Dialog({ title, onClose, width, children }: {
     }
 
     document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      if (previous instanceof HTMLElement) previous.focus()
-    }
+    return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
   const style: PrismStyle | undefined = width ? { '--dialog-w': width } : undefined
