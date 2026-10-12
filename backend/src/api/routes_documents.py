@@ -23,7 +23,7 @@ from src.db.database import check_duplicate_document, get_all_documents_detailed
 from src.ingestion.loader import SUPPORTED_EXTENSIONS, clean_filename
 from src.llm.llm_client import is_unavailable
 from src.pipeline.documents import (
-    accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
+    DocumentRemoved, accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
 )
 
 router = APIRouter()
@@ -195,6 +195,8 @@ def _read_in_background(user_id: int, document_id: int, tmp_path: str, filename:
         log_event(upload_logger, "upload_ok", user_id=user_id, file=filename, document_id=document_id,
                   pages=result["pages"], chunks=result["chunks"], bytes=size,
                   seconds=round(time.time() - start_time, 2), replaced=result["replaced"])
+    except DocumentRemoved:
+        log_event(upload_logger, "upload_removed_while_read", user_id=user_id, file=filename, document_id=document_id)
     except ValueError as e:
         # DocumentError, or no text to extract: the message is written for the user
         log_event(error_logger, "upload_unreadable", level=logging.WARNING, user_id=user_id, file=filename,
