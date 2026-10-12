@@ -48,14 +48,14 @@ describe('sendChatStream', () => {
     vi.restoreAllMocks()
   })
 
-  it('posts the question and modes with the token', async () => {
-    await run(streamResponse([event({ type: 'done', sources: [], confidence: 0 })]), { useHybrid: true })
+  it('posts the question and mode with the token', async () => {
+    await run(streamResponse([event({ type: 'done', sources: [], confidence: 0 })]), { mode: 'hybrid' })
     const [url, init] = globalThis.fetch.mock.calls[0]
     expect(url).toBe('/api/v1/chat/stream')
     expect(init.method).toBe('POST')
     expect(init.headers.Authorization).toBe('Bearer token-123')
     expect(JSON.parse(init.body)).toEqual({
-      question: 'How often?', session_id: 'session_1', use_agent: false, use_langchain: false, use_hybrid: true,
+      question: 'How often?', session_id: 'session_1', mode: 'hybrid',
     })
   })
 

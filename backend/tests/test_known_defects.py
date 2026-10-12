@@ -182,7 +182,7 @@ def refusing_model(monkeypatch):
 
 
 @known("R5 / Status: a refused answer still lists every retrieved chunk as a source")
-@pytest.mark.parametrize("modes", [{}, {"use_hybrid": True}, {"use_langchain": True}], ids=["default", "hybrid", "langchain"])
+@pytest.mark.parametrize("modes", [{}, {"mode": "hybrid"}, {"mode": "langchain"}], ids=["default", "hybrid", "langchain"])
 def test_refused_answer_lists_no_sources(client, make_user, refusing_model, modes):
     _, headers = make_user("refuse")
     upload_text(client, headers, text=DOC_TEXT)

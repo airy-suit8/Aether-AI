@@ -22,9 +22,9 @@ def _rows(headers, session_id):
 
 MODES = [
     ({}, "original"),
-    ({"use_hybrid": True}, "hybrid"),
-    ({"use_langchain": True}, "langchain"),
-    ({"use_agent": True}, "agent"),
+    ({"mode": "hybrid"}, "hybrid"),
+    ({"mode": "langchain"}, "langchain"),
+    ({"mode": "agent"}, "agent"),
 ]
 
 

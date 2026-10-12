@@ -31,8 +31,6 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   const [mode, setMode] = useState('default') // default | hybrid | agent | langchain
   const [streamingMode, setStreamingMode] = useState(true)
   const agentMode = mode === 'agent'
-  const langchainMode = mode === 'langchain'
-  const hybridMode = mode === 'hybrid'
 
   // Session
   const [sessionId, setSessionId] = useState(() => `session_${Date.now()}`)
@@ -89,7 +87,6 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
     const controller = new AbortController()
     abortRef.current = controller
-    const sentMode = agentMode ? 'agent' : langchainMode ? 'langchain' : hybridMode ? 'hybrid' : 'default'
 
     try {
       if (streamingMode && !agentMode) {
@@ -100,9 +97,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
         await sendChatStream({
           question,
           sessionId,
-          useAgent: agentMode,
-          useLangchain: langchainMode,
-          useHybrid: hybridMode,
+          mode,
           signal: controller.signal,
           onToken: (token) => {
             setStreamingPhase('')
@@ -117,7 +112,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
               sources: data.sources || [],
               confidence: data.confidence || 0,
               toolUsed: data.tool_used || null,
-              mode: sentMode,
+              mode,
               timestamp: new Date().toISOString(),
             }
             setMessages(prev => [...prev, aiMessage])
@@ -133,9 +128,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
         const result = await sendChat({
           question,
           sessionId,
-          useAgent: agentMode,
-          useLangchain: langchainMode,
-          useHybrid: hybridMode,
+          mode,
           signal: controller.signal,
         })
 
@@ -146,7 +139,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
           sources: result.sources || [],
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
-          mode: sentMode,
+          mode,
           timestamp: new Date().toISOString(),
         }
         setMessages(prev => [...prev, aiMessage])
@@ -160,7 +153,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
       setStreamingPhase('')
       setIsLoading(false)
     }
-  }, [isLoading, sessionId, agentMode, langchainMode, streamingMode, hybridMode, addToast])
+  }, [isLoading, sessionId, mode, agentMode, streamingMode, addToast])
 
   // Stop reading the reply. The server may still finish and save its turn; that is fixed with the API work.
   const handleStop = useCallback(() => {

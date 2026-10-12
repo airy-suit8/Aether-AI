@@ -2,26 +2,20 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Session ids become cache keys, database values and log text: keep them short and plain
 SessionId = Field(default="default", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
 
 
 class ChatRequest(BaseModel):
+    # Unknown fields are refused, so a client still sending the old use_agent / use_langchain /
+    # use_hybrid flags gets a 422 instead of a silent default-mode answer.
+    model_config = ConfigDict(extra="forbid")
+
     question: str
     session_id: str = SessionId
-    use_agent: bool = False
-    use_langchain: bool = False
-    use_hybrid: bool = False
-
-    def mode(self) -> str:
-        """The pipeline mode the flags select; the agent wins, then LangChain, then hybrid."""
-        if self.use_agent:
-            return "agent"
-        if self.use_langchain:
-            return "langchain"
-        return "hybrid" if self.use_hybrid else "default"
+    mode: Literal["default", "hybrid", "agent", "langchain"] = "default"
 
 class ChatResponse(BaseModel):
     answer: str

@@ -158,7 +158,8 @@ def test_upload_without_a_file_is_422(client, make_user):
 @pytest.mark.parametrize("body", [
     {},                                                  # no question
     {"question": 42},                                    # not a string
-    {"question": "hi", "use_agent": "sometimes"},        # not a boolean
+    {"question": "hi", "mode": "sometimes"},             # not a mode
+    {"question": "hi", "use_agent": True},               # the old flags are gone
     {"question": "hi", "session_id": "has space"},       # bad session id
 ])
 def test_chat_routes_reject_bad_input(client, make_user, path, body):
