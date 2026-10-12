@@ -8,7 +8,6 @@ rag_engine.py — Core RAG pipeline
 - Prompt injection protection and context sanitization
 """
 
-import uuid
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -16,7 +15,6 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -34,13 +32,12 @@ from src.db.database import (
 from src.core.config import settings
 from src.embeddings import embedder
 from src.llm import llm_client
+from src.chunking.chunker import split_documents
 from src.ingestion.loader import load_document
 from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
 
 # ── Constants ────────────────────────────────────────────────────────────────
 STORE_DIR     = Path(settings.vector_store_dir)
-CHUNK_SIZE    = settings.chunk_size
-CHUNK_OVERLAP = settings.chunk_overlap
 TOP_K         = settings.top_k
 CONFIDENCE_THRESHOLD = settings.confidence_threshold  # Task 7: minimum cosine similarity to proceed
 MEMORY_MAX_TURNS = settings.memory_max_turns  # Task 4: max conversation turns to remember
@@ -187,15 +184,7 @@ def ingest_document(user_id: int, file_path: str, filename: str) -> Dict[str, An
     if not raw_docs:
         raise ValueError("No text could be extracted from the document.")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
-    chunks = splitter.split_documents(raw_docs)
-
-    for c in chunks:
-        c.metadata["chunk_id"] = str(uuid.uuid4())
+    chunks = split_documents(raw_docs)
 
     _store.add_documents(user_id, chunks)
 
