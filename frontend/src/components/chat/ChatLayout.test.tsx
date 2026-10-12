@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import ChatLayout from './ChatLayout'
 import { AuthProvider } from '../../services/AuthContext'
 import * as api from '../../services/api'
@@ -19,15 +20,27 @@ vi.mock('../../services/api', async (importOriginal) => ({
   getSessionMessages: vi.fn(),
 }))
 
-function renderChat() {
+/** Shows the current path, so a test can read the URL the workspace navigated to. */
+function Where() {
+  return <output data-testid="where">{useLocation().pathname}</output>
+}
+
+/** The workspace at a path, mounted once for every workspace path as in the app. */
+function renderChat(path = '/chat/session_1') {
   const addToast = vi.fn()
   render(
-    <AuthProvider>
-      <ChatLayout onNavigateHome={vi.fn()} addToast={addToast} />
-    </AuthProvider>,
+    <MemoryRouter initialEntries={[path]}>
+      <AuthProvider>
+        <Routes>
+          <Route path="*" element={<><ChatLayout addToast={addToast} /><Where /></>} />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>,
   )
   return { addToast }
 }
+
+const where = () => screen.getByTestId('where').textContent
 
 async function ask(question: string) {
   const user = userEvent.setup()
@@ -45,6 +58,7 @@ describe('ChatLayout', () => {
     vi.mocked(api.getSessions).mockReset()
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
     vi.mocked(api.getSessionMessages).mockReset()
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {
@@ -195,15 +209,16 @@ describe('ChatLayout', () => {
     expect(screen.getAllByText(/Reading|Could not be read/)).toHaveLength(2)
   })
 
-  it('picks up the latest conversation, with its sources, after a reload', async () => {
+  it('opens the latest conversation at /chat, with its sources, and puts its id in the URL', async () => {
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_42', title: 'How often?', turns: 1 })] })
     vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', turns: [turn({
       turn_id: 5, question: 'How often are the blades inspected?', answer: 'Every **90 days**.',
       sources: [SOURCE], confidence: 0.81, mode: 'original', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
     })] })
     vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone?.(done()))
-    renderChat()
+    renderChat('/chat')
     expect(await screen.findByText('How often are the blades inspected?')).toBeTruthy()
+    expect(where()).toBe('/chat/session_42')
     expect((await screen.findByText('90 days')).tagName).toBe('STRONG')
     expect(within(screen.getByText('Sources').parentElement as HTMLElement).getByText(SOURCE.snippet)).toBeTruthy()
     expect(screen.getByText('default mode')).toBeTruthy()
@@ -222,13 +237,17 @@ describe('ChatLayout', () => {
     const { addToast } = renderChat()
     await ask('A first question')
     const before = vi.mocked(api.sendChatStream).mock.calls[0][0].sessionId
+    expect(before).toBe('session_1')
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'New thread' }))
     expect(api.clearSession).not.toHaveBeenCalled()
+    expect(where()).toMatch(/^\/chat\/session_\d+$/)
+    expect(where()).not.toBe('/chat/session_1')
     expect(addToast).toHaveBeenCalledWith('New thread started', 'info')
     expect(screen.queryByText('A first question')).toBeNull()
     await ask('A second question')
     expect(vi.mocked(api.sendChatStream).mock.calls[1][0].sessionId).not.toBe(before)
+    expect(where()).toBe(`/chat/${vi.mocked(api.sendChatStream).mock.calls[1][0].sessionId}`)
   })
 
   it('deletes the conversation from the server only when asked to in Settings', async () => {
@@ -236,8 +255,10 @@ describe('ChatLayout', () => {
     const { addToast } = renderChat()
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(where()).toBe('/settings')
     await user.click(screen.getByRole('button', { name: 'Clear conversation' }))
     expect(api.clearSession).toHaveBeenCalledTimes(1)
+    expect(api.clearSession).toHaveBeenCalledWith('session_1')
     expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
   })
 
@@ -249,5 +270,35 @@ describe('ChatLayout', () => {
     const user = userEvent.setup()
     await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, new File(['hi'], 'note.txt', { type: 'text/plain' }))
     await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Added note.txt: 1 passage from 1 page.', 'success'))
+  })
+
+  it('opens settings over the open conversation, and closing it returns to that conversation', async () => {
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [turn({
+      turn_id: 3, question: 'Who logs the inspections?', answer: 'The Halcyon register.',
+    })] }))
+    renderChat('/chat/session_9')
+    expect(await screen.findByText('Who logs the inspections?')).toBeTruthy()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(where()).toBe('/settings')
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy()
+    expect(screen.getByText('Who logs the inspections?')).toBeTruthy()  // still there underneath
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(where()).toBe('/chat/session_9')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.getSessionMessages).toHaveBeenCalledTimes(1)  // the conversation was not loaded again
+  })
+
+  it('at /settings opened directly, shows the sheet over the latest conversation', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_77' })] })
+    renderChat('/settings')
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeTruthy()
+    await vi.waitFor(() => expect(api.getSessionMessages).toHaveBeenCalledWith('session_77'))
+    expect(where()).toBe('/settings')
+  })
+
+  it('at /chat with no conversations yet, starts a new one in the URL', async () => {
+    renderChat('/chat')
+    await vi.waitFor(() => expect(where()).toMatch(/^\/chat\/session_\d+$/))
   })
 })

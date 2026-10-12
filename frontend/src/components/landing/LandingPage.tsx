@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useLocation, useMatch, useNavigate } from 'react-router'
 import { useAuth } from '../../services/AuthContext'
 import { login, register } from '../../services/api'
 import { AmbientField, Dialog, Field, Lens, PrismMark } from '../../design/prism'
@@ -25,14 +26,22 @@ const USERNAME_RULE = /^[A-Za-z0-9_-]{3,50}$/
  * explains the path a document takes, and opens the sign-in sheet.
  */
 interface LandingPageProps {
-  onStartChat: () => void
   theme?: Theme
   onTheme?: (theme: Theme) => void
 }
 
-export default function LandingPage({ onStartChat, theme = 'system', onTheme = () => {} }: LandingPageProps) {
+/** Where to go after signing in: the workspace page that sent the user here, or the chat. */
+function destination(state: unknown): string {
+  const from = typeof state === 'object' && state !== null && 'from' in state ? state.from : null
+  return typeof from === 'string' && from.startsWith('/') && from !== '/login' ? from : '/chat'
+}
+
+export default function LandingPage({ theme = 'system', onTheme = () => {} }: LandingPageProps) {
   const { isAuthenticated, login: setAuth } = useAuth()
-  const [showModal, setShowModal] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
+  // /login is this page with the sign-in sheet open; signed in, there is nothing to open it for
+  const showModal = useMatch('/login') !== null && !isAuthenticated
   const [isLoginView, setIsLoginView] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -44,16 +53,16 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
 
   const open = (loginView: boolean) => {
     if (isAuthenticated) {
-      onStartChat()
+      navigate('/chat')
       return
     }
     setIsLoginView(loginView)
     setError('')
     setFieldErrors({})
-    setShowModal(true)
+    navigate('/login', { state: location.state })
   }
 
-  const closeModal = useCallback(() => setShowModal(false), [])
+  const closeModal = useCallback(() => navigate('/'), [navigate])
 
   const switchView = () => {
     setIsLoginView(view => !view)
@@ -88,7 +97,7 @@ export default function LandingPage({ onStartChat, theme = 'system', onTheme = (
       if (!isLoginView) await register(name, password, inviteCode.trim())
       const data = await login(name, password)
       setAuth(data.access_token, name)
-      onStartChat()
+      navigate(destination(location.state), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed')
     } finally {

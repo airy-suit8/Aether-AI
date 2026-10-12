@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useMatch, useNavigate } from 'react-router'
 import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
@@ -8,7 +9,7 @@ import {
   getSessions, getSessionMessages,
 } from '../../services/api'
 import type { DocumentRecord, Mode, Turn } from '../../services/api'
-import { useAuth } from '../../services/AuthContext'
+import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
 import type { AddToast, AnswerMessage, ChatMessage } from './types'
@@ -49,21 +50,29 @@ function turnToMessages(turn: Turn): ChatMessage[] {
   ]
 }
 
+/** A new conversation's id. It is its URL (/chat/<id>) from the start; the server keeps it once it has a turn. */
+const newThreadId = () => `session_${Date.now()}`
+
 const isWide = () => (typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 901px)').matches : true)
 
-/**
- * ChatLayout — The main chat workspace with the library rail, the conversation and the composer.
- * Manages all chat state, the answer mode, sessions, and document lists.
- */
 interface ChatLayoutProps {
-  onNavigateHome: () => void
   addToast: AddToast
   theme?: Theme
   onTheme?: (theme: Theme) => void
 }
 
-export default function ChatLayout({ onNavigateHome, addToast, theme = 'system', onTheme = () => {} }: ChatLayoutProps) {
-  const { logout } = useAuth()
+/**
+ * ChatLayout — The main chat workspace with the library rail, the conversation and the composer.
+ * Manages all chat state, the answer mode, sessions, and document lists.
+ *
+ * The open conversation is in the URL (/chat/<thread id>), and so is the settings sheet
+ * (/settings, over the conversation that was open). /chat opens the most recent conversation.
+ */
+export default function ChatLayout({ addToast, theme = 'system', onTheme = () => {} }: ChatLayoutProps) {
+  const signOut = useSignOut()
+  const navigate = useNavigate()
+  const routeThread = useMatch('/chat/:threadId')?.params.threadId ?? null
+  const settingsOpen = useMatch('/settings') !== null
 
   // Messages
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -76,21 +85,21 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
   const [streamingMode, setStreamingMode] = useState(true)
   const agentMode = mode === 'agent'
 
-  // Session
-  const [sessionId, setSessionId] = useState(() => `session_${Date.now()}`)
+  // The open conversation: the one in the URL, or under the settings sheet the one that was open
+  const [sessionId, setSessionId] = useState<string | null>(routeThread)
+  const threadId = routeThread ?? (settingsOpen ? sessionId : null)
 
   // Documents
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ filename: string; status: string } | null>(null)
 
   const streamRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const mountedRef = useRef(true)
-  const touchedRef = useRef(false)  // the user has asked or started a thread: no restoring over it
+  const loadingRef = useRef<string | null>(null)  // the thread whose turns are being loaded
 
   useEffect(() => {
     mountedRef.current = true
@@ -112,24 +121,37 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
     refreshDocuments()
   }, [refreshDocuments])
 
-  // After a reload or a new sign-in, pick up the latest conversation where it was left
+  // /chat, or /settings opened directly: open the most recent conversation, or a new one
   useEffect(() => {
+    if (threadId) return undefined
     let cancelled = false
-    const restore = async () => {
-      try {
-        const { sessions } = await getSessions()
-        if (!sessions?.length || cancelled) return
-        const { session_id: latest, turns } = await getSessionMessages(sessions[0].session_id)
-        if (cancelled || touchedRef.current || !turns.length) return
-        setSessionId(latest)
-        setMessages(turns.flatMap(turnToMessages))
-      } catch (e) {
-        console.error('Failed to restore the conversation:', e)
-      }
-    }
-    restore()
+    getSessions()
+      .then(({ sessions }) => sessions[0]?.session_id ?? newThreadId())
+      .catch(() => newThreadId())
+      .then((id) => {
+        if (cancelled) return
+        if (settingsOpen) setSessionId(id)
+        else navigate(`/chat/${id}`, { replace: true })
+      })
     return () => { cancelled = true }
-  }, [])
+  }, [threadId, settingsOpen, navigate])
+
+  // The conversation in the URL: show its turns, as they were saved
+  useEffect(() => {
+    if (!threadId) return undefined
+    setSessionId(threadId)
+    let cancelled = false
+    loadingRef.current = threadId
+    getSessionMessages(threadId)
+      .then(({ turns }) => {
+        // Not if the user has asked in it meanwhile: their question is already on screen
+        if (cancelled || loadingRef.current !== threadId) return
+        setMessages(turns.flatMap(turnToMessages))
+      })
+      .catch((e) => console.error('Failed to load the conversation:', e))
+      .finally(() => { if (loadingRef.current === threadId) loadingRef.current = null })
+    return () => { cancelled = true }
+  }, [threadId])
 
   // A new message always scrolls into view; streamed text only follows if the reader is already at the bottom
   useEffect(() => {
@@ -144,8 +166,8 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   // ── Handle sending a message ──────────────────────────────────────────
   const handleSend = useCallback(async (question: string) => {
-    if (!question.trim() || isLoading) return
-    touchedRef.current = true
+    if (!question.trim() || isLoading || !sessionId) return
+    loadingRef.current = null
 
     const userMessage: ChatMessage = {
       id: `q${Date.now()}`,
@@ -286,12 +308,11 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   // ── New thread: a fresh session; the old one stays on the server ─────
   const startThread = useCallback(() => {
-    touchedRef.current = true
     abortRef.current?.abort()
-    setSessionId(`session_${Date.now()}`)
     setMessages([])
     setStreamingText('')
-  }, [])
+    navigate(`/chat/${newThreadId()}`)
+  }, [navigate])
 
   const handleNewThread = useCallback(() => {
     startThread()
@@ -300,6 +321,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   // ── Settings: delete the current conversation from the server, then start a new thread ──
   const handleClearConversation = useCallback(async () => {
+    if (!sessionId) return
     try {
       await clearSession(sessionId)
       startThread()
@@ -311,13 +333,13 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
 
   const handleLogout = useCallback(() => {
     abortRef.current?.abort()
-    logout()
-    onNavigateHome()
-  }, [logout, onNavigateHome])
+    signOut()
+  }, [signOut])
 
+  const goHome = useCallback(() => navigate('/'), [navigate])
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), [])
-  const openSettings = useCallback(() => setSettingsOpen(true), [])
-  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const openSettings = useCallback(() => navigate('/settings'), [navigate])
+  const closeSettings = useCallback(() => navigate(sessionId ? `/chat/${sessionId}` : '/chat'), [navigate, sessionId])
 
   const fieldState = isLoading ? (streamingText ? 'streaming' : 'retrieving') : 'idle'
 
@@ -334,7 +356,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
         uploadProgress={uploadProgress}
         onNewThread={handleNewThread}
         onOpenSettings={openSettings}
-        onNavigateHome={onNavigateHome}
+        onNavigateHome={goHome}
       />
       <button type="button" className="x-scrim" aria-label="Close the library" onClick={toggleSidebar} />
 
@@ -354,7 +376,7 @@ export default function ChatLayout({ onNavigateHome, addToast, theme = 'system',
           </button>
           <span className="x-top__thread">
             <span className="p-eyebrow">Thread</span>
-            <span className="p-mono">{sessionId.slice(-6)}</span>
+            <span className="p-mono">{sessionId?.slice(-6)}</span>
           </span>
           <Lens label="Theme" options={THEMES} value={theme} onChange={onTheme} />
           {/* The rail has its own New thread; this one appears only while the rail is hidden */}
