@@ -68,11 +68,11 @@ class ConversationMemory:
         # Persist to SQLite
         return save_conversation(user_id, session_id, question, answer, confidence, mode, sources, tool_used)
 
-    def clear_session(self, user_id: int, session_id: str):
-        """Clear history from both cache and SQLite."""
+    def clear_session(self, user_id: int, session_id: str) -> int:
+        """Clear history from both cache and SQLite. Returns how many turns were deleted."""
         key = self._cache_key(user_id, session_id)
         self._cache.pop(key, None)
-        db_clear_conversation(user_id, session_id)
+        return db_clear_conversation(user_id, session_id)
 
     def format_history(self, user_id: int, session_id: str) -> str:
         """Format history into a readable string for the prompt."""
@@ -92,9 +92,9 @@ memory = ConversationMemory()
 
 # ── Session helpers ───────────────────────────────────────────────────────────
 
-def clear_session(user_id: int, session_id: str):
-    """Clear conversation memory for a session."""
-    memory.clear_session(user_id, session_id)
+def clear_session(user_id: int, session_id: str) -> int:
+    """Clear conversation memory for a session. Returns how many turns were deleted."""
+    return memory.clear_session(user_id, session_id)
 
 
 def get_session_history(user_id: int, session_id: str) -> List[Dict[str, str]]:

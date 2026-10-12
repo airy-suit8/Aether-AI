@@ -336,6 +336,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Conversation
+         * @description Delete one of the user's conversations: every turn, its feedback and its name. 404 for a
+         *     conversation that is not the user's.
+         */
+        delete: operations["delete_conversation_api_v1_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Conversation
+         * @description Give one of the user's conversations a name, shown in place of its first question.
+         *     404 for a conversation that is not the user's, or has no turns yet.
+         */
+        patch: operations["rename_conversation_api_v1_sessions__session_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -600,6 +626,14 @@ export interface components {
             /** Turns */
             turns: components["schemas"]["Turn"][];
         };
+        /**
+         * SessionRename
+         * @description A new name for a conversation (Sprint 8, item 3).
+         */
+        SessionRename: {
+            /** Title */
+            title: string;
+        };
         /** SessionSummary */
         SessionSummary: {
             /** Session Id */
@@ -612,6 +646,13 @@ export interface components {
             started_at: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** SessionTitle */
+        SessionTitle: {
+            /** Session Id */
+            session_id: string;
+            /** Title */
+            title: string;
         };
         /**
          * Source
@@ -1240,6 +1281,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionMessages"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_conversation_api_v1_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionCleared"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_conversation_api_v1_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionTitle"];
                 };
             };
             /** @description Validation Error */

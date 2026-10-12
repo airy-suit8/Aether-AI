@@ -10,6 +10,8 @@ Tables:
   conversations — stores every Q&A turn with timestamps, and the sources and tool shown with it
   documents     — tracks uploaded document metadata, and whether each is processing, ready or
                   failed (it is read in the background after the upload is accepted, R12)
+  session_titles — the name a user gave a conversation; without one it is titled by its first
+                  question (Sprint 8, item 3)
 """
 
 import json
@@ -77,6 +79,14 @@ def init_db():
                 uploaded_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'ready',
                 error TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS session_titles (
+                user_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                PRIMARY KEY (user_id, session_id),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
         """)
@@ -213,13 +223,15 @@ def save_conversation(user_id: int, session_id: str, question: str, answer: str,
 
 
 def get_sessions(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
-    """A user's conversations, most recently used first: the session id, its first question as a
-    title, how many turns it has, and when it started and was last used."""
+    """A user's conversations, most recently used first: the session id, its title (the name the
+    user gave it, else its first question), how many turns it has, and when it started and was
+    last used."""
     conn = _get_connection()
     rows = conn.execute(
         "SELECT session_id, COUNT(*) AS turns, MIN(created_at) AS started_at, MAX(created_at) AS updated_at, "
-        "(SELECT question FROM conversations f WHERE f.user_id = c.user_id AND f.session_id = c.session_id "
-        " ORDER BY f.id LIMIT 1) AS title "
+        "COALESCE((SELECT title FROM session_titles t WHERE t.user_id = c.user_id AND t.session_id = c.session_id), "
+        " (SELECT question FROM conversations f WHERE f.user_id = c.user_id AND f.session_id = c.session_id "
+        "  ORDER BY f.id LIMIT 1)) AS title "
         "FROM conversations c WHERE user_id = ? GROUP BY session_id ORDER BY MAX(id) DESC LIMIT ?",
         (user_id, limit)
     ).fetchall()
@@ -252,13 +264,33 @@ def get_conversation_history(user_id: int, session_id: str, limit: int = 10) -> 
     return [{"question": r["question"], "answer": r["answer"]} for r in reversed(rows)]
 
 
-def clear_conversation(user_id: int, session_id: str):
-    """Delete all conversation history for a session."""
+def clear_conversation(user_id: int, session_id: str) -> int:
+    """Delete all conversation history for a session, and the name given to it. Returns how many
+    turns were deleted (0 when the user has no such conversation)."""
     with _db_lock:
         conn = _get_connection()
-        conn.execute("DELETE FROM conversations WHERE user_id = ? AND session_id = ?", (user_id, session_id))
+        deleted = conn.execute("DELETE FROM conversations WHERE user_id = ? AND session_id = ?",
+                               (user_id, session_id)).rowcount
+        conn.execute("DELETE FROM session_titles WHERE user_id = ? AND session_id = ?", (user_id, session_id))
         conn.commit()
         conn.close()
+    return deleted
+
+
+def rename_session(user_id: int, session_id: str, title: str) -> bool:
+    """Name one of a user's conversations. False when they have no conversation of that id."""
+    with _db_lock:
+        conn = _get_connection()
+        try:
+            if conn.execute("SELECT 1 FROM conversations WHERE user_id = ? AND session_id = ? LIMIT 1",
+                            (user_id, session_id)).fetchone() is None:
+                return False
+            conn.execute("INSERT OR REPLACE INTO session_titles (user_id, session_id, title) VALUES (?, ?, ?)",
+                         (user_id, session_id, title))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
 
 
 def update_conversation_feedback(user_id: int, turn_id: int, feedback: int) -> bool:

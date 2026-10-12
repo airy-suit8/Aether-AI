@@ -23,6 +23,38 @@ function formatWhen(iso: string): string {
 }
 
 /**
+ * A thread's name being edited in place. Enter or leaving the field keeps the name; Escape
+ * gives up. Keys hand focus back to the row's Rename button (keyboard: true).
+ */
+function RenameField({ thread, onDone }: { thread: SessionSummary; onDone: (title: string | null, keyboard: boolean) => void }) {
+  const [value, setValue] = useState(thread.title)
+  const input = useRef<HTMLInputElement>(null)
+  const finished = useRef(false)
+  const finish = (title: string | null, keyboard: boolean) => {
+    if (finished.current) return
+    finished.current = true
+    onDone(title, keyboard)
+  }
+  useEffect(() => {
+    input.current?.focus()
+    input.current?.select()
+  }, [])
+  return (
+    <form className="x-thread x-thread--edit" onSubmit={(e) => { e.preventDefault(); finish(value, true) }}>
+      <input
+        ref={input}
+        aria-label={`New name for ${thread.title}`}
+        value={value}
+        maxLength={200}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); finish(null, true) } }}
+        onBlur={() => finish(value, false)}
+      />
+    </form>
+  )
+}
+
+/**
  * Sidebar — the library rail: brand, new thread, document drop zone, the user's documents, settings.
  */
 interface SidebarProps {
@@ -32,6 +64,8 @@ interface SidebarProps {
   threads: SessionSummary[]
   currentThread: string | null
   onChooseThread: () => void
+  onRenameThread: (thread: SessionSummary, title: string) => Promise<void>
+  onDeleteThread: (thread: SessionSummary) => Promise<void>
   onRemoveDocument: (doc: DocumentRecord) => Promise<void>
   onUpload: (file: File) => Promise<void>
   uploadProgress: UploadProgress | null
@@ -47,6 +81,8 @@ export default function Sidebar({
   threads,
   currentThread,
   onChooseThread,
+  onRenameThread,
+  onDeleteThread,
   onRemoveDocument,
   onUpload,
   uploadProgress,
@@ -58,6 +94,10 @@ export default function Sidebar({
   const [dragOver, setDragOver] = useState(false)
   const [armed, setArmed] = useState<number | null>(null)       // id of the document one click from being removed
   const [removing, setRemoving] = useState<number | null>(null) // id of the document being removed now
+  const [editing, setEditing] = useState<string | null>(null)        // the thread being renamed
+  const [armedThread, setArmedThread] = useState<string | null>(null) // the thread one click from being deleted
+  const [deleting, setDeleting] = useState<string | null>(null)       // the thread being deleted now
+  const renameButtons = useRef<Record<string, HTMLButtonElement | null>>({})
   const { username } = useAuth()
 
   // Several files are ingested one after another, so each gets its own progress and result
@@ -86,6 +126,34 @@ export default function Sidebar({
     const timer = setTimeout(() => setArmed(null), DISARM_MS)
     return () => clearTimeout(timer)
   }, [armed])
+
+  // A thread is deleted the same way: two clicks on its Delete button
+  useEffect(() => {
+    if (armedThread === null) return undefined
+    const timer = setTimeout(() => setArmedThread(null), DISARM_MS)
+    return () => clearTimeout(timer)
+  }, [armedThread])
+
+  const handleDeleteThread = useCallback(async (thread: SessionSummary) => {
+    if (armedThread !== thread.session_id) {
+      setArmedThread(thread.session_id)
+      return
+    }
+    setArmedThread(null)
+    setDeleting(thread.session_id)
+    try {
+      await onDeleteThread(thread)
+    } finally {
+      setDeleting(null)
+    }
+  }, [armedThread, onDeleteThread])
+
+  const finishRename = useCallback((thread: SessionSummary, title: string | null, keyboard: boolean) => {
+    setEditing(null)
+    const name = title?.trim()
+    if (name && name !== thread.title) onRenameThread(thread, name)
+    if (keyboard) requestAnimationFrame(() => renameButtons.current[thread.session_id]?.focus())
+  }, [onRenameThread])
 
   const handleRemove = useCallback(async (doc: DocumentRecord) => {
     if (armed !== doc.id) {
@@ -125,19 +193,56 @@ export default function Sidebar({
           <p className="x-docs__empty">No conversations yet</p>
         ) : (
           <ul className="x-thread-list">
-            {threads.map((thread) => (
-              <li key={thread.session_id}>
-                <Link
-                  to={`/chat/${encodeURIComponent(thread.session_id)}`}
-                  className="x-thread"
-                  aria-current={thread.session_id === currentThread ? 'page' : undefined}
-                  onClick={onChooseThread}
-                >
-                  <span className="x-thread__title" title={thread.title}>{thread.title}</span>
-                  <time className="p-mono" dateTime={thread.updated_at}>{formatWhen(thread.updated_at)}</time>
-                </Link>
-              </li>
-            ))}
+            {threads.map((thread) => {
+              const id = thread.session_id
+              const isArmed = armedThread === id
+              if (editing === id) {
+                return (
+                  <li key={id} className="x-thread-row">
+                    <RenameField thread={thread} onDone={(title, keyboard) => finishRename(thread, title, keyboard)} />
+                  </li>
+                )
+              }
+              return (
+                <li key={id} className="x-thread-row" data-armed={isArmed} data-removing={deleting === id}>
+                  <Link
+                    to={`/chat/${encodeURIComponent(id)}`}
+                    className="x-thread"
+                    aria-current={id === currentThread ? 'page' : undefined}
+                    onClick={onChooseThread}
+                  >
+                    <span className="x-thread__title" title={thread.title}>{thread.title}</span>
+                    <time className="p-mono" dateTime={thread.updated_at}>{formatWhen(thread.updated_at)}</time>
+                  </Link>
+                  <button
+                    type="button"
+                    className="x-doc__remove x-thread__act"
+                    aria-label={`Rename ${thread.title}`}
+                    ref={(el) => { renameButtons.current[id] = el }}
+                    onClick={() => { setArmedThread(null); setEditing(id) }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                      <path d="M8.5 3 11 5.5M2.5 11.5l.6-2.9 6.2-6.2a1.1 1.1 0 0 1 1.6 0l.7.7a1.1 1.1 0 0 1 0 1.6L5.4 10.9l-2.9.6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="x-doc__remove x-thread__act"
+                    data-armed={isArmed}
+                    disabled={deleting === id}
+                    aria-label={isArmed ? `Confirm deleting ${thread.title}` : `Delete ${thread.title}`}
+                    onClick={() => handleDeleteThread(thread)}
+                    onBlur={() => { if (isArmed) setArmedThread(null) }}
+                  >
+                    {isArmed ? 'Delete?' : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                      </svg>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </nav>

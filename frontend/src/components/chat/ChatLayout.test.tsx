@@ -21,6 +21,8 @@ vi.mock('../../services/api', async (importOriginal) => ({
   clearSession: vi.fn(),
   getSessions: vi.fn(),
   getSessionMessages: vi.fn(),
+  renameSession: vi.fn(),
+  deleteSession: vi.fn(),
 }))
 
 /** Shows the current path, so a test can read the URL the workspace navigated to. */
@@ -633,6 +635,69 @@ describe('ChatLayout', () => {
     // Above the answer: the list comes before the answer's text in the page
     const answer = screen.getByText('The inspection is due in 12 days.')
     expect(steps.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('renames a thread in place: Enter keeps the name, Escape gives up (Sprint 8, item 3)', async () => {
+    let titles = { session_1: 'How often?', session_2: 'Who inspects?' }
+    vi.mocked(api.getSessions).mockImplementation(async () => ({
+      sessions: Object.entries(titles).map(([session_id, title]) => session({ session_id, title })),
+    }))
+    vi.mocked(api.renameSession).mockReset()
+    vi.mocked(api.renameSession).mockImplementation(async (session_id, title) => {
+      titles = { ...titles, [session_id]: title }
+      return { session_id, title }
+    })
+    renderChat()
+    const user = userEvent.setup()
+    const threads = screen.getByRole('navigation', { name: 'Conversations' })
+    await user.click(await within(threads).findByRole('button', { name: 'Rename Who inspects?' }))
+
+    const field = within(threads).getByRole('textbox', { name: 'New name for Who inspects?' })
+    expect(document.activeElement).toBe(field)
+    await user.keyboard('{Escape}')
+    expect(api.renameSession).not.toHaveBeenCalled()
+    expect(within(threads).getByRole('link', { name: /Who inspects\?/ })).toBeTruthy()
+
+    await user.click(within(threads).getByRole('button', { name: 'Rename Who inspects?' }))
+    await user.clear(within(threads).getByRole('textbox', { name: 'New name for Who inspects?' }))
+    await user.type(within(threads).getByRole('textbox', { name: 'New name for Who inspects?' }), 'Field team{Enter}')
+    expect(api.renameSession).toHaveBeenCalledWith('session_2', 'Field team')
+    expect(await within(threads).findByRole('link', { name: /Field team/ })).toBeTruthy()
+    await vi.waitFor(() => expect(document.activeElement).toBe(within(threads).getByRole('button', { name: 'Rename Field team' })))
+    expect(where()).toBe('/chat/session_1')  // renaming does not open the thread
+  })
+
+  it('deletes a thread with two clicks, and starts a new one when it was the open one', async () => {
+    let listed = ['session_1', 'session_2']
+    vi.mocked(api.getSessions).mockImplementation(async () => ({
+      sessions: listed.map((session_id) => session({ session_id, title: `Thread ${session_id.slice(-1)}` })),
+    }))
+    vi.mocked(api.deleteSession).mockReset()
+    vi.mocked(api.deleteSession).mockImplementation(async (session_id) => {
+      listed = listed.filter((id) => id !== session_id)
+      return { message: 'Conversation deleted', session_id }
+    })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    const threads = screen.getByRole('navigation', { name: 'Conversations' })
+
+    // The first click only arms it
+    await user.click(await within(threads).findByRole('button', { name: 'Delete Thread 2' }))
+    expect(api.deleteSession).not.toHaveBeenCalled()
+    const confirm = within(threads).getByRole('button', { name: 'Confirm deleting Thread 2' })
+    expect(confirm.textContent).toBe('Delete?')
+    await user.click(confirm)
+    expect(api.deleteSession).toHaveBeenCalledWith('session_2')
+    await vi.waitFor(() => expect(within(threads).queryByRole('link', { name: /Thread 2/ })).toBeNull())
+    expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
+    expect(where()).toBe('/chat/session_1')
+
+    // The open thread: deleted, and a new one takes its place
+    await user.click(within(threads).getByRole('button', { name: 'Delete Thread 1' }))
+    await user.click(within(threads).getByRole('button', { name: 'Confirm deleting Thread 1' }))
+    expect(api.deleteSession).toHaveBeenLastCalledWith('session_1')
+    await vi.waitFor(() => expect(where()).toMatch(/^\/chat\/session_\d{6,}$/))
+    expect(within(threads).getByText('No conversations yet')).toBeTruthy()
   })
 
   it('shows no tools row for an answer that did not come from the agent', async () => {

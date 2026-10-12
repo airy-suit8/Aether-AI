@@ -29,7 +29,7 @@ export type FeedbackValue = Schemas['FeedbackRequest']['feedback']
 // ── Types read from the schema ──────────────────────────────────────────────
 
 type ApiPath = keyof paths
-type Method = 'get' | 'post' | 'delete'
+type Method = 'get' | 'post' | 'patch' | 'delete'
 type Operation<P extends ApiPath, M extends Method> = Exclude<paths[P][M], undefined>
 /** The methods a path has in the schema. */
 type MethodOf<P extends ApiPath> = { [M in Method]: [Operation<P, M>] extends [never] ? never : M }[Method]
@@ -357,6 +357,17 @@ export function getSessions() {
 /** Every turn of one conversation, oldest first, with the sources and tool shown with each answer. */
 export function getSessionMessages(sessionId: string) {
   return request('get', '/api/v1/sessions/{session_id}/messages', { params: { session_id: sessionId } })
+}
+
+/** Give a conversation a name, shown in the rail in place of its first question. */
+export function renameSession(sessionId: string, title: string) {
+  const json: Schemas['SessionRename'] = { title }
+  return request('patch', '/api/v1/sessions/{session_id}', { params: { session_id: sessionId }, json })
+}
+
+/** Delete a conversation, from the thread list. 404 when it has no turns, or is not the user's. */
+export function deleteSession(sessionId: string) {
+  return request('delete', '/api/v1/sessions/{session_id}', { params: { session_id: sessionId } })
 }
 
 /** Delete a conversation from the server (Settings: Clear conversation). New thread keeps it. */

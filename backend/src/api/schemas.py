@@ -229,6 +229,29 @@ class SessionList(BaseModel):
     sessions: list[SessionSummary]  # most recently used first
 
 
+SESSION_TITLE_MAX_CHARS = 200
+
+
+class SessionRename(BaseModel):
+    """A new name for a conversation (Sprint 8, item 3)."""
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(max_length=SESSION_TITLE_MAX_CHARS)
+
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, v: str) -> str:
+        v = " ".join(v.split())  # one line, as the rail shows it
+        if not v:
+            raise ValueError('A conversation needs a name')
+        return v
+
+
+class SessionTitle(BaseModel):
+    session_id: str
+    title: str
+
+
 class Turn(BaseModel):
     """One question and its answer, as they were shown."""
     turn_id: int
