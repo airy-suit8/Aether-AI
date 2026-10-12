@@ -8,7 +8,6 @@ rag_engine.py — Core RAG pipeline
 - Prompt injection protection and context sanitization
 """
 
-import os
 import uuid
 import re
 from pathlib import Path
@@ -20,7 +19,6 @@ from rank_bm25 import BM25Okapi
 
 from pypdf import PdfReader
 from docx import Document as DocxDoc
-from dotenv import load_dotenv
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
@@ -39,15 +37,15 @@ from database import (
     get_all_documents_detailed as _db_get_all_documents_detailed,
 )
 
-load_dotenv(override=False)
+from src.core.config import settings
 
 # ── Constants ────────────────────────────────────────────────────────────────
-STORE_DIR     = Path(os.environ.get("AETHER_VECTOR_STORE_DIR", Path(__file__).parent / "vector_store"))
-CHUNK_SIZE    = 1000
-CHUNK_OVERLAP = 150
-TOP_K         = 5
-CONFIDENCE_THRESHOLD = 0.3  # Task 7: minimum cosine similarity to proceed
-MEMORY_MAX_TURNS = 10  # Task 4: max conversation turns to remember
+STORE_DIR     = Path(settings.vector_store_dir)
+CHUNK_SIZE    = settings.chunk_size
+CHUNK_OVERLAP = settings.chunk_overlap
+TOP_K         = settings.top_k
+CONFIDENCE_THRESHOLD = settings.confidence_threshold  # Task 7: minimum cosine similarity to proceed
+MEMORY_MAX_TURNS = settings.memory_max_turns  # Task 4: max conversation turns to remember
 
 STORE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -55,15 +53,15 @@ STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     return GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
+        model=settings.embedding_model,
+        google_api_key=settings.google_api_key,
     )
 
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
-        temperature=0.3,
+        model=settings.llm_model,
+        google_api_key=settings.google_api_key,
+        temperature=settings.llm_temperature,
     )
 
 # ── Task 2: Structured Output Schema ─────────────────────────────────────────

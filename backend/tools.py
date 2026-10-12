@@ -5,7 +5,6 @@ Task 10: Date-Time Tool (current date/time, day computations)
 """
 
 import ast
-import os
 import operator
 import math
 import re
@@ -15,6 +14,8 @@ from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+
+from src.core.config import settings
 
 
 # ── Task 9: Calculator Tool ──────────────────────────────────────────────────
@@ -149,9 +150,9 @@ def datetime_tool(query: str) -> str:
     
     try:
         llm = ChatGoogleGenerativeAI(
-            model="gemini-3.5-flash",
-            google_api_key=os.environ.get("GOOGLE_API_KEY"),
-            temperature=0.0
+            model=settings.llm_model,
+            google_api_key=settings.google_api_key,
+            temperature=settings.tool_temperature
         )
         prompt = PromptTemplate.from_template(
             "You are a precise calendar and time assistant. "

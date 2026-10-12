@@ -11,12 +11,13 @@ Tables:
 
 import sqlite3
 import threading
-import os
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-DB_PATH = Path(os.environ.get("AETHER_DB_PATH", Path(__file__).parent / "aether.db"))
+from src.core.config import settings
+
+DB_PATH = Path(settings.db_path)
 
 # Thread-safe lock for write operations
 _db_lock = threading.Lock()

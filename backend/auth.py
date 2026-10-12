@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -6,22 +5,13 @@ import jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from dotenv import load_dotenv
-
-load_dotenv(override=False)
+from src.core.config import settings
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 # JWT_SECRET MUST be set in .env. No fallback — fail loudly.
-_raw_secret = os.environ.get("JWT_SECRET")
-if not _raw_secret or _raw_secret == "replace_with_a_long_random_string":
-    raise RuntimeError(
-        "JWT_SECRET is not set. Add it to backend/.env (see backend/.env.example). "
-        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
-    )
-
-SECRET_KEY: str = _raw_secret
+SECRET_KEY: str = settings.require_jwt_secret()
 ALGORITHM: str = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 1 week
+ACCESS_TOKEN_EXPIRE_MINUTES: int = settings.access_token_minutes
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 

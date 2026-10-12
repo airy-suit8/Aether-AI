@@ -14,6 +14,7 @@ import pytest
 
 import auth
 import main
+from src.core.config import settings
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
@@ -187,7 +188,7 @@ def test_upload_rejections(client, make_user, filename, content, status):
 
 def test_upload_over_the_size_limit_is_rejected(client, make_user, monkeypatch):
     _, headers = make_user("big")
-    monkeypatch.setattr(main, "MAX_FILE_SIZE", 100)
+    monkeypatch.setattr(settings, "max_upload_bytes", 100)
     r = upload_text(client, headers, text="x" * 101)
     assert r.status_code == 400
     assert "too large" in r.json()["detail"]

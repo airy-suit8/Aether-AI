@@ -11,21 +11,19 @@ Run:
   python evaluate_rag.py
 """
 
-import os
 import json
-from dotenv import load_dotenv
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-load_dotenv(override=False)
+from src.core.config import settings
 
 def get_eval_llm():
     return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ.get("GOOGLE_API_KEY"),
-        temperature=0.0
+        model=settings.llm_model,
+        google_api_key=settings.google_api_key,
+        temperature=settings.tool_temperature
     )
 
 BENCHMARK_DATASET = [
