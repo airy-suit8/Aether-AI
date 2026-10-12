@@ -14,8 +14,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
 | 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `claude/confident-bell-h8c2ct`) | See below |
 | 6 Frontend rebuild | Done on the branch `claude/vigilant-dijkstra-5swgx3` (13 Oct 2026), PR #5, not yet merged | See below |
-| 7 Ship and document | Not started. Docker items deferred at the owner's request (11 Oct 2026). **Next**: a cloud session does items 3, 4 and 7, starting from Sprint 6's branch | See "Decisions already made" under Sprint 7 |
-| 8 Follow-ups and observability | Not started. Proposed 13 Oct 2026; for a cloud session after Sprint 7 | See Sprint 8 |
+| 7 Ship and document | Done for the cloud session's part on the branch `claude/sprint-7` (13 Oct 2026), PR #6, not yet merged; it contains Sprint 6 (PR #5). Docker items (1, 2) deferred at the owner's request (11 Oct 2026); items 5 and 6 wait for the owner, the mentor and the office network | See below |
+| 8 Follow-ups and observability | Not started. **Next**: a cloud session, starting from Sprint 7's branch | See Sprint 8 |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
 
@@ -174,6 +174,28 @@ What Sprint 6 found, and where the plan was wrong:
 - **The page behind a dialog is now inert.** axe found the conversation's heading failing contrast through the settings sheet's scrim at 375 px; making the background inert is also what a modal needs for the keyboard and screen readers.
 - **Lighthouse was run in the cloud session**, once, with `npx` (not a dependency), on a page signed in through the refresh cookie and holding a conversation with sources.
 - **Not done**: a pass with a real screen reader, and the lines of light (`Threads`) in the real chat; see DESIGN.md, "What comes next".
+
+Sprint 7, from the cloud session on Linux (Python 3.12, Node 22, Chromium 1194), on the branch `claude/sprint-7`, started from Sprint 6's branch:
+
+| Item | Proof |
+|---|---|
+| 1, 2 Docker | Deferred by the owner (decision 1). Not started |
+| 3 Report | `project_report.md`, rewritten in place (d273a81). Every `file::test` it names was checked to exist by a script; its four Mermaid diagrams render with Mermaid 11.4.1 in Chromium; the results table is empty, "to be filled from `docs/evaluation.md`" (decision 3). Ten screenshots in `docs/report/`, taken with Playwright against `tests/e2e_server.py` (fake models), at 1280 and 375 px, light and dark; answer screens are `[OWNER: ...]` markers (decision 5) |
+| 4 Attribution | f74ffa9: the start page's footer, `README.md`, `SDLC_PLAN.md`; then `frontend/README.md` and the report |
+| 5 Data question (S11) | Waits for the owner and the mentor: `[OWNER: ...]` in the README (4392157), the report and the demo checklist |
+| 6 Rehearsal (B10) | Waits for the owner. In its place, `docs/demo-checklist.md` (1c64fd2, decision 6) |
+| 7 Second audit | `AUDIT_REPORT_2.md` (9ea661f): of the first audit's 64 findings, 50 fixed, 12 partly fixed or changed, 2 open (S11, D4); new findings N1 to N11. Fixed here, one commit each with its test: N1 (6f959ad), N2 (b6d0b4d), R10's cache (8a983de), S3's missing test (53e0631), N3 (f21e43f) |
+| Decision 9 | `frontend/README.md` replaces Vite's template (52d37f2); one version, 2.0.0, in the API, `package.json` and the settings sheet (c81ebe9; `tests/test_version.py`, `ChatLayout.test.tsx`) |
+
+- `python -m pytest`: 587 passed (583 before, and 4 new), with neither `GOOGLE_API_KEY` nor `JWT_SECRET` set. `ruff check .` clean. Coverage 99% in total.
+- Frontend: `npm ci`, `npm run api-types -- --check`, `npm run lint` (0 errors; the one old warning in `AuthContext.tsx`), `npm run typecheck`, `npm test` 82 passed (79 before, and 3 new), `npm run build`, `npm audit` 0 vulnerabilities. `npm run e2e`: the journey passes.
+- The OpenAPI snapshot did not change: N1 changed only the body and headers of a 429, which the schema does not describe.
+
+What Sprint 7 found, and where the plan was wrong:
+
+- **"Done when" is met for what a cloud session can do, and not for the rest.** `docker compose up` was not tried (deferred). Every statement in the report names its test, file or number. Answering the ten reviewer questions of the first audit's section 9 without notes is the owner's to do.
+- **The report keeps the college's chapter layout** (front matter, index, chapters for screenshots, limitations, outcome and references), with chapters for the security model and the evaluation added, so it can still be handed in in the college's format. Page numbers were dropped from the index: Markdown has none.
+- **The 429 body changed shape (N1).** Sprint 6 recorded it as `{"error": ...}` without `Retry-After` and left the server alone; the second audit fixed it on the server, and the web app's existing `Retry-After` handling now gets a number.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
