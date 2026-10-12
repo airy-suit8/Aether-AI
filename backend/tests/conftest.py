@@ -105,8 +105,9 @@ def test_user():
 def auth_headers(test_user):
     """Return Authorization headers with a valid JWT for the test user."""
     from datetime import timedelta
+    from src.db.database import get_tenant_id
     token = create_access_token(
-        data={"sub": str(test_user["id"])},
+        data={"sub": str(test_user["id"]), "tid": get_tenant_id(test_user["id"])},
         expires_delta=timedelta(hours=1),
     )
     return {"Authorization": f"Bearer {token}"}

@@ -39,6 +39,35 @@ function parseErrorMessage(errData, fallback) {
 }
 
 /**
+ * Get a new access token with the refresh cookie the server set at sign-in (httpOnly, so this
+ * code never sees it). Several requests that find the token expired share one renewal.
+ * Resolves to true when a new token was set.
+ */
+let renewal = null;
+function renewToken() {
+  renewal ??= fetch(`${BASE_URL}/auth/refresh`, { method: 'POST' })
+    .then(async (res) => {
+      if (!res.ok) return false;
+      setToken((await res.json()).access_token);
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => { renewal = null; });
+  return renewal;
+}
+
+/**
+ * fetch with the access token. Access tokens last 30 minutes: on a 401 the token is renewed
+ * once and the request sent again; if that fails too, checkResponse signs the user out.
+ */
+async function authFetch(url, init = {}) {
+  const send = () => fetch(url, { ...init, headers: getAuthHeaders(init.headers) });
+  const res = await send();
+  if (res.status === 401 && currentToken && await renewToken()) return send();
+  return res;
+}
+
+/**
  * Throw a readable error for a failed authenticated request.
  * A 401 means the token is no longer valid: forget it, tell the app once, and say so.
  */
@@ -57,11 +86,12 @@ async function checkResponse(res, fallback) {
 /**
  * Authentication
  */
-export async function register(username, password) {
+export async function register(username, password, inviteCode = '') {
   const res = await fetch(`${BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    // The invite code is needed only when the server sets one
+    body: JSON.stringify(inviteCode ? { username, password, invite_code: inviteCode } : { username, password }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => null);
@@ -90,15 +120,36 @@ export async function login(username, password) {
 }
 
 /**
+ * Sign in again from the refresh cookie, as after a page reload. Returns the token data, or
+ * null when there is no valid cookie (signed out, or a week without use).
+ */
+export async function refreshSession() {
+  const res = await fetch(`${BASE_URL}/auth/refresh`, { method: 'POST' });
+  if (!res.ok) return null;
+  const data = await res.json();
+  setToken(data.access_token);
+  return data;
+}
+
+/**
+ * Sign out on the server too: it removes the refresh cookie, so a reload stays signed out.
+ */
+export async function logout() {
+  setToken(null);
+  const res = await fetch(`${BASE_URL}/auth/logout`, { method: 'POST' });
+  if (!res.ok) throw new Error('Sign-out failed');
+  return res.json();
+}
+
+/**
  * Upload a document to the RAG pipeline
  */
 export async function uploadDocument(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${BASE_URL}/upload`, {
+  const res = await authFetch(`${BASE_URL}/upload`, {
     method: 'POST',
-    headers: getAuthHeaders(),
     body: formData,
   });
 
@@ -111,10 +162,10 @@ export async function uploadDocument(file) {
  * mode is one of 'default', 'hybrid', 'agent' or 'langchain'.
  */
 export async function sendChat({ question, sessionId = 'default', mode = 'default', signal }) {
-  const res = await fetch(`${BASE_URL}/chat`, {
+  const res = await authFetch(`${BASE_URL}/chat`, {
     method: 'POST',
     signal,
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       question,
       session_id: sessionId,
@@ -131,10 +182,10 @@ export async function sendChat({ question, sessionId = 'default', mode = 'defaul
  */
 export async function sendChatStream({ question, sessionId = 'default', mode = 'default', signal, onToken, onDone, onError }) {
   try {
-    const res = await fetch(`${BASE_URL}/chat/stream`, {
+    const res = await authFetch(`${BASE_URL}/chat/stream`, {
       method: 'POST',
       signal,
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question,
         session_id: sessionId,
@@ -194,7 +245,7 @@ export async function sendChatStream({ question, sessionId = 'default', mode = '
  * Get list of documents
  */
 export async function getDocuments() {
-  const res = await fetch(`${BASE_URL}/documents`, { headers: getAuthHeaders() });
+  const res = await authFetch(`${BASE_URL}/documents`);
   await checkResponse(res, 'Failed to fetch documents');
   return res.json();
 }
@@ -203,7 +254,7 @@ export async function getDocuments() {
  * Get detailed document info
  */
 export async function getDocumentsDetailed() {
-  const res = await fetch(`${BASE_URL}/documents/detailed`, { headers: getAuthHeaders() });
+  const res = await authFetch(`${BASE_URL}/documents/detailed`);
   await checkResponse(res, 'Failed to fetch detailed documents');
   return res.json();
 }
@@ -212,7 +263,7 @@ export async function getDocumentsDetailed() {
  * Delete one document, by the id the detailed list gives it
  */
 export async function deleteDocument(documentId) {
-  const res = await fetch(`${BASE_URL}/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE', headers: getAuthHeaders() });
+  const res = await authFetch(`${BASE_URL}/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
   await checkResponse(res, 'Failed to delete the document');
   return res.json();
 }
@@ -221,7 +272,7 @@ export async function deleteDocument(documentId) {
  * Delete all documents
  */
 export async function deleteAllDocuments() {
-  const res = await fetch(`${BASE_URL}/documents`, { method: 'DELETE', headers: getAuthHeaders() });
+  const res = await authFetch(`${BASE_URL}/documents`, { method: 'DELETE' });
   await checkResponse(res, 'Failed to delete documents');
   return res.json();
 }
@@ -230,9 +281,9 @@ export async function deleteAllDocuments() {
  * Clear session conversation memory
  */
 export async function clearSession(sessionId) {
-  const res = await fetch(`${BASE_URL}/session/clear`, {
+  const res = await authFetch(`${BASE_URL}/session/clear`, {
     method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question: '', session_id: sessionId }),
   });
   await checkResponse(res, 'Failed to clear session');

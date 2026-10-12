@@ -101,6 +101,13 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_doc_user_hash ON documents(user_id, file_hash);
         """)
 
+        # Usernames are unique regardless of ASCII case (S7). A database that already holds two
+        # names differing only in case cannot take the index; registration still checks, case-blind.
+        try:
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)")
+        except sqlite3.IntegrityError:
+            pass
+
         conn.commit()
         conn.close()
 
@@ -121,22 +128,37 @@ def _migrate_column(conn: sqlite3.Connection, table: str, column: str, col_type:
 # ── User Operations ───────────────────────────────────────────────────────────
 
 def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """The user with this name, ignoring ASCII case (an exact match first, for an older database
+    that holds two names differing only in case)."""
     conn = _get_connection()
-    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1",
+        (username, username),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    conn = _get_connection()
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
 def create_user(username: str, password_hash: str) -> int:
+    """Add a user and return their id. sqlite3.IntegrityError when the name is taken (in any case)."""
     with _db_lock:
         conn = _get_connection()
-        cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, created_at, tenant_id) VALUES (?, ?, ?, ?)",
-            (username, password_hash, datetime.now().isoformat(), _new_tenant_id())
-        )
-        conn.commit()
-        user_id = cursor.lastrowid
-        conn.close()
-        return user_id
+        try:
+            cursor = conn.execute(
+                "INSERT INTO users (username, password_hash, created_at, tenant_id) VALUES (?, ?, ?, ?)",
+                (username, password_hash, datetime.now().isoformat(), _new_tenant_id())
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            # Also when the insert fails: a connection left open keeps its write lock
+            conn.close()
 
 def get_tenant_id(user_id: int) -> str:
     """The user's tenant id, the key of their chunks in the vector store. LookupError for no such user."""

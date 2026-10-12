@@ -1,9 +1,10 @@
 """
 core/logging.py — Task 16: Production Logging (with rotation)
 
-Three named loggers, one file each, in settings.log_dir:
+Four named loggers, one file each, in settings.log_dir:
   requests.log  — all chat queries and responses
   uploads.log   — document upload events
+  auth.log      — registrations, sign-ins, refused tokens (S7)
   errors.log    — all errors and warnings across the application
 
 The files are structured (S10): one JSON object per line, with the time, level, logger, the
@@ -36,6 +37,7 @@ BACKUP_COUNT = 5             # Keep 5 old copies
 request_logger = logging.getLogger("aether.requests")
 upload_logger = logging.getLogger("aether.uploads")
 error_logger = logging.getLogger("aether.errors")
+auth_logger = logging.getLogger("aether.auth")
 
 # The id of the request being served; set by the request middleware (src/api/middleware.py)
 request_id: ContextVar[Optional[str]] = ContextVar("aether_request_id", default=None)
@@ -78,6 +80,7 @@ class TextFormatter(logging.Formatter):
 _FILES = [
     (request_logger, "requests.log", logging.INFO),
     (upload_logger, "uploads.log", logging.INFO),
+    (auth_logger, "auth.log", logging.INFO),
     (error_logger, "errors.log", logging.WARNING),
 ]
 

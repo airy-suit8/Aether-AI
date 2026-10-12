@@ -54,10 +54,10 @@ def test_health_is_public_and_reports_only_the_status(client):
 def test_register_then_login(client):
     r = client.post("/api/v1/auth/register", json={"username": "route_user", "password": "securepass123"})
     assert r.status_code == 200
-    assert r.json()["user_id"] > 0
+    assert r.json() == {"message": "User registered successfully"}  # no sequential id (S7)
     r = client.post("/api/v1/auth/login", data={"username": "route_user", "password": "securepass123"})
     assert r.status_code == 200
-    assert r.json()["token_type"] == "bearer"
+    assert r.json()["token_type"] == "bearer" and r.json()["expires_in"] == 30 * 60
     assert jwt.decode(r.json()["access_token"], options={"verify_signature": False})["sub"]
 
 
@@ -142,7 +142,10 @@ def test_expired_token_says_so(client):
     {"username": "x" * 51, "password": "securepass123"},
     {"username": "bad name!", "password": "securepass123"},
     {"username": "valid_name", "password": "short"},
+    {"username": "valid_name", "password": "seven77"},     # under 8 (S7)
     {"username": "valid_name", "password": "p" * 129},
+    {"username": "valid_name", "password": "p" * 73},       # over bcrypt's 72 bytes (S7)
+    {"username": "Ünïcode", "password": "securepass123"},   # not ASCII: look-alike names (S7)
 ])
 def test_register_rejects_bad_input(client, body):
     assert client.post("/api/v1/auth/register", json=body).status_code == 422

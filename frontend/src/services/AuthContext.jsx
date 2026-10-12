@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useCallback } from 'react';
-import { setToken as setApiToken } from './api';
+import { setToken as setApiToken, logout as signOutOnServer } from './api';
 
 const AuthContext = createContext(null);
 
@@ -16,10 +16,12 @@ export function AuthProvider({ children }) {
     setApiToken(newToken);
   }, []);
 
+  // Also removes the server's refresh cookie, so a reload does not sign the user back in
   const logout = useCallback(() => {
     setToken(null);
     setUsername(null);
     setApiToken(null);
+    signOutOnServer().catch(() => {});
   }, []);
 
   return (

@@ -36,8 +36,10 @@ async function capture(fn) {
 }
 
 const CALLS = {
-  register: () => api.register('someone', 'secret123'),
+  register: () => api.register('someone', 'secret123', 'invite-code'),
   login: () => api.login('someone', 'secret123'),
+  refreshSession: () => api.refreshSession(),
+  logout: () => api.logout(),
   uploadDocument: () => api.uploadDocument(new File(['hello'], 'a.txt', { type: 'text/plain' })),
   sendChat: () => api.sendChat({ question: 'q', sessionId: 's1', mode: 'hybrid' }),
   sendChatStream: () => api.sendChatStream({ question: 'q', sessionId: 's1' }),

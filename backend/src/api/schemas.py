@@ -1,8 +1,11 @@
 """api/schemas.py — the request and response models of the HTTP API."""
 
+import re
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from src.core.security import PASSWORD_MAX_BYTES
 
 # Session ids become cache keys, database values and log text: keep them short and plain
 SessionId = Field(default="default", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
@@ -38,31 +41,41 @@ class UploadResponse(BaseModel):
     document_id: int       # for DELETE /documents/{document_id}
     replaced: bool = False  # true when an earlier file of the same name was replaced
 
+# Sign-up rules (S7). The web app's sign-up form mirrors them (LandingPage.jsx).
+USERNAME_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,50}")
+PASSWORD_MIN_CHARS = 8
+
+
 class UserRegister(BaseModel):
     username: str
     password: str
+    # Needed when the server sets AETHER_INVITE_CODE; ignored otherwise
+    invite_code: str = Field(default="", max_length=200)
 
     @field_validator('username')
     @classmethod
     def username_valid(cls, v: str) -> str:
+        # Trimmed here and at login alike, so "  name  " signs in as the name it registered
         v = v.strip()
         if len(v) < 3:
             raise ValueError('Username must be at least 3 characters')
         if len(v) > 50:
             raise ValueError('Username must be at most 50 characters')
-        if not v.isalnum() and not all(c.isalnum() or c in '_-' for c in v):
-            raise ValueError('Username may only contain letters, digits, hyphens, and underscores')
+        # ASCII only, so no two names can look alike; case is ignored when names are compared
+        if not USERNAME_PATTERN.fullmatch(v):
+            raise ValueError('Username may only contain the letters A to Z, digits, hyphens and underscores')
         return v
 
     @field_validator('password')
     @classmethod
     def password_valid(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError('Password must be at least 6 characters')
-        if len(v) > 128:
-            raise ValueError('Password must be at most 128 characters')
+        if len(v) < PASSWORD_MIN_CHARS:
+            raise ValueError(f'Password must be at least {PASSWORD_MIN_CHARS} characters')
+        if len(v.encode("utf-8")) > PASSWORD_MAX_BYTES:
+            raise ValueError(f'Password must be at most {PASSWORD_MAX_BYTES} bytes (72 letters, fewer with accents or symbols)')
         return v
 
 class Token(BaseModel):
     access_token: str
     token_type: str
+    expires_in: int  # seconds until the access token expires; renew it at /auth/refresh
