@@ -184,15 +184,44 @@ def get_conversation_stats() -> Dict[str, Any]:
 # ── Document Operations ───────────────────────────────────────────────────────
 
 def save_document_record(user_id: int, filename: str, pages: int, chunks: int,
-                         size_bytes: int = 0, file_hash: str = None):
-    """Record a document upload in the database."""
+                         size_bytes: int = 0, file_hash: str = None) -> int:
+    """Record a document upload in the database. Returns the document's id."""
     with _db_lock:
         conn = _get_connection()
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO documents (user_id, filename, file_hash, pages, chunks, size_bytes, uploaded_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (user_id, filename, file_hash, pages, chunks, size_bytes, datetime.now().isoformat())
         )
+        conn.commit()
+        document_id = cursor.lastrowid
+        conn.close()
+    return document_id
+
+
+def update_document_counts(user_id: int, document_id: int, pages: int, chunks: int):
+    """Set a document's page and chunk counts once it has been ingested."""
+    with _db_lock:
+        conn = _get_connection()
+        conn.execute("UPDATE documents SET pages = ?, chunks = ? WHERE id = ? AND user_id = ?",
+                     (pages, chunks, document_id, user_id))
+        conn.commit()
+        conn.close()
+
+
+def get_document(user_id: int, document_id: int) -> Optional[Dict[str, Any]]:
+    """One of this user's documents, or None (also None for another user's document)."""
+    conn = _get_connection()
+    row = conn.execute("SELECT id, filename, chunks FROM documents WHERE id = ? AND user_id = ?",
+                       (document_id, user_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_document_record(user_id: int, document_id: int):
+    with _db_lock:
+        conn = _get_connection()
+        conn.execute("DELETE FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
         conn.commit()
         conn.close()
 

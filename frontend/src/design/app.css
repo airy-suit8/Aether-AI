@@ -145,6 +145,42 @@
 }
 
 .x-doc__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Remove: a quiet cross that shows with the row. One click arms it ("Remove?"), a second confirms. */
+.x-doc { grid-template-columns: auto minmax(0, 1fr) auto; }
+.x-doc[data-removing="true"] { opacity: 0.5; }
+
+.x-doc__remove {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  margin: -4px -2px -4px 0;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--p-r-1);
+  font: inherit;
+  font-size: var(--p-text-xs);
+  font-weight: 640;
+  color: var(--p-ink-3);
+  background: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--p-dur-1), color var(--p-dur-1), background var(--p-dur-1);
+}
+
+.x-doc:hover .x-doc__remove,
+.x-doc__remove:focus-visible,
+.x-doc__remove[data-armed="true"] { opacity: 1; }
+
+.x-doc__remove:hover { color: var(--p-ink); background: var(--p-surface-4); }
+.x-doc__remove[data-armed="true"] { color: var(--p-bad); background: var(--p-bad-soft); }
+.x-doc__remove:disabled { cursor: default; }
+
+/* No hover on a touch screen: the cross is always there. */
+@media (hover: none) {
+  .x-doc__remove { opacity: 1; }
+}
 .x-docs__empty { padding: 8px; font-size: var(--p-text-sm); color: var(--p-ink-3); }
 
 .x-user {

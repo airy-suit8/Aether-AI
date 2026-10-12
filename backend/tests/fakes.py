@@ -61,6 +61,7 @@ class ScriptedChatModel(BaseChatModel):
     fail_with  — if set, every call raises RuntimeError(fail_with)
     tool_name  — the tool the fake agent calls on its first step
     tool_input — the argument passed to that tool (defaults to the user's question)
+    tool_args  — the whole argument dict, for a tool that takes more than one
     judge_reply — what it answers when asked to judge an answer (the evaluation harness)
     citations  — what it adds to an answer written from numbered chunks
     prompts    — every prompt text received, for assertions
@@ -70,6 +71,7 @@ class ScriptedChatModel(BaseChatModel):
     fail_with: Optional[str] = None
     tool_name: str = "document_search_wrapper"
     tool_input: Optional[str] = None
+    tool_args: Optional[dict] = None
     judge_reply: str = '{"score": 1.0, "reasoning": "fake judge"}'
     citations: str = "[1]"
     prompts: List[str] = []
@@ -98,16 +100,18 @@ class ScriptedChatModel(BaseChatModel):
         if any(isinstance(m, SystemMessage) and AGENT_PROMPT_MARKER in str(m.content) for m in messages):
             if isinstance(last, ToolMessage):
                 return AIMessage(content=f"Agent answer. {last.content}")
-            return AIMessage(content="", tool_calls=[{
-                "name": self.tool_name,
-                "args": {"query" if self.tool_name != "calculator_wrapper" else "expression": self.tool_input or text},
-                "id": "call_1",
-            }])
+            if self.tool_args is not None:
+                args = self.tool_args
+            elif self.tool_name == "calculator_wrapper":
+                args = {"expression": self.tool_input or text}
+            elif self.tool_name == "datetime_wrapper":
+                args = {}  # its defaults: what is the date and time now
+            else:
+                args = {"query": self.tool_input or text}
+            return AIMessage(content="", tool_calls=[{"name": self.tool_name, "args": args, "id": "call_1"}])
 
         if "Verdict (JSON):" in text:
             return AIMessage(content=self.judge_reply)
-        if "calendar and time assistant" in text:
-            return AIMessage(content="Date answer. " + _between(text, "The current date and time is:", ". Calculate"))
         if "Standalone Question:" in text:
             return AIMessage(content=_between(text, "Current Question:", "Standalone Question:"))
         if "Focused Summary:" in text:

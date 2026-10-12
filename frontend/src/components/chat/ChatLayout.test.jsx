@@ -7,7 +7,8 @@ import * as api from '../../services/api'
 
 vi.mock('../../services/api', async (importOriginal) => ({
   ...(await importOriginal()),
-  getDocuments: vi.fn(),
+  getDocumentsDetailed: vi.fn(),
+  deleteDocument: vi.fn(),
   sendChatStream: vi.fn(),
   sendChat: vi.fn(),
   uploadDocument: vi.fn(),
@@ -39,7 +40,9 @@ async function ask(question) {
 
 describe('ChatLayout', () => {
   beforeEach(() => {
-    vi.mocked(api.getDocuments).mockResolvedValue({ documents: ['zephyr_manual.txt'], count: 1 })
+    vi.mocked(api.getDocumentsDetailed).mockReset()
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [{ id: 7, filename: 'zephyr_manual.txt' }], count: 1 })
+    vi.mocked(api.deleteDocument).mockReset()
     vi.mocked(api.sendChatStream).mockReset()
   })
 
@@ -101,5 +104,44 @@ describe('ChatLayout', () => {
     await user.click(screen.getByRole('radio', { name: /hybrid/i }))
     await ask('Hybrid please')
     expect(api.sendChatStream.mock.calls[0][0].mode).toBe('hybrid')
+  })
+
+  it('removes one document after a second, confirming click', async () => {
+    vi.mocked(api.deleteDocument).mockResolvedValue({ filename: 'zephyr_manual.txt', deleted: 1 })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    const remove = await screen.findByRole('button', { name: 'Remove zephyr_manual.txt' })
+
+    // The first click only arms the button: nothing is deleted yet
+    await user.click(remove)
+    expect(api.deleteDocument).not.toHaveBeenCalled()
+    const confirm = screen.getByRole('button', { name: 'Confirm removing zephyr_manual.txt' })
+    expect(confirm.textContent).toBe('Remove?')
+
+    // The second click deletes it by id, says so, and reloads the library
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue({ documents: [], count: 0 })
+    await user.click(confirm)
+    expect(api.deleteDocument).toHaveBeenCalledWith(7)
+    expect(await screen.findByText('No documents yet')).toBeTruthy()
+    expect(addToast).toHaveBeenCalledWith('Removed zephyr_manual.txt', 'info')
+  })
+
+  it('an armed remove button disarms when focus leaves it', async () => {
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Remove zephyr_manual.txt' }))
+    await user.click(screen.getByPlaceholderText(/ask anything/i))
+    expect(screen.getByRole('button', { name: 'Remove zephyr_manual.txt' })).toBeTruthy()
+    expect(api.deleteDocument).not.toHaveBeenCalled()
+  })
+
+  it('says so when a document cannot be removed, and keeps it listed', async () => {
+    vi.mocked(api.deleteDocument).mockRejectedValue(new Error('No such document.'))
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Remove zephyr_manual.txt' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm removing zephyr_manual.txt' }))
+    expect(addToast).toHaveBeenCalledWith('No such document.', 'error')
+    expect(await screen.findByRole('button', { name: 'Remove zephyr_manual.txt' })).toBeTruthy()
   })
 })

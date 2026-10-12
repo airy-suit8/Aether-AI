@@ -2,7 +2,7 @@
 prompts/prompt_templates.py — every prompt the app sends, each written once.
 
 Task 1 (prompt templates) and Task 8 (prompt-injection protection). The pipeline, the
-agent, the date-time tool and the evaluation import their prompts from here.
+agent and the evaluation import their prompts from here.
 """
 
 import re
@@ -142,25 +142,18 @@ def format_context(results: List[Dict[str, Any]], numbered: bool = False) -> str
 
 # ── Agent (Task 11) ───────────────────────────────────────────────────────────
 
+# R11: this prompt used to tell the model to answer what the documents lack from "your own vast
+# internal knowledge base", which undid the grounding the rest of the app enforces.
 AGENT_SYSTEM_PROMPT = (
     "You are the Aether AI Knowledge Assistant. You can chain multiple tools together to answer complex user questions.\n"
-    "- If you need information from uploaded documents, use document_search_wrapper.\n"
-    "- If you need to do math, use calculator_wrapper.\n"
-    "- If you need date/time info, use datetime_wrapper.\n"
-    "- If you need real-world facts, flight distances, prices, or general knowledge that is NOT in the user's documents, DO NOT attempt to search the web. Instead, rely on your own vast internal knowledge base to provide the data.\n"
+    "- For anything about the user's uploaded documents, use document_search_wrapper.\n"
+    "- For arithmetic, use calculator_wrapper. Do not do arithmetic yourself.\n"
+    "- For today's date, a weekday, or counting days between dates, use datetime_wrapper. Do not work out dates yourself.\n"
+    "- You have no web search. If the question needs a fact that is not in the user's documents and that no tool gives you, "
+    "say plainly that you cannot find it; do not supply it from your own knowledge. "
+    "Numbers and facts the user states in the conversation may be used as given.\n"
     "Think step-by-step. Use the tools to gather necessary data, then synthesize the outputs into a clear final conversational answer.\n"
     "CRITICAL: After using a tool, you MUST output a final text response. NEVER return an empty string."
-)
-
-# The date-time tool (Task 10)
-DATETIME_PROMPT = PromptTemplate.from_template(
-    "You are a precise calendar and time assistant. "
-    "The current date and time is: {current_time}. "
-    "Calculate or answer the user's date/time question accurately. "
-    "If they ask for a future or past date without a year, assume the next/previous occurrence relative to the current date. "
-    "Respond concisely with the answer.\n\n"
-    "Question: {question}\n"
-    "Answer:"
 )
 
 

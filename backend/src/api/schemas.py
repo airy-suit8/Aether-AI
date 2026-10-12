@@ -20,7 +20,9 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list
-    confidence: float = 0.0
+    # How close the retrieved passages were, 0 to 1. null when the agent answered without
+    # searching the documents: there is nothing to be confident about (R11).
+    confidence: Optional[float] = 0.0
     session_id: str = "default"
     tool_used: Optional[str] = None  # agent mode: which tools answered
 
@@ -33,6 +35,8 @@ class UploadResponse(BaseModel):
     pages: int
     chunks: int
     message: str
+    document_id: int       # for DELETE /documents/{document_id}
+    replaced: bool = False  # true when an earlier file of the same name was replaced
 
 class UserRegister(BaseModel):
     username: str

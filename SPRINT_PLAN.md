@@ -11,8 +11,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 2 Safety net | Done, merged 12 Oct 2026 | See below |
 | Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
-| 4 Retrieval quality and evaluation | In progress. The harness and four code items are merged (12 Oct 2026). The dataset, the baseline and the calibration wait for the owner's documents and Gemini quota; items 8 and 10 are not started | See below |
-| 5 Hardening and API completion | Not started | |
+| 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
+| 5 Hardening and API completion | Not started. **This is the next sprint for a cloud session**: what is left of Sprint 4 needs the owner's machine, documents and Gemini key | See "Decisions already made" under Sprint 5 |
 | 6 Frontend rebuild | Visual redesign done early; engineering items remain | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
@@ -83,11 +83,12 @@ Sprint 4 so far (branch `claude/sprint-4`, done on the owner's Windows machine, 
 | 5 Hybrid search (R3) | Done | `tests/unit/test_search.py` |
 | 6 Summary step or not (R4) | The switch exists (`AETHER_ANSWER_FROM`); the comparison is not run | `tests/integration/test_sources.py` |
 | 7 Cited sources (R5) | Done behind that switch; a refusal lists no sources in every case | `tests/integration/test_sources.py` |
-| 8 Document identity (R7) | Not started | |
+| 8 Document identity (R7) | Done: every chunk carries its document's id; `DELETE /documents/{document_id}`; a changed file of the same name replaces the earlier one; the library has a remove control per document | `tests/integration/test_documents.py`, `ChatLayout.test.jsx`; checked in a browser |
 | 9 Parsing (R9) | Done | `tests/unit/test_parsers.py`, `tests/unit/test_chunker.py` |
-| 10 Agent (R11) | Not started | |
+| 10 Agent (R11) | Done: no answers from the model's own knowledge, date arithmetic in Python, no confidence for an answer that searched no document | `tests/integration/test_agent.py`, `tests/unit/test_datetime_tool.py`, `tests/unit/test_prompts.py` |
 
-- `python -m pytest`: 390 passed, 0 xfailed, 99% coverage, with no API key. `ruff check .` clean. All twenty strict xfails are fixed and their tests moved beside the code's other tests.
+- `python -m pytest`: 421 passed, 0 xfailed, 99% coverage, with no API key. `ruff check .` clean. All twenty strict xfails are fixed and their tests moved beside the code's other tests. Frontend: lint 0 errors, `npm test` 30 passed, build.
+- The API changed in three places, each reviewed in the OpenAPI snapshot's diff: `confidence` may be null, the upload response gained `document_id` and `replaced`, and `DELETE /documents/{document_id}` is new.
 - A real `uvicorn` server with fake models: register, login, upload, chat in all four modes, streaming, feedback, delete and the login rate limit.
 - With the real Gemini key and temp stores: a Word file whose facts are in a table and a CSV of part codes were ingested. Hybrid search gave the same similarities as dense search (0.71 and 0.61). "Who inspects the blades, and how often?" was answered from the table. With `AETHER_ANSWER_FROM=chunks`, the answer was "The code for the rotor bearing is 0420 [1]. It is located in bin C3 [1].", with the leading zero kept and only the cited chunk listed as a source.
 
@@ -293,6 +294,19 @@ API
 9. Background ingestion with a status endpoint. (R12)
 10. Retry with backoff and a friendly message on quota errors. (B10)
 11. Re-run `pip-audit`. `chromadb` 1.5.9 had advisories with no fixed release on 11 Oct 2026; upgrade when one exists.
+
+Decisions already made for this sprint (do not reopen them; say so in the pull request if one turns out to be wrong):
+
+1. **Existing data must survive.** The owner has a database and a vector store made by today's code, with chunks keyed by the integer `user_id` and, since Sprint 4, a `document_id`. Item 1 needs a migration that runs at startup and is safe to run twice, with a test that builds a store the old way and reads it the new way. Never delete or recreate a store to make a change easier.
+2. **Moving the stores under `data/` is a change of default only.** `AETHER_DB_PATH`, `AETHER_VECTOR_STORE_DIR` and `AETHER_LOG_DIR` keep working, and a store found at the old default path is still used (with a logged note) rather than silently starting empty.
+3. **Every API change is made on both sides in one commit**: the route, the OpenAPI snapshot (refresh it and review the diff), `frontend/src/services/api.js`, and the contract test. A change that breaks the snapshot test or the no-orphan check is not finished.
+4. **Item 7 changes what New Thread does**: it starts a new session and keeps the old one. The interface work for restoring a conversation after a refresh follows `DESIGN.md`; no new styling approach. A thread list in the rail is Sprint 6, not this sprint: here it is enough that a refresh restores the current conversation.
+5. **Item 8 replaces "the most recent message in the session"** as the target of feedback with a `turn_id`. Keep the feedback values as they are (1, -1, 0).
+6. **Item 10**: the chat model retries six times today, which held a request for about 60 s during a Gemini outage on 12 Oct 2026. Set retries and the timeout in `core/config.py`, retry only quota and availability errors, and return one clear message. Test it with the fake model raising those errors; no real calls.
+7. **Item 9 (background ingestion)** uses FastAPI's own background tasks and a status column on the document record. No queue, no new service, no new dependency.
+8. **Registration (item 2)**: closed by an invite code from `core/config.py` (`AETHER_INVITE_CODE`); empty means registration is open, which is today's behaviour and stays the default so the owner's setup keeps working.
+9. **Leave alone**: the evaluation harness and its metrics, the `answer_from` default, the confidence threshold value, and the Docker items. They wait for measurements or for the owner.
+10. **Dependencies**: add none unless an item cannot be done without it; say why in the commit. `pip-audit` (item 11) is run and reported, and an upgrade is one commit per package.
 
 **Done when**
 - Tests cover: login as a second user after a database reset sees no old data; a 100-character password is rejected with a 422; a 60 MB upload is rejected without being read into memory; `9**9**9` returns an error in under a second.

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # ── Models ────────────────────────────────────────────────────────────────
     llm_model: str = "gemini-3.5-flash"
     llm_temperature: float = 0.3
-    tool_temperature: float = 0.0          # the agent, the date-time tool and the evaluation judge
+    tool_temperature: float = 0.0          # the agent and the evaluation judge
     llm_timeout_seconds: float = 120.0
     llm_max_output_tokens: int = 8192
     embedding_model: str = "models/gemini-embedding-001"
