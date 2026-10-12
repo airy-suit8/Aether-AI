@@ -40,9 +40,21 @@ jobs:
       - name: Pytest with coverage
         run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=70
 
+      # The modules that hold the code of the Sprint 2 list (rag_engine, rag_langchain, agent,
+      # tools, auth, database, main), after the Sprint 3 restructure
       - name: Coverage of each core module is at least 70%
         run: |
-          for module in rag_engine.py rag_langchain.py agent.py tools.py auth.py database.py main.py; do
+          for module in \
+            main.py \
+            src/api/deps.py src/api/routes_auth.py src/api/routes_chat.py src/api/routes_documents.py \
+            src/api/routes_health.py src/api/schemas.py \
+            src/core/config.py src/core/security.py src/core/logging.py \
+            src/db/database.py \
+            src/ingestion/loader.py src/chunking/chunker.py src/embeddings/embedder.py \
+            src/vectordb/vector_store.py src/retrieval/retriever.py src/prompts/prompt_templates.py \
+            src/llm/llm_client.py src/memory/conversation.py \
+            src/pipeline/rag.py src/pipeline/documents.py \
+            src/agents/agent.py src/agents/tools.py; do
             if ! python -m coverage report --include="$module" --fail-under=70 > /dev/null; then
               python -m coverage report --include="$module"
               echo "::error::$module coverage is below 70%"
