@@ -13,8 +13,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
 | 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `confident-bell-h8c2ct`) | See below |
-| 6 Frontend rebuild | Visual redesign done early; engineering items remain. **This is the next sprint**: Sprint 5 is merged, and the decisions for it are written | See "Decisions already made" under Sprint 6 |
-| 7 Ship and document | Not started. Docker items deferred at the owner's request (11 Oct 2026). Items 3, 4 and 7 come after Sprint 6 | See "Decisions already made" under Sprint 7 |
+| 6 Frontend rebuild | Done on the branch `vigilant-dijkstra-5swgx3` (13 Oct 2026); pull request open, not yet merged | See below |
+| 7 Ship and document | Not started. Docker items deferred at the owner's request (11 Oct 2026). **Next**: a Linux run does items 3, 4 and 7, starting from Sprint 6's branch | See "Decisions already made" under Sprint 7 |
 | 8 Follow-ups and observability | Not started. Proposed 13 Oct 2026; after Sprint 7 | See Sprint 8 |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
@@ -142,6 +142,38 @@ Sprint 5 on the owner's Windows machine, before and after the merge (13 Oct 2026
 - The owner's database was then upgraded in place by the first start: 4 users with tenant ids, 17 conversation turns kept. The stores are still at `backend/aether.db` and `backend/vector_store/`; the startup logs a note about the new default (`data/` at the project root) each time.
 - **A correction to earlier evidence in this file.** "The same 2 documents and 45 chunks as before" (Sprint 3) was read from `/health`, which counted database records. Those two records date from June 2026, belong to the locked `__legacy_migration__` user, and have no vectors: the old vector store was deleted on 11 Oct 2026 to recreate it with cosine distance, and `backend/vector_store/` has been empty since. No account has a searchable document on this machine until one is uploaded. Nothing was lost in Sprints 3 to 5; the count was never evidence of searchable data.
 - Anyone signed in before the merge must sign in again: tokens now carry the tenant id. Passwords are unchanged.
+
+Sprint 6, checked on Linux (Python 3.12, Node 22, Chromium 1194), on the branch `vigilant-dijkstra-5swgx3`:
+
+| Item | Proof |
+|---|---|
+| 1 TypeScript, generated API types, one request wrapper (T4, F7) | `npm run typecheck` (also run by `npm run build` and CI); `src/services/api-schema.ts` generated from the snapshot and checked in CI with `npm run api-types -- --check`; renaming `turn_id` in the snapshot fails the type check in `ChatLayout.tsx` and `api.ts`; `api.test.ts` covers the wrapper (renewal, sign-out, 429 with and without `Retry-After`, the server's detail) |
+| 2 Router | `App.test.tsx` (every path, the return after sign-in, an unknown path, sign-out, an expired session); `tests/integration/test_frontend_serving.py` (the app's paths get `index.html`; `/api/...`, `/docs`, `/redoc` and `/openapi.json` stay 404s) |
+| 3 Stop, retry, stale replies (B9, F6) | `tests/integration/test_stream_closed.py` (a closed stream saves no turn, in all four modes and over ASGI with a real disconnect); `ChatLayout.test.tsx` |
+| 4 Citation markers (B7, R5) | `ChatLayout.test.tsx`, both cases: numbered sources by pointer and keyboard, and unnumbered ones |
+| 5 Threads, upload stage, feedback (F10, F14) | `ChatLayout.test.tsx`; the browser journey |
+| 6 One mode selector, tools row (F9) | `ChatLayout.test.tsx` |
+| 7 Markdown, memoised messages, scroll (S3, F13) | `src/components/chat/rendering.test.tsx`: an earlier answer is not re-rendered or re-parsed across a 12-piece stream (without the memo: 16 renders instead of 2) |
+| 8 Responsive, dialog, labels, contrast, motion (F11, F12) | The journey: axe at 1280 and 375 px on the start page, the chat and settings; no sideways scroll at 375 and 360 px; the settings sheet by keyboard. Lighthouse accessibility of the signed-in chat page: 100 (mobile emulation) and 100 (desktop preset) |
+| 9 Tests | `frontend/e2e/journey.spec.ts` (`npm run e2e`), in CI as its own job |
+
+- `python -m pytest`: 583 passed (566 before, and 17 new), with neither `GOOGLE_API_KEY` nor `JWT_SECRET` set. `ruff check .` clean. Coverage 99% in total; every module in the CI list at 95% or above.
+- Frontend: `npm ci`, `npm run api-types -- --check`, `npm run lint` (0 errors; the one warning is the old one in `AuthContext.tsx`), `npm run typecheck`, `npm test` 79 passed (the 51 earlier tests converted, none dropped, and 28 new), `npm run build`, `npm audit` 0 vulnerabilities. `npm run e2e`: the journey passes here and in CI.
+- The OpenAPI snapshot changed once, for decision 5: ten empty reply schemas and the two untyped `sources` lists became models. What is sent did not change (`tests/integration/test_reply_models.py`).
+- New dependencies, the five allowed: `typescript` 5.9, `openapi-typescript` 7.13, `react-router` 7.18, `@playwright/test` 1.56.1 and `@axe-core/playwright` 4.13.
+
+What Sprint 6 found, and where the plan was wrong:
+
+- **The search tests failed now and then** (two full runs of four). The shared test store holds the same text many times (most tests upload one file for a new user), and over many identical vectors Chroma's filtered HNSW search misses chunks of the tenant asked for: 4,000 chunks of 20 repeated vectors missed results in 18 of 18 queries, 4,000 distinct ones in 0 of 18; raising `ef_search` did not help. `test_search.py` now runs on a store of its own. Whether many users uploading the same file can cost a real search a passage is for the second audit.
+- **The single-page fallback first turned `/docs`, `/redoc` and `/openapi.json` into the app's page** in production (200 instead of 404). The full test run caught it; those paths are excluded now.
+- **TypeScript 7 is current, but `openapi-typescript` 7 needs TypeScript 5**, so the project uses 5.9. Its generator makes fields with a default required unless told otherwise (`--default-non-nullable=false`).
+- **`@types/node` is not among the allowed dependencies**, so the Playwright config is plain JavaScript and the journey uses only Playwright's API; both type-check without it. Playwright is pinned to 1.56.1 (its browser build goes with its version), and an npm override keeps the copy of `playwright-core` that `@axe-core/playwright` asks for at the same version.
+- **The agent now streams too**, so that Stop works in every mode: its turn is saved after its words are sent, like the others'. With the Stream switch off, Stop is disabled, since the server would finish and save the answer anyway.
+- **A 429 from the rate limiter carries no `Retry-After`** (slowapi's headers are off) and its body has `error`, not `detail`. The client says to wait a moment, and uses `Retry-After` whenever it is sent; the server was not changed.
+- **Upload progress is a stage, not a percentage**: `fetch` cannot report the bytes sent.
+- **The page behind a dialog is now inert.** axe found the conversation's heading failing contrast through the settings sheet's scrim at 375 px; making the background inert is also what a modal needs for the keyboard and screen readers.
+- **Lighthouse was run on Linux**, once, with `npx` (not a dependency), on a page signed in through the refresh cookie and holding a conversation with sources.
+- **Not done**: a pass with a real screen reader, and the lines of light (`Threads`) in the real chat; see DESIGN.md, "What comes next".
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
