@@ -10,11 +10,12 @@ which every chunk carries as document_id (R7). The chunks are filed under the ow
 from typing import Any, Dict, List, Optional
 
 from src.chunking.chunker import split_documents
+from src.core.config import settings
 from src.db.database import (
     clear_user_documents, delete_document_record, get_all_documents_detailed, get_document,
     get_document_owners, get_tenant_id, save_document_record, update_document_counts,
 )
-from src.ingestion.loader import load_document
+from src.ingestion.loader import DocumentError, load_document
 from src.vectordb.vector_store import store
 
 
@@ -25,6 +26,10 @@ def ingest_document(user_id: int, file_path: str, filename: str, document_id: Op
         raise ValueError("No text could be extracted from the document.")
 
     chunks = split_documents(raw_docs)
+    if len(chunks) > settings.max_chunks_per_document:  # S4: each chunk is an embedding call's worth of work
+        raise DocumentError(
+            f"'{filename}' is too long: it makes {len(chunks):,} passages, and one file may make "
+            f"{settings.max_chunks_per_document:,}. Split it into smaller files and upload those.")
     if document_id is not None:
         for chunk in chunks:
             chunk.metadata["document_id"] = document_id

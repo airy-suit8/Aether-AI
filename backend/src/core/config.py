@@ -91,7 +91,12 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+    # Uploads (S4): the file is streamed to disk and refused once it passes max_upload_bytes
     max_upload_bytes: int = 50 * 1024 * 1024
+    max_unpacked_bytes: int = 200 * 1024 * 1024   # a .docx or .xlsx (zip files) once unpacked
+    max_table_rows: int = 100_000                 # rows across all the sheets of a CSV or Excel file
+    max_chunks_per_document: int = 5_000
+    max_documents_per_user: int = 100
     max_question_chars: int = 5000
     # Per signed-in user, or per address for requests without a valid token (S8)
     rate_limit_default: str = "120/minute"   # every route without a limit of its own

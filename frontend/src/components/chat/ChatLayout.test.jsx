@@ -144,4 +144,14 @@ describe('ChatLayout', () => {
     expect(addToast).toHaveBeenCalledWith('No such document.', 'error')
     expect(await screen.findByRole('button', { name: 'Remove zephyr_manual.txt' })).toBeTruthy()
   })
+
+  it('does not send a file over the 50 MB limit, and says why', async () => {
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    const big = new File(['x'], 'huge.pdf', { type: 'application/pdf' })
+    Object.defineProperty(big, 'size', { value: 50 * 1024 * 1024 + 1 })
+    await user.upload(document.querySelector('input[type="file"]'), big)
+    expect(api.uploadDocument).not.toHaveBeenCalled()
+    expect(addToast).toHaveBeenCalledWith('huge.pdf is larger than 50 MB, the most one file may be.', 'error')
+  })
 })
