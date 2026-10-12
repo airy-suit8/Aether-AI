@@ -39,8 +39,8 @@ def run_agent(user_id: int, question: str, session_id: str,
     """
     
     metadata_store = {
-        "sources": [], 
-        "confidence": 1.0, 
+        "sources": [],
+        "confidence": None,  # set by a document search; an answer with no search has none (R11)
         "tool_used": set()
     }
     
@@ -54,21 +54,29 @@ def run_agent(user_id: int, question: str, session_id: str,
         
         # Merge sources and track minimum confidence across all searches
         metadata_store["sources"].extend(rag_result["sources"])
-        metadata_store["confidence"] = min(metadata_store["confidence"], rag_result["confidence"])
-        
+        earlier = metadata_store["confidence"]
+        metadata_store["confidence"] = rag_result["confidence"] if earlier is None else min(earlier, rag_result["confidence"])
+
         return f"Document Search Result:\n{rag_result['answer']}"
-        
+
     @tool
     def calculator_wrapper(expression: str) -> str:
         """Evaluate a mathematical expression safely."""
         metadata_store["tool_used"].add("calculator")
         return calculator.invoke(expression)
-        
+
     @tool
-    def datetime_wrapper(query: str) -> str:
-        """Get current date, time, day of week, or compute days between dates."""
+    def datetime_wrapper(operation: str = "now", start: str = "", end: str = "", days: int = 0) -> str:
+        """Date and time facts, computed exactly. Dates are written YYYY-MM-DD; an empty date means today.
+
+        operation:
+          "now"           the current date, weekday and time
+          "weekday"       the weekday of `start`
+          "days_between"  the number of days from `start` to `end`
+          "add_days"      the date `days` days after `start` (a negative number goes back)
+        """
         metadata_store["tool_used"].add("datetime")
-        return datetime_tool.invoke(query)
+        return datetime_tool.invoke({"operation": operation, "start": start, "end": end, "days": days})
         
     # ── Agent Orchestration ───────────────────────────────────────────────────
         
@@ -124,13 +132,15 @@ def run_agent(user_id: int, question: str, session_id: str,
     # Format tools used for the UI badge
     tools_used_str = " + ".join(sorted(list(metadata_store["tool_used"]))) if metadata_store["tool_used"] else "agent_direct"
     
-    # Save the turn to memory so future agent calls or RAG calls remember this interaction
-    confidence = metadata_store["confidence"] if metadata_store["tool_used"] else 1.0
-    _memory.add_turn(user_id, session_id, question, final_answer, confidence, mode="agent")
-    
+    # Save the turn to memory so future agent calls or RAG calls remember this interaction.
+    # Confidence is how close the retrieved passages were; an answer that searched no document
+    # has none (it used to claim 1.0). The database column is a number, so it records 0.
+    confidence = metadata_store["confidence"]
+    _memory.add_turn(user_id, session_id, question, final_answer, confidence or 0.0, mode="agent")
+
     return {
         "answer": final_answer,
         "sources": unique_sources,
-        "confidence": metadata_store["confidence"] if metadata_store["tool_used"] else 1.0,
+        "confidence": confidence,
         "tool_used": tools_used_str
     }
