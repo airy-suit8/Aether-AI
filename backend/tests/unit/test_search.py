@@ -3,10 +3,13 @@ The three search methods (dense, BM25, hybrid), the rank fusion in search_hybrid
 score every one of them reports: cosine similarity from 0 to 1 (R2, R3).
 """
 
+import uuid
+
 import pytest
 from langchain_core.documents import Document
 
 from src.core.config import settings
+from src.db import database
 from src.pipeline import rag
 from src.retrieval import retriever
 from src.vectordb import vector_store
@@ -20,14 +23,21 @@ CORPUS = {
 
 
 @pytest.fixture(scope="module")
-def user():
-    """One user with four one-chunk documents in the real (temp) vector store."""
-    user_id = 870001
-    vector_store.store.add_documents(user_id, [
+def owner():
+    """One user, (user id, tenant id), with four one-chunk documents in the real (temp) vector store."""
+    user_id = database.create_user(f"search_{uuid.uuid4().hex[:8]}", "hash")
+    tenant = database.get_tenant_id(user_id)
+    vector_store.store.add_documents(tenant, [
         Document(page_content=text, metadata={"source": name, "page": 1, "chunk_id": name})
         for name, text in CORPUS.items()
     ])
-    return user_id
+    return user_id, tenant
+
+
+@pytest.fixture(scope="module")
+def user(owner):
+    """That user's tenant id, the key the searches take."""
+    return owner[1]
 
 
 def _sources(hits):
@@ -50,7 +60,7 @@ def test_dense_search_returns_at_most_k(user):
 
 
 def test_dense_search_for_a_user_with_no_documents_is_empty():
-    assert retriever.retriever.search(870099, "pumps", k=5) == []
+    assert retriever.retriever.search("tenant-870099", "pumps", k=5) == []
 
 
 # ── BM25 ──────────────────────────────────────────────────────────────────────
@@ -70,7 +80,7 @@ def test_bm25_respects_k(user):
 
 
 def test_bm25_for_a_user_with_no_documents_is_empty():
-    assert retriever.retriever.search_bm25(870099, "pumps", k=5) == []
+    assert retriever.retriever.search_bm25("tenant-870099", "pumps", k=5) == []
 
 
 def test_bm25_reports_store_errors(user, monkeypatch):
@@ -82,9 +92,9 @@ def test_bm25_reports_store_errors(user, monkeypatch):
         fresh.search_bm25(user, "pumps", k=4)
 
 
-def _add_chunks(user_id, texts):
-    vector_store.store.add_documents(user_id, [
-        Document(page_content=t, metadata={"source": f"doc{i}.txt", "page": 1, "chunk_id": f"{user_id}-{i}"})
+def _add_chunks(tenant, texts):
+    vector_store.store.add_documents(tenant, [
+        Document(page_content=t, metadata={"source": f"doc{i}.txt", "page": 1, "chunk_id": f"{tenant}-{i}"})
         for i, t in enumerate(texts)
     ])
 
@@ -122,28 +132,28 @@ def test_bm25_index_is_built_once_and_rebuilt_when_the_chunks_change(monkeypatch
     # R3: the index was rebuilt from every chunk on every query
     reads = []
     real = vector_store.store.get_user_chunks
-    monkeypatch.setattr(vector_store.store, "get_user_chunks", lambda user_id: reads.append(user_id) or real(user_id))
-    fresh, user_id = retriever.Retriever(vector_store.store), 860005
+    monkeypatch.setattr(vector_store.store, "get_user_chunks", lambda tenant: reads.append(tenant) or real(tenant))
+    fresh, tenant = retriever.Retriever(vector_store.store), "tenant-860005"
 
-    _add_chunks(user_id, ["Forklifts are charged overnight"])
-    assert fresh.search_bm25(user_id, "forklifts", k=5) and fresh.search_bm25(user_id, "charged", k=5)
-    assert reads == [user_id]
+    _add_chunks(tenant, ["Forklifts are charged overnight"])
+    assert fresh.search_bm25(tenant, "forklifts", k=5) and fresh.search_bm25(tenant, "charged", k=5)
+    assert reads == [tenant]
 
-    vector_store.store.add_documents(user_id, [
-        Document(page_content="Pallet jacks are inspected weekly", metadata={"source": "new.txt", "page": 1, "chunk_id": "860005-new"})])
-    assert _sources(fresh.search_bm25(user_id, "pallet jacks", k=5)) == ["new.txt"]  # an upload is seen at once
-    assert reads == [user_id, user_id]
+    vector_store.store.add_documents(tenant, [
+        Document(page_content="Pallet jacks are inspected weekly", metadata={"source": "new.txt", "page": 1, "chunk_id": "tenant-860005-new"})])
+    assert _sources(fresh.search_bm25(tenant, "pallet jacks", k=5)) == ["new.txt"]  # an upload is seen at once
+    assert reads == [tenant, tenant]
 
-    vector_store.store.delete_user_chunks(user_id)
-    assert fresh.search_bm25(user_id, "forklifts", k=5) == []                          # and so is a delete
+    vector_store.store.delete_user_chunks(tenant)
+    assert fresh.search_bm25(tenant, "forklifts", k=5) == []                          # and so is a delete
 
 
 def test_bm25_keeps_the_index_of_only_the_most_recent_users(monkeypatch):
     monkeypatch.setattr(retriever, "BM25_USERS_KEPT", 2)
     fresh = retriever.Retriever(vector_store.store)
-    for user_id in (860011, 860012, 860013):
-        fresh.search_bm25(user_id, "anything", k=1)
-    assert list(fresh._bm25) == [860012, 860013]
+    for tenant in ("tenant-860011", "tenant-860012", "tenant-860013"):
+        fresh.search_bm25(tenant, "anything", k=1)
+    assert list(fresh._bm25) == ["tenant-860012", "tenant-860013"]
 
 
 # ── Hybrid, through the real store ────────────────────────────────────────────
@@ -161,7 +171,7 @@ def test_a_chunk_only_the_keyword_search_finds_gets_its_similarity(user, monkeyp
     question = "When are impeller seals on centrifugal pumps replaced?"
     dense_all = {h["meta"]["chunk_id"]: h["score"] for h in retriever.retriever.search(user, question, k=4)}
     fresh = retriever.Retriever(vector_store.store)
-    monkeypatch.setattr(fresh, "search", lambda user_id, query, k: [])  # dense search finds nothing
+    monkeypatch.setattr(fresh, "search", lambda tenant, query, k: [])  # dense search finds nothing
     hits = fresh.search_hybrid(user, question, k=4)
     assert _sources(hits)[0] == "pumps.txt"
     for hit in hits:
@@ -169,9 +179,9 @@ def test_a_chunk_only_the_keyword_search_finds_gets_its_similarity(user, monkeyp
 
 
 @pytest.mark.parametrize("mode", ["default", "hybrid", "langchain"])
-def test_an_off_topic_question_is_refused_in_every_mode_without_asking_the_model(user, fake_llm, mode):
+def test_an_off_topic_question_is_refused_in_every_mode_without_asking_the_model(owner, fake_llm, mode):
     # R2: in hybrid mode the rank-based score could not fall below 0.44, so nothing was refused
-    result = rag.answer(user, "xylophone quasar", session_id=f"offtopic-{mode}", mode=mode)
+    result = rag.answer(owner[0], "xylophone quasar", session_id=f"offtopic-{mode}", mode=mode)
     assert result["answer"] == rag.NOT_FOUND and result["sources"] == []
     assert result["confidence"] < settings.confidence_threshold
     assert fake_llm.prompts == []
@@ -189,7 +199,7 @@ def test_similarities_are_cosines_of_the_named_chunks_of_that_user_only(user):
     dense = {h["meta"]["chunk_id"]: h["score"] for h in retriever.retriever.search(user, question, k=4)}
     found = vector_store.store.similarities(user, question, ["pumps.txt", "fans.txt", "no-such-chunk"])
     assert found == {key: pytest.approx(dense[key], abs=1e-6) for key in ("pumps.txt", "fans.txt")}
-    assert vector_store.store.similarities(870099, question, ["pumps.txt"]) == {}  # another user's chunk
+    assert vector_store.store.similarities("tenant-870099", question, ["pumps.txt"]) == {}  # another user's chunk
     assert vector_store.store.similarities(user, question, []) == {}
 
 
@@ -203,11 +213,11 @@ def _hit(text, score=0.5):
 def fused(monkeypatch):
     """search_hybrid on a store whose dense and BM25 results, and similarities, are set by the test."""
     store = retriever.Retriever(vector_store.store)
-    monkeypatch.setattr(vector_store.store, "similarities", lambda user_id, query, chunk_ids: {c: 0.33 for c in chunk_ids})
+    monkeypatch.setattr(vector_store.store, "similarities", lambda tenant, query, chunk_ids: {c: 0.33 for c in chunk_ids})
 
     def run(dense, bm25, k=5, rrf_k=60):
-        monkeypatch.setattr(store, "search", lambda user_id, query, k: dense[:k])
-        monkeypatch.setattr(store, "search_bm25", lambda user_id, query, k: bm25[:k])
+        monkeypatch.setattr(store, "search", lambda tenant, query, k: dense[:k])
+        monkeypatch.setattr(store, "search_bm25", lambda tenant, query, k: bm25[:k])
         return store.search_hybrid(1, "q", k=k, rrf_k=rrf_k)
 
     return run
@@ -269,10 +279,10 @@ def test_fusion_with_one_side_empty_uses_the_same_score_scale(fused, dense, bm25
 
 def test_user_retriever_is_a_langchain_retriever_over_the_dense_search(user):
     from langchain_core.retrievers import BaseRetriever
-    lc = retriever.UserRetriever(user_id=user, k=2)
+    lc = retriever.UserRetriever(tenant=user, k=2)
     assert isinstance(lc, BaseRetriever)
     docs = lc.invoke("When are impeller seals on centrifugal pumps replaced?")
     dense = retriever.retriever.search(user, "When are impeller seals on centrifugal pumps replaced?", k=2)
     assert [d.page_content for d in docs] == [h["text"] for h in dense]
     assert [d.metadata["score"] for d in docs] == [h["score"] for h in dense]
-    assert retriever.UserRetriever(user_id=870099, k=2).invoke("pumps") == []
+    assert retriever.UserRetriever(tenant="tenant-870099", k=2).invoke("pumps") == []

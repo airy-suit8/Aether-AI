@@ -3,8 +3,9 @@ main.py — the entry point: builds the Aether AI app (python -m uvicorn main:ap
 
 create_app() checks the JWT secret, adds CORS and the rate limiter, includes the API routers
 from src/api/ and serves the built React app at /. The lifespan hook sets up the log files
-and the database tables when the server starts. Nothing is opened at import: the vector store
-opens on first use (it needs the Gemini key, so a server without one still starts).
+and the database tables when the server starts, and files chunks stored before tenant ids
+under their owner's tenant id. Nothing is opened at import, and a server without a Gemini key
+still starts: only adding and searching chunks need it.
 
 Endpoints (all under /api/v1):
   POST /auth/register, /auth/login    routes_auth
@@ -28,15 +29,25 @@ from slowapi.errors import RateLimitExceeded
 from src.api import routes_auth, routes_chat, routes_documents, routes_health
 from src.api.deps import limiter
 from src.core.config import APP_VERSION, settings
-from src.core.logging import setup_logging
+from src.core.logging import error_logger, setup_logging, upload_logger
 from src.db.database import init_db
+from src.pipeline.documents import migrate_chunks_to_tenants
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Open what the app writes to: the log files and the database tables."""
+    """Open what the app writes to: the log files and the database tables; re-key old chunks."""
     setup_logging(settings.log_dir)
+    for note in settings.path_notes():
+        error_logger.warning(note)
     init_db()
+    moved = migrate_chunks_to_tenants()
+    if moved["migrated"]:
+        upload_logger.info(f"Filed {moved['migrated']} chunks stored before tenant ids under their owners' tenant ids")
+    if moved["unclaimed"]:
+        error_logger.warning(
+            f"{moved['unclaimed']} chunks in the vector store belong to no document in this database "
+            "(left from an earlier database?). They are kept, and no user can search them.")
     yield
 
 

@@ -2,7 +2,8 @@
 retrieval/retriever.py — find the chunks that answer a question.
 
   Retriever      dense (cosine) search, BM25 keyword search, and hybrid search that fuses the
-                 two with Reciprocal Rank Fusion; every search is filtered by user_id. Dense and
+                 two with Reciprocal Rank Fusion; every search is filtered by the user's tenant
+                 id (the key of their chunks in the vector store). Dense and
                  hybrid hits are scored by cosine similarity, from 0 to 1
   UserRetriever  the same dense search as a LangChain retriever object (BaseRetriever), used by
                  the "langchain" pipeline strategy (Task 14)
@@ -26,7 +27,7 @@ from src.llm import llm_client
 from src.prompts.prompt_templates import REWRITE_PROMPT
 from src.vectordb.vector_store import VectorStore, store
 
-# How many users' keyword indexes are kept in memory at once
+# How many tenants' keyword indexes are kept in memory at once
 BM25_USERS_KEPT = 32
 
 
@@ -57,13 +58,13 @@ class Retriever:
 
     def __init__(self, store: VectorStore):
         self.store = store
-        # user_id -> (store version, index, chunk texts, chunk metadata), most recently used last
-        self._bm25: "OrderedDict[int, Tuple[int, Optional[_Bm25], List[str], List[Dict]]]" = OrderedDict()
+        # tenant -> (store version, index, chunk texts, chunk metadata), most recently used last
+        self._bm25: "OrderedDict[str, Tuple[int, Optional[_Bm25], List[str], List[Dict]]]" = OrderedDict()
 
-    def search(self, user_id: int, query: str, k: Optional[int] = None) -> List[Dict]:
-        """Search by text query, filtered by user_id."""
+    def search(self, tenant: str, query: str, k: Optional[int] = None) -> List[Dict]:
+        """Search by text query, filtered by tenant."""
         k = k or settings.top_k
-        results = self.store.similarity_search(user_id, query, k=k)
+        results = self.store.similarity_search(tenant, query, k=k)
         formatted = []
         for doc, score in results:
             formatted.append({
@@ -73,23 +74,23 @@ class Retriever:
             })
         return formatted
 
-    def _bm25_index(self, user_id: int) -> Tuple[Optional["_Bm25"], List[str], List[Dict]]:
-        """The user's keyword index, rebuilt only when their chunks have changed (R3)."""
-        version = self.store.version(user_id)
-        cached = self._bm25.get(user_id)
+    def _bm25_index(self, tenant: str) -> Tuple[Optional["_Bm25"], List[str], List[Dict]]:
+        """The tenant's keyword index, rebuilt only when their chunks have changed (R3)."""
+        version = self.store.version(tenant)
+        cached = self._bm25.get(tenant)
         if cached is None or cached[0] != version:
-            docs, metas = self.store.get_user_chunks(user_id)
+            docs, metas = self.store.get_user_chunks(tenant)
             cached = (version, _Bm25([_tokens(doc) for doc in docs]) if docs else None, docs, metas)
-            self._bm25[user_id] = cached
+            self._bm25[tenant] = cached
             while len(self._bm25) > BM25_USERS_KEPT:
                 self._bm25.popitem(last=False)
-        self._bm25.move_to_end(user_id)
+        self._bm25.move_to_end(tenant)
         return cached[1:]
 
-    def search_bm25(self, user_id: int, query: str, k: Optional[int] = None) -> List[Dict]:
-        """BM25 keyword search over the user's chunks. Scores are BM25 scores, not similarities."""
+    def search_bm25(self, tenant: str, query: str, k: Optional[int] = None) -> List[Dict]:
+        """BM25 keyword search over the tenant's chunks. Scores are BM25 scores, not similarities."""
         k = k or settings.top_k
-        index, docs, metas = self._bm25_index(user_id)
+        index, docs, metas = self._bm25_index(tenant)
         if index is None:
             return []
         scores = index.get_scores(_tokens(query))
@@ -100,7 +101,7 @@ class Retriever:
             for idx in top_indices if scores[idx] > 0
         ]
 
-    def search_hybrid(self, user_id: int, query: str, k: Optional[int] = None, rrf_k: int = 60) -> List[Dict]:
+    def search_hybrid(self, tenant: str, query: str, k: Optional[int] = None, rrf_k: int = 60) -> List[Dict]:
         """
         Dense and BM25 search, merged with Reciprocal Rank Fusion:
         a chunk's fused value is 1 / (rrf_k + its dense rank) + 1 / (rrf_k + its BM25 rank).
@@ -110,8 +111,8 @@ class Retriever:
         every mode (R2).
         """
         k = k or settings.top_k
-        dense_results = self.search(user_id, query, k=k*2)
-        bm25_results = self.search_bm25(user_id, query, k=k*2)
+        dense_results = self.search(tenant, query, k=k*2)
+        bm25_results = self.search_bm25(tenant, query, k=k*2)
 
         hits, fused = {}, {}
         for ranked in (dense_results, bm25_results):
@@ -125,7 +126,7 @@ class Retriever:
         dense_keys = {_chunk_key(hit) for hit in dense_results}
         keyword_only = [key for key in top if key not in dense_keys]
         similarity = self.store.similarities(
-            user_id, query, [hits[key]["meta"]["chunk_id"] for key in keyword_only if "chunk_id" in hits[key]["meta"]],
+            tenant, query, [hits[key]["meta"]["chunk_id"] for key in keyword_only if "chunk_id" in hits[key]["meta"]],
         ) if keyword_only else {}
 
         results = []
@@ -142,15 +143,15 @@ retriever = Retriever(store)
 
 
 class UserRetriever(BaseRetriever):
-    """One user's dense search as a LangChain retriever. Each Document carries its score in metadata["score"]."""
+    """One user's dense search, by their tenant id, as a LangChain retriever. Each Document carries its score in metadata["score"]."""
 
-    user_id: int
+    tenant: str
     k: int
 
     def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> List[Document]:
         return [
             Document(page_content=hit["text"], metadata={**hit["meta"], "score": hit["score"]})
-            for hit in retriever.search(self.user_id, query, k=self.k)
+            for hit in retriever.search(self.tenant, query, k=self.k)
         ]
 
 

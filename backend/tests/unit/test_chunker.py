@@ -10,6 +10,7 @@ from src.vectordb import vector_store
 from filemakers import make_pdf
 from src.chunking import chunker
 from src.core.config import settings
+from src.db import database
 from src.ingestion import loader
 from src.pipeline.documents import ingest_document
 
@@ -21,7 +22,7 @@ LONG_TEXT = " ".join(SENTENCES)  # about 4,700 characters, no newlines
 def captured(monkeypatch):
     """Capture what ingest_document hands to the vector store, without embedding it."""
     stored = []
-    monkeypatch.setattr(vector_store.store, "add_documents", lambda user_id, docs: stored.extend(docs))
+    monkeypatch.setattr(vector_store.store, "add_documents", lambda tenant, docs: stored.extend(docs))
     return stored
 
 
@@ -98,13 +99,15 @@ def test_nothing_to_extract_is_a_value_error_and_stores_nothing(tmp_path, captur
     assert captured == []
 
 
-def test_stored_chunks_are_tagged_with_the_user(tmp_path):
-    user = 880001
+def test_stored_chunks_are_tagged_with_the_user_s_tenant_id(tmp_path):
+    user = database.create_user(f"tagged_{uuid.uuid4().hex[:8]}", "hash")
+    tenant = database.get_tenant_id(user)
     path = tmp_path / "tagged.txt"
     path.write_text(LONG_TEXT, encoding="utf-8")
     ingest_document(user, str(path), "tagged.txt")
-    metas = vector_store.store.chroma._collection.get(where={"user_id": user}, include=["metadatas"])["metadatas"]
-    assert metas and all(m["user_id"] == user and m["source"] == "tagged.txt" for m in metas)
+    metas = vector_store.store.collection.get(where={"tenant_id": tenant}, include=["metadatas"])["metadatas"]
+    # The integer user id is not stored: ids restart in a new database (S2)
+    assert metas and all(m["tenant_id"] == tenant and "user_id" not in m and m["source"] == "tagged.txt" for m in metas)
 
 
 # ── LangChain loaders and the shared splitter (Tasks 12, 13) ──────────────────
@@ -120,12 +123,12 @@ def test_langchain_splitter_numbers_its_chunks(tmp_path):
 
 
 def test_langchain_ingest_stores_searchable_chunks(tmp_path, monkeypatch):
-    user = 880002
+    user = database.create_user(f"lc_{uuid.uuid4().hex[:8]}", "hash")
     path = tmp_path / "lc.txt"
     path.write_text("The Halcyon register records every blade inspection.", encoding="utf-8")
     monkeypatch.setattr(settings, "document_loader", "langchain")
     assert ingest_document(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
-    hits = retriever.retriever.search(user, "Halcyon register", k=1)
+    hits = retriever.retriever.search(database.get_tenant_id(user), "Halcyon register", k=1)
     assert hits[0]["meta"]["source"] == "lc.txt"
     with pytest.raises(ValueError):
         empty = tmp_path / "empty.txt"

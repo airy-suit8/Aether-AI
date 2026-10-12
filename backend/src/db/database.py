@@ -6,13 +6,16 @@ Zero external dependencies — sqlite3 ships with Python. Importing this module 
 the database file is set by settings.db_path (AETHER_DB_PATH).
 
 Tables:
+  users         — accounts; each has a random tenant_id, the key of its chunks in the vector store
   conversations — stores every Q&A turn with timestamps
   documents     — tracks uploaded document metadata
 """
 
 import sqlite3
 import threading
+import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from src.core.config import settings
@@ -32,6 +35,7 @@ def _get_connection() -> sqlite3.Connection:
 
 def init_db():
     """Create tables if they don't exist. Called once, from the app's lifespan hook."""
+    Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
     with _db_lock:
         conn = _get_connection()
 
@@ -41,7 +45,8 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                tenant_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS conversations (
@@ -75,6 +80,7 @@ def init_db():
         _migrate_column(conn, "conversations", "feedback", "INTEGER DEFAULT 0")
         _migrate_column(conn, "conversations", "user_id", "INTEGER DEFAULT 1")
         _migrate_column(conn, "documents", "user_id", "INTEGER DEFAULT 1")
+        _migrate_column(conn, "users", "tenant_id", "TEXT")
 
         # Create a locked default user to adopt any orphaned pre-auth records.
         conn.execute(
@@ -82,15 +88,25 @@ def init_db():
             (datetime.now().isoformat(),)
         )
 
+        # Every user gets a random tenant id, the key of their chunks in the vector store (S2).
+        # User ids restart in a new database; tenant ids are never reused.
+        for (user_id,) in conn.execute("SELECT id FROM users WHERE tenant_id IS NULL").fetchall():
+            conn.execute("UPDATE users SET tenant_id = ? WHERE id = ?", (_new_tenant_id(), user_id))
+
         # Step 3: Create indexes (safe now — columns guaranteed to exist)
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
             CREATE INDEX IF NOT EXISTS idx_conv_user_session ON conversations(user_id, session_id);
             CREATE INDEX IF NOT EXISTS idx_doc_user_hash ON documents(user_id, file_hash);
         """)
 
         conn.commit()
         conn.close()
+
+
+def _new_tenant_id() -> str:
+    return str(uuid.uuid4())
 
 
 def _migrate_column(conn: sqlite3.Connection, table: str, column: str, col_type: str):
@@ -114,13 +130,33 @@ def create_user(username: str, password_hash: str) -> int:
     with _db_lock:
         conn = _get_connection()
         cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            (username, password_hash, datetime.now().isoformat())
+            "INSERT INTO users (username, password_hash, created_at, tenant_id) VALUES (?, ?, ?, ?)",
+            (username, password_hash, datetime.now().isoformat(), _new_tenant_id())
         )
         conn.commit()
         user_id = cursor.lastrowid
         conn.close()
         return user_id
+
+def get_tenant_id(user_id: int) -> str:
+    """The user's tenant id, the key of their chunks in the vector store. LookupError for no such user."""
+    conn = _get_connection()
+    row = conn.execute("SELECT tenant_id FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    if row is None or not row["tenant_id"]:
+        raise LookupError(f"No user with id {user_id}")
+    return row["tenant_id"]
+
+
+def get_document_owners() -> List[Dict[str, Any]]:
+    """Every document record with its owner's tenant id: {user_id, tenant_id, document_id, filename}."""
+    conn = _get_connection()
+    rows = conn.execute(
+        "SELECT u.id AS user_id, u.tenant_id, d.id AS document_id, d.filename "
+        "FROM documents d JOIN users u ON u.id = d.user_id"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 # ── Conversation Operations ───────────────────────────────────────────────────
 

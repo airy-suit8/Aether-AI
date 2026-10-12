@@ -13,10 +13,15 @@ and the JWT secret when the app is built (main.create_app).
 from pathlib import Path
 from typing import List, Literal
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+# The database and the vector store live together in one folder at the project root (S2)
+DATA_DIR = BACKEND_DIR.parent / "data"
+# Where they were kept before Sprint 5; a store found there is still used (see Settings)
+OLD_DB_PATH = BACKEND_DIR / "aether.db"
+OLD_VECTOR_STORE_DIR = BACKEND_DIR / "vector_store"
 
 # Shown by /health and the OpenAPI schema. Not a tunable.
 APP_VERSION = "2.0.0"
@@ -81,9 +86,31 @@ class Settings(BaseSettings):
     rate_limit_chat: str = "30/minute"
 
     # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR) ──
-    db_path: Path = BACKEND_DIR / "aether.db"
-    vector_store_dir: Path = BACKEND_DIR / "vector_store"
+    db_path: Path = Field(default_factory=lambda: DATA_DIR / "aether.db")
+    vector_store_dir: Path = Field(default_factory=lambda: DATA_DIR / "vector_store")
     log_dir: Path = BACKEND_DIR / "logs"
+
+    _path_notes: List[str] = PrivateAttr(default_factory=list)
+
+    @model_validator(mode="after")
+    def _keep_using_stores_at_the_old_default_paths(self) -> "Settings":
+        """A store made before Sprint 5, at the old default path, is used rather than starting
+        empty, when its path was not set and nothing exists at the new default yet. Nothing is
+        moved; path_notes() says what was found, for the startup log."""
+        for field, old in (("db_path", OLD_DB_PATH), ("vector_store_dir", OLD_VECTOR_STORE_DIR)):
+            # The module names are read here, not at import, so a test can point them elsewhere
+            new = getattr(self, field)
+            if field in self.model_fields_set or new.exists() or not old.exists():
+                continue
+            setattr(self, field, old)
+            self._path_notes.append(
+                f"Using {old}, the old default path, because nothing is at the new default {new}. "
+                f"To stop this note, move it there with the backend stopped, or set AETHER_{field.upper()}.")
+        return self
+
+    def path_notes(self) -> List[str]:
+        """What the startup should log about where the stores were found."""
+        return list(self._path_notes)
 
     def require_jwt_secret(self) -> str:
         """Return the JWT secret, or stop with a clear message when it is missing."""
