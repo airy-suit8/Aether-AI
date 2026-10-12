@@ -119,6 +119,22 @@ npm run build
 
 `npm run build` runs the type check first.
 
+The browser journey walks through the whole app in Chromium: sign up, upload, ask, reload, a
+second thread, a rating, removing the document and signing out, with an accessibility check
+(axe) on the start page, the chat and settings at desktop and phone width. It builds the app
+and starts its own backend with fake models on temp stores (`backend/tests/e2e_server.py`), so
+it needs no API key and touches none of your data. Once, install the browser it uses; then run
+it:
+
+```bat
+cd frontend
+npx playwright install chromium
+npm run e2e
+```
+
+It runs the backend with the Python in `.venv` at the project root (or set `AETHER_PYTHON` to
+another one), on port 8765.
+
 The same checks run on GitHub for every push and pull request (`.github/workflows/ci.yml`). They need no secrets.
 
 ## macOS and Linux

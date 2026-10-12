@@ -1,0 +1,7 @@
+{
+  // Type-checks the browser journey (npm run typecheck). It uses Playwright's API only, so it
+  // needs no Node.js types; the config that starts the servers is plain JavaScript.
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "types": [] },
+  "include": ["."]
+}

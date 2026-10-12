@@ -372,7 +372,30 @@ export function HoldButton({ onConfirm, holdMs = 1200, disabled = false, childre
   )
 }
 
-/** A modal sheet of glass. Escape and a click outside close it; Tab stays inside it. */
+/**
+ * Make everything outside `node` inert, up to the Prism root, and return how to undo it. Live
+ * regions (the toasts) stay as they are, so what they say is still heard.
+ */
+function inertAround(node: HTMLElement): () => void {
+  const made: Element[] = []
+  let child: HTMLElement = node
+  while (child.parentElement) {
+    const parent: HTMLElement = child.parentElement
+    for (const sibling of parent.children) {
+      if (sibling === child || sibling.hasAttribute('inert') || sibling.matches('[aria-live]')) continue
+      sibling.setAttribute('inert', '')
+      made.push(sibling)
+    }
+    if (parent.classList.contains('prism')) break
+    child = parent
+  }
+  return () => made.forEach((el) => el.removeAttribute('inert'))
+}
+
+/**
+ * A modal sheet of glass. Escape and a click outside close it; Tab stays inside it; and the page
+ * behind it is inert while it is open, so neither focus nor a screen reader can wander there.
+ */
 export function Dialog({ title, onClose, width, children }: {
   title: string
   onClose: () => void
@@ -380,6 +403,9 @@ export function Dialog({ title, onClose, width, children }: {
   children?: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const scrimRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => (scrimRef.current ? inertAround(scrimRef.current) : undefined), [])
 
   useEffect(() => {
     const node = ref.current
@@ -417,6 +443,7 @@ export function Dialog({ title, onClose, width, children }: {
   const style: PrismStyle | undefined = width ? { '--dialog-w': width } : undefined
   return (
     <div
+      ref={scrimRef}
       className="p-scrim"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose()
