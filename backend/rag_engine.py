@@ -29,7 +29,8 @@ from src.llm import llm_client
 from src.chunking.chunker import split_documents
 from src.ingestion.loader import load_document
 from src.vectordb.vector_store import store as _store
-from src.prompts.prompt_templates import RAG_PROMPT, REWRITE_PROMPT, SUMMARIZE_PROMPT, format_context
+from src.retrieval.retriever import retriever, rewrite_question
+from src.prompts.prompt_templates import RAG_PROMPT, SUMMARIZE_PROMPT, format_context
 
 # ── Constants ────────────────────────────────────────────────────────────────
 TOP_K         = settings.top_k
@@ -133,13 +134,12 @@ def query_rag(user_id: int, question: str, session_id: str = "default", use_hybr
     search_query = question
     
     if history != "(No previous conversation)":
-        llm = llm_client.get_llm()
-        search_query = (REWRITE_PROMPT | llm | StrOutputParser()).invoke({"history": history, "question": question}).strip()
+        search_query = rewrite_question(question, history)
 
     if use_hybrid:
-        results = _store.search_hybrid(user_id, search_query, k=TOP_K)
+        results = retriever.search_hybrid(user_id, search_query, k=TOP_K)
     else:
-        results = _store.search(user_id, search_query, k=TOP_K)
+        results = retriever.search(user_id, search_query, k=TOP_K)
 
     if not results:
         return RAGResponse(
@@ -217,13 +217,12 @@ def query_rag_stream(user_id: int, question: str, session_id: str = "default", u
     search_query = question
     
     if history != "(No previous conversation)":
-        llm = llm_client.get_llm()
-        search_query = (REWRITE_PROMPT | llm | StrOutputParser()).invoke({"history": history, "question": question}).strip()
+        search_query = rewrite_question(question, history)
 
     if use_hybrid:
-        results = _store.search_hybrid(user_id, search_query, k=TOP_K)
+        results = retriever.search_hybrid(user_id, search_query, k=TOP_K)
     else:
-        results = _store.search(user_id, search_query, k=TOP_K)
+        results = retriever.search(user_id, search_query, k=TOP_K)
 
     if not results:
         yield {"type": "token", "content": "No documents have been uploaded yet. Please upload some documents first."}

@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 import rag_engine
+from src.retrieval import retriever
 from src.vectordb import vector_store
 from filemakers import make_pdf
 from src.chunking import chunker
@@ -103,7 +104,7 @@ def test_langchain_ingest_stores_searchable_chunks(tmp_path, monkeypatch):
     path.write_text("The Halcyon register records every blade inspection.", encoding="utf-8")
     monkeypatch.setattr(settings, "document_loader", "langchain")
     assert rag_engine.ingest_document(user, str(path), "lc.txt") == {"filename": "lc.txt", "pages": 1, "chunks": 1}
-    hits = vector_store.store.search(user, "Halcyon register", k=1)
+    hits = retriever.retriever.search(user, "Halcyon register", k=1)
     assert hits[0]["meta"]["source"] == "lc.txt"
     with pytest.raises(ValueError):
         empty = tmp_path / "empty.txt"

@@ -10,6 +10,7 @@ import pytest
 
 from src.db import database
 import rag_engine
+from src.retrieval import retriever
 from src.vectordb import vector_store
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
@@ -85,7 +86,7 @@ def test_search_never_returns_the_other_users_chunks(client, tenants, modes):
 def test_store_searches_are_filtered_by_user(tenants):
     owner, other = tenants
     owner_file, owner_text, owner_question, _ = owner["doc"]
-    store = vector_store.store
+    store = retriever.retriever
     # Query with the owner's exact text: the strongest possible match for the owner's chunk
     for search in (store.search, store.search_bm25, store.search_hybrid):
         for query in (owner_text, owner_question):
