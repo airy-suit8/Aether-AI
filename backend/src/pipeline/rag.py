@@ -247,9 +247,10 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         yield {"type": "token", "content": chunk}
     trace.refused = is_refusal(answer_text)
 
+    sources = _answer_sources(answer_text, results)
     if save_turn:
-        memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode])
-    yield {"type": "done", "sources": _answer_sources(answer_text, results), "confidence": confidence}
+        memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode], sources=sources)
+    yield {"type": "done", "sources": sources, "confidence": confidence}
 
 
 def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict[str, Any]]:

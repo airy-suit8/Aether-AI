@@ -7,11 +7,12 @@ the database file is set by settings.db_path (AETHER_DB_PATH).
 
 Tables:
   users         — accounts; each has a random tenant_id, the key of its chunks in the vector store
-  conversations — stores every Q&A turn with timestamps
+  conversations — stores every Q&A turn with timestamps, and the sources and tool shown with it
   documents     — tracks uploaded document metadata, and whether each is processing, ready or
                   failed (it is read in the background after the upload is accepted, R12)
 """
 
+import json
 import sqlite3
 import threading
 import uuid
@@ -60,6 +61,8 @@ def init_db():
                 mode TEXT DEFAULT 'original',
                 feedback INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL,
+                sources TEXT,
+                tool_used TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
@@ -84,6 +87,9 @@ def init_db():
         _migrate_column(conn, "conversations", "user_id", "INTEGER DEFAULT 1")
         _migrate_column(conn, "documents", "user_id", "INTEGER DEFAULT 1")
         _migrate_column(conn, "users", "tenant_id", "TEXT")
+        # What an answer showed with it, so a reloaded conversation shows it again (Sprint 5 item 7)
+        _migrate_column(conn, "conversations", "sources", "TEXT")
+        _migrate_column(conn, "conversations", "tool_used", "TEXT")
         # Documents uploaded before ingestion moved to the background were all read in full
         _migrate_column(conn, "documents", "status", "TEXT NOT NULL DEFAULT 'ready'")
         _migrate_column(conn, "documents", "error", "TEXT")
@@ -189,17 +195,46 @@ def get_document_owners() -> List[Dict[str, Any]]:
 # ── Conversation Operations ───────────────────────────────────────────────────
 
 def save_conversation(user_id: int, session_id: str, question: str, answer: str,
-                      confidence: float = 0.0, mode: str = "original"):
-    """Save a Q&A turn to the database."""
+                      confidence: float = 0.0, mode: str = "original",
+                      sources: Optional[List[Dict[str, Any]]] = None, tool_used: Optional[str] = None):
+    """Save a Q&A turn to the database, with the sources and tool shown with the answer."""
     with _db_lock:
         conn = _get_connection()
         conn.execute(
-            "INSERT INTO conversations (user_id, session_id, question, answer, confidence, mode, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, session_id, question, answer, confidence, mode, datetime.now().isoformat())
+            "INSERT INTO conversations (user_id, session_id, question, answer, confidence, mode, created_at, "
+            "sources, tool_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, session_id, question, answer, confidence, mode, datetime.now().isoformat(),
+             json.dumps(sources if sources is not None else []), tool_used)
         )
         conn.commit()
         conn.close()
+
+
+def get_sessions(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    """A user's conversations, most recently used first: the session id, its first question as a
+    title, how many turns it has, and when it started and was last used."""
+    conn = _get_connection()
+    rows = conn.execute(
+        "SELECT session_id, COUNT(*) AS turns, MIN(created_at) AS started_at, MAX(created_at) AS updated_at, "
+        "(SELECT question FROM conversations f WHERE f.user_id = c.user_id AND f.session_id = c.session_id "
+        " ORDER BY f.id LIMIT 1) AS title "
+        "FROM conversations c WHERE user_id = ? GROUP BY session_id ORDER BY MAX(id) DESC LIMIT ?",
+        (user_id, limit)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_session_turns(user_id: int, session_id: str) -> List[Dict[str, Any]]:
+    """Every turn of one of a user's conversations, oldest first."""
+    conn = _get_connection()
+    rows = conn.execute(
+        "SELECT id, question, answer, confidence, mode, sources, tool_used, feedback, created_at "
+        "FROM conversations WHERE user_id = ? AND session_id = ? ORDER BY id",
+        (user_id, session_id)
+    ).fetchall()
+    conn.close()
+    return [{**dict(r), "sources": json.loads(r["sources"]) if r["sources"] else []} for r in rows]
 
 
 def get_conversation_history(user_id: int, session_id: str, limit: int = 10) -> List[Dict[str, str]]:
