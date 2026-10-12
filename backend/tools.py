@@ -11,11 +11,11 @@ import re
 from datetime import datetime
 
 from langchain_core.tools import tool
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from src.core.config import settings
 from src.llm import llm_client
+from src.prompts.prompt_templates import DATETIME_PROMPT
 
 
 # ── Task 9: Calculator Tool ──────────────────────────────────────────────────
@@ -150,16 +150,7 @@ def datetime_tool(query: str) -> str:
     
     try:
         llm = llm_client.get_llm(temperature=settings.tool_temperature)
-        prompt = PromptTemplate.from_template(
-            "You are a precise calendar and time assistant. "
-            "The current date and time is: {current_time}. "
-            "Calculate or answer the user's date/time question accurately. "
-            "If they ask for a future or past date without a year, assume the next/previous occurrence relative to the current date. "
-            "Respond concisely with the answer.\n\n"
-            "Question: {question}\n"
-            "Answer:"
-        )
-        chain = prompt | llm | StrOutputParser()
+        chain = DATETIME_PROMPT | llm | StrOutputParser()
         return chain.invoke({
             "current_time": current_time_str,
             "question": query
