@@ -35,6 +35,8 @@ class UploadResponse(BaseModel):
     pages: int
     chunks: int
     message: str
+    document_id: int       # for DELETE /documents/{document_id}
+    replaced: bool = False  # true when an earlier file of the same name was replaced
 
 class UserRegister(BaseModel):
     username: str
