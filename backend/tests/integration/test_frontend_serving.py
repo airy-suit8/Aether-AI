@@ -61,6 +61,19 @@ def test_an_unknown_api_path_stays_a_json_404(tmp_path):
         assert c.get("/api/v1/ping").json() == {"pong": True}
 
 
+def test_the_api_description_pages_are_not_pages_of_the_app(tmp_path):
+    # Production turns /docs, /redoc and /openapi.json off; they must not become the app's page
+    with TestClient(_built_app(tmp_path)) as c:
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            assert c.get(path).status_code == 200  # FastAPI's own, in this development app
+    production = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    main.mount_frontend(production, tmp_path)
+    with TestClient(production) as c:
+        for path in ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"):
+            assert c.get(path).status_code == 404, path
+        assert c.get("/chat").status_code == 200
+
+
 def test_the_real_app_serves_its_pages_and_keeps_api_404s(client):
     # The suite's app serves frontend/dist when it has been built; without a build only / answers
     page = client.get("/chat/session_1")

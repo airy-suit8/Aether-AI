@@ -114,18 +114,23 @@ then restart the backend and reload this page.</li>
 </body></html>"""
 
 
+# Paths that are never a page of the app: the API, and its description pages, which are routes
+# in development and must stay a 404 when production turns them off (S10)
+NOT_PAGES = ("/api/", "/docs", "/redoc", "/openapi.json")
+
+
 class SinglePageApp(StaticFiles):
     """
     The built React app. Its pages are paths the browser shows (/login, /chat/<thread>, /settings)
     that exist only in the app's router, so a path that matches no file gets index.html and the
-    app draws the page. A path under /api/ is never a page: an unknown one stays a JSON 404.
+    app draws the page. A path in NOT_PAGES is never a page: an unknown one stays a JSON 404.
     """
 
     async def get_response(self, path: str, scope: Scope):
         try:
             return await super().get_response(path, scope)
         except HTTPException as e:
-            if e.status_code != 404 or scope["path"].startswith("/api/"):
+            if e.status_code != 404 or scope["path"].startswith(NOT_PAGES):
                 raise
             return await super().get_response("index.html", scope)
 
