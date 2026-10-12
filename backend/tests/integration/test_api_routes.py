@@ -279,10 +279,46 @@ def test_rate_limit(client, make_user, route, limit):
     assert r.status_code == 429, (route, r.status_code)
 
 
-def test_documents_list_has_no_rate_limit(client, make_user):
-    _, headers = make_user("nolimit")
-    for _ in range(40):
-        assert client.get("/api/v1/documents", headers=headers).status_code == 200
+@pytest.mark.parametrize("path", ["/api/v1/documents", "/api/v1/health"])
+def test_a_route_without_a_limit_of_its_own_gets_the_default(client, make_user, path):
+    # S8: only five routes had a limit; now every route has one
+    assert settings.rate_limit_default == "120/minute"
+    _, headers = make_user("default")
+    for _ in range(120):
+        assert client.get(path, headers=headers).status_code == 200
+    assert client.get(path, headers=headers).status_code == 429
+
+
+def test_every_api_route_has_a_limit():
+    from src.api.deps import limiter
+    assert limiter._default_limits  # applied by the middleware to every route without a decorator
+    own = {name.rsplit(".", 1)[1] for name in limiter._route_limits}
+    assert own == {"register", "login", "upload_document", "chat", "chat_stream"}
+    assert not limiter._exempt_routes
+
+
+def test_signed_in_users_have_their_own_allowance_even_from_one_address(client, make_user):
+    # S8: limits were keyed by socket address, so behind a proxy everyone shared one bucket
+    _, alice = make_user("alice_rl")
+    _, bob = make_user("bob_rl")
+    for _ in range(30):
+        assert ask(client, alice, "anything").status_code != 429
+    assert ask(client, alice, "anything").status_code == 429
+    assert ask(client, bob, "anything").status_code == 200  # same address, another user
+
+
+def test_requests_without_a_valid_token_share_their_address_s_allowance(client):
+    from starlette.requests import Request
+    from src.api.deps import rate_limit_key
+
+    def key(authorization=None):
+        headers = [(b"authorization", authorization.encode())] if authorization else []
+        return rate_limit_key(Request({"type": "http", "headers": headers, "client": ("10.0.0.7", 1234)}))
+
+    good = security.create_access_token({"sub": "42"})
+    assert key(f"Bearer {good}") == "user:42"
+    for bad in (None, "Bearer not-a-jwt", *(f"Bearer {token}" for token in BAD_TOKENS.values())):
+        assert key(bad) == "address:10.0.0.7"
 
 
 def test_uploaded_bytes_are_recorded(client, make_user):
