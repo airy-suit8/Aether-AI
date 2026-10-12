@@ -22,7 +22,6 @@ from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, Te
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # LangChain core
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -39,17 +38,11 @@ from rag_engine import (
     CHUNK_OVERLAP,
 )
 
-from src.core.config import settings
+from src.llm import llm_client
 
 
 # ── Gemini clients (same models as original) ─────────────────────────────────
 
-def _get_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model=settings.llm_model,
-        google_api_key=settings.google_api_key,
-        temperature=settings.llm_temperature,
-    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -233,7 +226,7 @@ def _retrieve_and_format(user_id: int, question: str, session_id: str) -> Dict[s
     search_query = question
     
     if history != "(No previous conversation)":
-        llm = _get_llm()
+        llm = llm_client.get_llm()
         contextualize_prompt = f"""Given the following conversation history and the user's current question, rephrase the current question to be a standalone question that captures all necessary context. If it is already standalone, return it exactly as is. Do not answer the question, just reformulate it.
         
 History:
@@ -309,7 +302,7 @@ def query_rag_langchain(user_id: int, question: str, session_id: str = "default"
         ).model_dump()
 
     # ── Step 2: Summarize — Task 15 LCEL syntax (prompt | model | parser) ─────
-    llm = _get_llm()
+    llm = llm_client.get_llm()
 
     summarize_chain = SUMMARIZE_PROMPT | llm | StrOutputParser()
 
@@ -372,7 +365,7 @@ def query_rag_langchain_stream(user_id: int, question: str, session_id: str = "d
         yield {"type": "done", "sources": [], "confidence": retrieval["confidence"]}
         return
 
-    llm = _get_llm()
+    llm = llm_client.get_llm()
     summarize_chain = SUMMARIZE_PROMPT | llm | StrOutputParser()
 
     summarized_context = summarize_chain.invoke({

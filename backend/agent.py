@@ -5,7 +5,6 @@ Uses LangGraph's create_react_agent to allow the LLM to chain multiple tools tog
 structured metadata for the UI.
 """
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
@@ -13,6 +12,7 @@ from tools import calculator, datetime_tool
 from rag_engine import query_rag
 
 from src.core.config import settings
+from src.llm import llm_client
 
 
 # Maximum LangGraph steps per question (each tool call takes two). LangGraph's default is
@@ -20,12 +20,6 @@ from src.core.config import settings
 AGENT_RECURSION_LIMIT = settings.agent_recursion_limit
 
 
-def _get_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model=settings.llm_model,
-        google_api_key=settings.google_api_key,
-        temperature=settings.tool_temperature,
-    )
 
 
 def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
@@ -78,7 +72,7 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
         document_search_wrapper
     ]
     
-    llm = _get_llm()
+    llm = llm_client.get_llm(temperature=settings.tool_temperature)
     
     system_prompt = (
         "You are the Aether AI Knowledge Assistant. You can chain multiple tools together to answer complex user questions.\n"

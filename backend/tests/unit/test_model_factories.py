@@ -33,3 +33,20 @@ def test_embeddings_use_the_configured_model_and_timeout(fake_key):
 def test_embeddings_without_a_key_say_so():
     with pytest.raises(RuntimeError, match="GOOGLE_API_KEY is not set"):
         fresh("src.embeddings.embedder").get_embeddings()
+
+
+def test_chat_model_uses_the_configured_model_timeout_and_cap(fake_key):
+    llm = fresh("src.llm.llm_client").get_llm()
+    assert llm.model.endswith(settings.llm_model)
+    assert llm.temperature == settings.llm_temperature
+    assert llm.timeout == settings.llm_timeout_seconds
+    assert llm.max_output_tokens == settings.llm_max_output_tokens
+
+
+def test_chat_model_temperature_can_be_set_by_the_caller(fake_key):
+    assert fresh("src.llm.llm_client").get_llm(temperature=0.0).temperature == 0.0
+
+
+def test_chat_model_without_a_key_says_so():
+    with pytest.raises(RuntimeError, match="GOOGLE_API_KEY is not set"):
+        fresh("src.llm.llm_client").get_llm()
