@@ -22,9 +22,25 @@ CORPUS = {
 }
 
 
+@pytest.fixture(scope="module", autouse=True)
+def own_store(tmp_path_factory):
+    """
+    A vector store of this module's own, restored afterwards. These tests compare exact search
+    results, and the shared test store holds the same text many times over (most tests upload
+    the same file for a new user). Over many identical vectors Chroma's filtered HNSW search can
+    miss a tenant's chunks, which made these tests fail now and then once the suite grew.
+    """
+    store = vector_store.store
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(settings, "vector_store_dir", tmp_path_factory.mktemp("search_store"))
+        for opened in ("_client", "_collection", "_chroma"):  # reopened at the new path on first use
+            mp.setattr(store, opened, None)
+        yield store
+
+
 @pytest.fixture(scope="module")
-def owner():
-    """One user, (user id, tenant id), with four one-chunk documents in the real (temp) vector store."""
+def owner(own_store):
+    """One user, (user id, tenant id), with four one-chunk documents in a vector store of its own."""
     user_id = database.create_user(f"search_{uuid.uuid4().hex[:8]}", "hash")
     tenant = database.get_tenant_id(user_id)
     vector_store.store.add_documents(tenant, [
