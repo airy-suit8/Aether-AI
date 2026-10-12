@@ -135,30 +135,39 @@ DATETIME_PROMPT = PromptTemplate.from_template(
 
 # ── Evaluation (src/evaluation/evaluate.py) ───────────────────────────────────
 
-EVAL_ANSWER_PROMPT = PromptTemplate.from_template("Context:\n{context}\n\nQuestion: {question}\n\nAnswer:")
+# Both are sent to the judge model (settings.judge_model), never to the model that answered.
 
-FAITHFULNESS_PROMPT = PromptTemplate.from_template("""
-You are a strict QA evaluator assessing Faithfulness (Groundedness).
-Determine if the provided Answer contains statements that CANNOT be inferred from the Context.
+JUDGE_CORRECTNESS_PROMPT = PromptTemplate.from_template("""You are grading an answer against a reference answer.
 
-Context:
-{context}
+Question:
+{question}
 
-Answer:
+Reference answer (known to be correct):
+{expected}
+
+Answer to grade:
 {answer}
 
-Respond ONLY with a JSON object in this exact format:
-{{"score": 0.0 to 1.0, "reasoning": "brief explanation"}}
-Score 1.0 means fully grounded. Score 0.0 means completely hallucinated.
-""")
+Score the answer:
+  1.0  it states every fact in the reference answer, and nothing that contradicts it
+  0.5  it states some of the facts in the reference answer, or adds a detail that contradicts it
+  0.0  it states none of them, is wrong, or declines to answer
+Extra detail that does not contradict the reference is not a fault. Wording does not matter.
 
-RELEVANCE_PROMPT = PromptTemplate.from_template("""
-You are an evaluation model scoring Answer Relevance.
-Rate how well the Answer directly addresses the User Question.
+Reply with one JSON object and nothing else: {{"score": 0.0, 0.5 or 1.0, "reasoning": "one sentence"}}
 
-Question: {question}
-Answer: {answer}
+Verdict (JSON):""")
 
-Respond ONLY with a JSON object in this format:
-{{"score": 0.0 to 1.0, "reasoning": "brief explanation"}}
-""")
+JUDGE_FAITHFULNESS_PROMPT = PromptTemplate.from_template("""You are checking whether an answer is supported by its source passages.
+
+Source passages:
+{context}
+
+Answer to check:
+{answer}
+
+List each factual claim the answer makes. A claim is supported when the passages state it or it follows directly from them. The score is the share of claims that are supported: 1.0 when every claim is supported, 0.0 when none is. An answer that makes no factual claim scores 1.0.
+
+Reply with one JSON object and nothing else: {{"score": a number from 0.0 to 1.0, "reasoning": "one sentence naming any unsupported claim"}}
+
+Verdict (JSON):""")

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int = 8192
     embedding_model: str = "models/gemini-embedding-001"
     embedding_timeout_seconds: float = 60.0
+    # The evaluation's judge (AETHER_JUDGE_MODEL). It must differ from llm_model, so it has no
+    # default: an answer scored by the model that wrote it is not a measurement.
+    judge_model: str = ""
 
     # ── RAG pipeline ──────────────────────────────────────────────────────────
     document_loader: Literal["native", "langchain"] = "native"
