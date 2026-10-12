@@ -13,6 +13,7 @@ from rag_engine import query_rag
 
 from src.core.config import settings
 from src.llm import llm_client
+from src.prompts.prompt_templates import AGENT_SYSTEM_PROMPT
 
 
 # Maximum LangGraph steps per question (each tool call takes two). LangGraph's default is
@@ -74,20 +75,11 @@ def run_agent(user_id: int, question: str, session_id: str = "default") -> dict:
     
     llm = llm_client.get_llm(temperature=settings.tool_temperature)
     
-    system_prompt = (
-        "You are the Aether AI Knowledge Assistant. You can chain multiple tools together to answer complex user questions.\n"
-        "- If you need information from uploaded documents, use document_search_wrapper.\n"
-        "- If you need to do math, use calculator_wrapper.\n"
-        "- If you need date/time info, use datetime_wrapper.\n"
-        "- If you need real-world facts, flight distances, prices, or general knowledge that is NOT in the user's documents, DO NOT attempt to search the web. Instead, rely on your own vast internal knowledge base to provide the data.\n"
-        "Think step-by-step. Use the tools to gather necessary data, then synthesize the outputs into a clear final conversational answer.\n"
-        "CRITICAL: After using a tool, you MUST output a final text response. NEVER return an empty string."
-    )
     
     from langchain_core.messages import HumanMessage, AIMessage
     from rag_engine import _memory
     
-    agent = create_react_agent(llm, tools, prompt=system_prompt)
+    agent = create_react_agent(llm, tools, prompt=AGENT_SYSTEM_PROMPT)
     
     # Inject conversation history so the agent understands context (e.g. "assume 1890 km")
     history = _memory.get_history(user_id, session_id)

@@ -13,11 +13,11 @@ Run:
 
 import json
 
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from src.core.config import settings
 from src.llm import llm_client
+from src.prompts.prompt_templates import EVAL_ANSWER_PROMPT, FAITHFULNESS_PROMPT, RELEVANCE_PROMPT
 
 def get_eval_llm():
     return llm_client.get_llm(temperature=settings.tool_temperature)
@@ -40,21 +40,7 @@ BENCHMARK_DATASET = [
 def evaluate_faithfulness(question: str, context: str, answer: str) -> float:
     """Evaluate whether the answer is strictly grounded in the context without hallucinations."""
     llm = get_eval_llm()
-    prompt = PromptTemplate.from_template("""
-You are a strict QA evaluator assessing Faithfulness (Groundedness).
-Determine if the provided Answer contains statements that CANNOT be inferred from the Context.
-
-Context:
-{context}
-
-Answer:
-{answer}
-
-Respond ONLY with a JSON object in this exact format:
-{{"score": 0.0 to 1.0, "reasoning": "brief explanation"}}
-Score 1.0 means fully grounded. Score 0.0 means completely hallucinated.
-""")
-    chain = prompt | llm | StrOutputParser()
+    chain = FAITHFULNESS_PROMPT | llm | StrOutputParser()
     try:
         res = chain.invoke({"context": context, "answer": answer})
         data = json.loads(res.strip().strip("```json").strip("```"))
@@ -65,17 +51,7 @@ Score 1.0 means fully grounded. Score 0.0 means completely hallucinated.
 def evaluate_relevance(question: str, answer: str) -> float:
     """Evaluate if the answer directly answers the question."""
     llm = get_eval_llm()
-    prompt = PromptTemplate.from_template("""
-You are an evaluation model scoring Answer Relevance.
-Rate how well the Answer directly addresses the User Question.
-
-Question: {question}
-Answer: {answer}
-
-Respond ONLY with a JSON object in this format:
-{{"score": 0.0 to 1.0, "reasoning": "brief explanation"}}
-""")
-    chain = prompt | llm | StrOutputParser()
+    chain = RELEVANCE_PROMPT | llm | StrOutputParser()
     try:
         res = chain.invoke({"question": question, "answer": answer})
         data = json.loads(res.strip().strip("```json").strip("```"))
@@ -96,8 +72,7 @@ def run_rag_benchmark():
         
         # Simulate RAG generation using benchmark context
         llm = get_eval_llm()
-        gen_prompt = f"Context:\n{item['context']}\n\nQuestion: {item['question']}\n\nAnswer:"
-        answer = (PromptTemplate.from_template("{prompt}") | llm | StrOutputParser()).invoke({"prompt": gen_prompt}).strip()
+        answer = (EVAL_ANSWER_PROMPT | llm | StrOutputParser()).invoke({"context": item["context"], "question": item["question"]}).strip()
         
         faith_score = evaluate_faithfulness(item["question"], item["context"], answer)
         rel_score = evaluate_relevance(item["question"], answer)
