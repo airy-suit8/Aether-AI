@@ -4,7 +4,7 @@
  * find the conversation back, start a second thread, return to the first from the thread list,
  * rate an answer, remove the document, sign out. Along the way axe checks the start page, the
  * chat and the settings sheet at 1280 px and at 375 px, and fails on any serious or critical
- * violation.
+ * violation; at 375 px and 360 px each of them must fit the screen without scrolling sideways.
  */
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -14,6 +14,7 @@ const QUESTION = 'How often is the Zephyr turbine blade inspection?'
 const SECOND = 'Who carries out the inspection?'
 const WIDE = { width: 1280, height: 800 }
 const PHONE = { width: 375, height: 812 }
+const NARROW = { width: 360, height: 740 }  // item 8: usable from 360 px
 
 /** Run axe on the page as it is now and fail on a serious or critical violation. */
 async function checkAccessibility(page: Page, where: string) {
@@ -24,13 +25,25 @@ async function checkAccessibility(page: Page, where: string) {
   expect(blocking, `axe on ${where}`).toEqual([])
 }
 
-/** Check a page at desktop and at phone width. Each width is loaded fresh, as a phone would open it. */
+/** The page is no wider than the screen: nothing makes it scroll sideways. */
+async function checkFits(page: Page, where: string) {
+  const { scroll, client } = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth,
+  }))
+  expect(scroll, `${where} scrolls sideways`).toBeLessThanOrEqual(client)
+}
+
+/**
+ * Check a page at desktop and at phone width with axe, and that at phone widths it fits the
+ * screen. Each width is loaded fresh, as a phone would open it.
+ */
 async function checkAtBothWidths(page: Page, where: string, ready: () => Promise<void>) {
-  for (const size of [WIDE, PHONE]) {
+  for (const size of [WIDE, PHONE, NARROW]) {
     await page.setViewportSize(size)
     await page.reload()
     await ready()
-    await checkAccessibility(page, `${where} at ${size.width} px`)
+    if (size !== NARROW) await checkAccessibility(page, `${where} at ${size.width} px`)
+    if (size !== WIDE) await checkFits(page, `${where} at ${size.width} px`)
   }
   await page.setViewportSize(WIDE)
   await page.reload()
@@ -118,7 +131,15 @@ test('the whole journey, with the accessibility gate', async ({ page }) => {
   await checkAtBothWidths(page, 'the settings sheet', settingsReady)
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
+
+  // By keyboard: the sheet opens from its button, takes focus, and Escape gives it back
+  await page.getByRole('button', { name: 'Settings' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
   await expect(page).toHaveURL(/\/chat\/session_\d+$/)
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeFocused()
 
   // ── Remove the document: one click arms the button, a second confirms ────
   await library.getByText('zephyr_manual.txt').hover()

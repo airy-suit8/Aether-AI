@@ -255,7 +255,7 @@
   padding: 10px clamp(12px, 3vw, 28px);
 }
 
-.x-top__thread { display: inline-flex; align-items: baseline; gap: 8px; margin-right: auto; color: var(--p-ink-3); }
+.x-top__thread { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; margin-right: auto; overflow: hidden; white-space: nowrap; color: var(--p-ink-3); }
 
 /* ── Conversation: each question is a heading, its answer and evidence sit under it ── */
 
@@ -553,3 +553,11 @@
 .x-retry p { margin: 0; }
 .x-retry b { font-weight: 660; color: var(--p-ink); }
 .x-retry[data-tone="bad"] b { color: var(--p-bad); }
+
+/* Phones from 360 px: the top bars keep to the width of the screen. */
+@media (max-width: 420px) {
+  .x-top__thread .p-eyebrow { display: none; }
+  .x-top .p-btn,
+  .l-top .p-btn { padding-inline: 12px; }
+  .l-top .p-lens button { padding-inline: 10px; }
+}
