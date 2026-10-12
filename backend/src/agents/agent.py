@@ -1,20 +1,25 @@
 """
 agents/agent.py — Task 11.5: Multi-Step Agent Execution Layer
-Uses LangGraph's create_react_agent to allow the LLM to chain multiple tools together
+Uses LangChain's create_agent (a LangGraph agent loop) to allow the LLM to chain multiple tools together
 (e.g., Search RAG -> Calculate Math -> Web Search -> Final Answer) while preserving
 structured metadata for the UI.
 """
 
-from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
-
 from typing import Callable
+
+from langchain.agents import create_agent
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import tool
+from langgraph.errors import GraphRecursionError
 
 from src.core.config import settings
 from src.llm import llm_client
 from src.memory.conversation import memory as _memory
 from src.agents.tools import calculator, datetime_tool
 from src.prompts.prompt_templates import AGENT_SYSTEM_PROMPT
+
+# The answer when the agent hits settings.agent_recursion_limit
+OUT_OF_STEPS = "Sorry, need more steps to process this request."
 
 
 
@@ -74,11 +79,8 @@ def run_agent(user_id: int, question: str, session_id: str,
     ]
     
     llm = llm_client.get_llm(temperature=settings.tool_temperature)
-    
-    
-    from langchain_core.messages import HumanMessage, AIMessage
-    
-    agent = create_react_agent(llm, tools, prompt=AGENT_SYSTEM_PROMPT)
+
+    agent = create_agent(llm, tools, system_prompt=AGENT_SYSTEM_PROMPT)
     
     # Inject conversation history so the agent understands context (e.g. "assume 1890 km")
     history = _memory.get_history(user_id, session_id)
@@ -89,13 +91,18 @@ def run_agent(user_id: int, question: str, session_id: str,
     messages.append(HumanMessage(content=question))
     
     # Run the multi-step execution loop. LangGraph's default limit is 10,000 steps, so a model
-    # that keeps calling tools would run, and bill, almost without limit; the setting caps it. Errors propagate to the API, which reports
-    # them as errors instead of saving and showing them as an answer.
-    result = agent.invoke({"messages": messages}, config={"recursion_limit": settings.agent_recursion_limit})
-    
+    # that keeps calling tools would run, and bill, almost without limit; the setting caps it.
+    # Other errors propagate to the API, which reports them as errors instead of saving and
+    # showing them as an answer.
+    try:
+        result = agent.invoke({"messages": messages}, config={"recursion_limit": settings.agent_recursion_limit})
+    except GraphRecursionError:
+        # create_agent raises at the limit; the old create_react_agent answered with this text
+        result = {"messages": [AIMessage(content=OUT_OF_STEPS)]}
+
     # Extract the final answer from the LLM (.text joins content blocks into one string)
     final_answer = result["messages"][-1].text
-    
+
     # Fallback: Sometimes Gemini fails to synthesize a final string after a tool call.
     # If the final text is empty, check if the previous message was a ToolMessage and use its raw output.
     if not final_answer.strip() and len(result["messages"]) > 1:
