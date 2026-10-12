@@ -101,7 +101,7 @@ Seam checklist. Tick each when its test exists and passes.
 - [x] Config: the model id appears in exactly one place (`tests/test_no_orphans.py::test_each_model_id_is_written_in_exactly_one_place`; the no-orphan check also fails if anything but `core/config.py` reads the environment)
 - [x] Backend → UI: `GET /` returns the built React app
 - [ ] Docker: `docker compose up` passes the same end-to-end test (deferred with the Docker work)
-- [ ] Evaluation: the harness imports and calls the real pipeline
+- [x] Evaluation: the harness imports and calls the real pipeline (`tests/unit/test_evaluation.py::test_run_asks_the_real_pipeline_and_scores_it`)
 
 ---
 

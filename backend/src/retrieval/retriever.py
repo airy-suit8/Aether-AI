@@ -127,7 +127,7 @@ class UserRetriever(BaseRetriever):
         ]
 
 
-def rewrite_question(question: str, history: str) -> str:
+def rewrite_question(question: str, history: str, config: Optional[Dict] = None) -> str:
     """Rephrase a follow-up as a standalone question, using the formatted conversation history."""
     llm = llm_client.get_llm()
-    return (REWRITE_PROMPT | llm | StrOutputParser()).invoke({"history": history, "question": question}).strip()
+    return (REWRITE_PROMPT | llm | StrOutputParser()).invoke({"history": history, "question": question}, config=config).strip()

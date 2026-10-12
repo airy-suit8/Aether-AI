@@ -142,13 +142,37 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 | `memory/` | `conversation.py`: conversation history per user and session |
 | `pipeline/` | `rag.py`: the one question-answering pipeline (modes `default`, `hybrid`, `langchain`, `agent`); `documents.py`: ingest, list, delete |
 | `agents/` | `agent.py` and `tools.py`: the tool-calling agent, the calculator and the date-time tool |
-| `evaluation/` | `evaluate.py`: the evaluation harness, run with `python -m src.evaluation.evaluate` |
+| `evaluation/` | `evaluate.py`: measures the pipeline on labelled questions (see "Measuring answer quality" below) |
 
 **Import style.** Code imports by absolute path from `backend/`, for example `from src.core.config import settings`. Run every command from the `backend` folder: `python -m uvicorn main:app`, `python -m pytest` and `python -m src.evaluation.evaluate` all put that folder on Python's path (`pytest.ini` sets `pythonpath = .` for the tests).
 
 **Settings.** Every tunable has a default in `src/core/config.py` and can be overridden by an environment variable or a line in `backend\.env` with the `AETHER_` prefix, for example `AETHER_TOP_K=8` or `AETHER_LLM_MODEL=...`. Environment variables win over `.env`. `GOOGLE_API_KEY` and `JWT_SECRET` keep their usual names.
 
 **The no-orphan check** (`backend\tests\test_no_orphans.py`, also its own CI step) fails if a module under `src/` is imported by nothing, if a route has no test that calls it, if anything but `core/config.py` reads the environment, or if a model id is written anywhere else.
+
+## Measuring answer quality
+
+`python -m src.evaluation.evaluate` asks a set of labelled questions through the real pipeline and reports how well it retrieved and answered. It ingests the documents into a temporary store, so your own database and vector store are not touched, but it does call Gemini.
+
+1. Put the documents in `backend\src\evaluation\documents\`.
+2. Write `backend\src\evaluation\dataset.jsonl`, one question per line:
+
+   ```json
+   {"id": "q01", "question": "What is the notice period?", "expected_answer": "30 days.", "source": "handbook.pdf", "page": 12}
+   {"id": "u01", "question": "What is the boiling point of mercury?", "answerable": false}
+   ```
+
+   `source` is the file that holds the answer and `page` the page (or `"pages": [12, 13]`). For files without pages, give `"contains": "a phrase from the right passage"` instead. Include questions the documents cannot answer, marked `"answerable": false`.
+3. Run it from `backend`:
+
+   ```bat
+   ..\.venv\Scripts\python -m src.evaluation.evaluate --label baseline --retrieval-only
+   ..\.venv\Scripts\python -m src.evaluation.evaluate --label baseline
+   ```
+
+   `--retrieval-only` measures retrieval and the refusal threshold with embedding calls only. The full run also generates every answer and has a second model score it, so set `AETHER_JUDGE_MODEL` in `backend\.env` to a model other than the one that answers. `--pause 6` waits between questions if you hit a rate limit.
+
+Each run is saved as `docs\evaluation\<label>.json`, and `docs\evaluation.md` is rebuilt to show every saved run side by side, with a section explaining how each number is computed.
 
 ## Where data is kept
 

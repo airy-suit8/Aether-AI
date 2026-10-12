@@ -61,6 +61,7 @@ class ScriptedChatModel(BaseChatModel):
     fail_with  — if set, every call raises RuntimeError(fail_with)
     tool_name  — the tool the fake agent calls on its first step
     tool_input — the argument passed to that tool (defaults to the user's question)
+    judge_reply — what it answers when asked to judge an answer (the evaluation harness)
     prompts    — every prompt text received, for assertions
     """
 
@@ -68,6 +69,7 @@ class ScriptedChatModel(BaseChatModel):
     fail_with: Optional[str] = None
     tool_name: str = "document_search_wrapper"
     tool_input: Optional[str] = None
+    judge_reply: str = '{"score": 1.0, "reasoning": "fake judge"}'
     prompts: List[str] = []
 
     @property
@@ -100,6 +102,8 @@ class ScriptedChatModel(BaseChatModel):
                 "id": "call_1",
             }])
 
+        if "Verdict (JSON):" in text:
+            return AIMessage(content=self.judge_reply)
         if "calendar and time assistant" in text:
             return AIMessage(content="Date answer. " + _between(text, "The current date and time is:", ". Calculate"))
         if "Standalone Question:" in text:

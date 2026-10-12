@@ -17,9 +17,12 @@ One pipeline, four modes:
 Every mode shares the prompts, the memory, the confidence threshold and the source list.
 """
 
+import time
+from contextlib import contextmanager
 from operator import itemgetter
 from typing import Any, Dict, Iterator, List, Literal, Optional
 
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
 
@@ -51,9 +54,41 @@ class RAGResponse(BaseModel):
     tool_used: Optional[str] = Field(default=None, description="Agent mode: which tools answered")
 
 
+# ── What one question did (read by the evaluation harness) ───────────────────
+
+class Trace:
+    """The chunks retrieved for a question, whether it was refused, and what each stage cost."""
+
+    def __init__(self):
+        self.search_query = ""
+        self.hits: List[Dict[str, Any]] = []
+        self.refused = False
+        self.stages: Dict[str, Dict[str, float]] = {}  # name -> seconds, input_tokens, output_tokens
+
+    @contextmanager
+    def stage(self, name: str):
+        """Time a stage. Yields a LangChain config that counts the tokens of model calls given it."""
+        usage = UsageMetadataCallbackHandler()
+        start = time.perf_counter()
+        try:
+            yield {"callbacks": [usage]}
+        finally:
+            used = list(usage.usage_metadata.values())
+            self.stages[name] = {
+                "seconds": round(time.perf_counter() - start, 3),
+                "input_tokens": sum(u.get("input_tokens", 0) for u in used),
+                "output_tokens": sum(u.get("output_tokens", 0) for u in used),
+            }
+
+
+def is_refusal(answer: str) -> bool:
+    """True for the pipeline's own refusals and for the model's (rule 2 of RAG_PROMPT)."""
+    return answer.strip().startswith(("I could not find relevant information", NO_DOCUMENTS))
+
+
 # ── The two retrieval-and-generation strategies ──────────────────────────────
 
-def _retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
+def retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
     """The top chunks for the query, as {"text", "meta", "score"} hits."""
     if mode == "langchain":
         docs = UserRetriever(user_id=user_id, k=settings.top_k).invoke(query)
@@ -63,7 +98,7 @@ def _retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
     return retriever.search(user_id, query, k=settings.top_k)
 
 
-def _generate(mode: Mode, context: str, question: str, chat_history: str) -> Iterator[str]:
+def _generate(mode: Mode, context: str, question: str, chat_history: str, trace: Trace) -> Iterator[str]:
     """Summarize the context, then stream the answer from the summary (Task 3)."""
     llm = llm_client.get_llm()
     if mode == "langchain":
@@ -78,12 +113,15 @@ def _generate(mode: Mode, context: str, question: str, chat_history: str) -> Ite
             | llm
             | StrOutputParser()
         )
-        return chain.stream({"context": context, "question": question, "chat_history": chat_history})
+        with trace.stage("answer") as config:  # one chain, so the summary is counted with the answer
+            yield from chain.stream({"context": context, "question": question, "chat_history": chat_history}, config=config)
+        return
 
-    summarize_chain = SUMMARIZE_PROMPT | llm | StrOutputParser()
-    summary = summarize_chain.invoke({"context": context, "question": question})
-    generate_chain = RAG_PROMPT | llm | StrOutputParser()
-    return generate_chain.stream({"context": summary, "question": question, "chat_history": chat_history})
+    with trace.stage("summarize") as config:
+        summary = (SUMMARIZE_PROMPT | llm | StrOutputParser()).invoke({"context": context, "question": question}, config=config)
+    with trace.stage("answer") as config:
+        yield from (RAG_PROMPT | llm | StrOutputParser()).stream(
+            {"context": summary, "question": question, "chat_history": chat_history}, config=config)
 
 
 def _sources(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -113,21 +151,30 @@ def _refusal(text: str, confidence: float) -> Iterator[Dict[str, Any]]:
 # ── The pipeline ──────────────────────────────────────────────────────────────
 
 def events(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
-           save_turn: bool = True) -> Iterator[Dict[str, Any]]:
+           save_turn: bool = True, trace: Optional[Trace] = None) -> Iterator[Dict[str, Any]]:
     """
     Answer a question as a stream of events (see the module docstring).
     save_turn=False is for the agent's document search, whose turn the agent saves itself.
+    trace, when given, is filled in as the question runs (the agent mode leaves it empty).
     """
     if mode == "agent":
         yield from _agent_events(user_id, question, session_id)
         return
+    trace = trace or Trace()
 
     # Contextualize the question for search if there's history (Task 4)
     history = memory.format_history(user_id, session_id)
-    search_query = rewrite_question(question, history) if history != NO_HISTORY else question
+    search_query = question
+    if history != NO_HISTORY:
+        with trace.stage("rewrite") as config:
+            search_query = rewrite_question(question, history, config)
+    trace.search_query = search_query
 
-    results = _retrieve(mode, user_id, search_query)
+    with trace.stage("retrieve"):
+        results = retrieve(mode, user_id, search_query)
+    trace.hits = results
     if not results:
+        trace.refused = True
         yield from _refusal(NO_DOCUMENTS, 0.0)
         return
 
@@ -135,13 +182,15 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
     scores = [r["score"] for r in results]
     confidence = round(sum(scores) / len(scores), 3)
     if max(scores) < settings.confidence_threshold:
+        trace.refused = True
         yield from _refusal(NOT_FOUND, confidence)
         return
 
     answer_text = ""
-    for chunk in _generate(mode, format_context(results), question, history):
+    for chunk in _generate(mode, format_context(results), question, history, trace):
         answer_text += chunk
         yield {"type": "token", "content": chunk}
+    trace.refused = is_refusal(answer_text)
 
     if save_turn:
         memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode])
@@ -161,11 +210,11 @@ def _agent_events(user_id: int, question: str, session_id: str) -> Iterator[Dict
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
-           save_turn: bool = True) -> Dict[str, Any]:
+           save_turn: bool = True, trace: Optional[Trace] = None) -> Dict[str, Any]:
     """Run events() to the end and return {"answer", "sources", "confidence", "tool_used"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
-    for event in events(user_id, question, session_id, mode, save_turn):
+    for event in events(user_id, question, session_id, mode, save_turn, trace):
         if event["type"] == "token":
             tokens.append(event["content"])
         elif event["type"] == "done":
