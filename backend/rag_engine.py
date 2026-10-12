@@ -21,7 +21,7 @@ from pypdf import PdfReader
 from docx import Document as DocxDoc
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
@@ -38,6 +38,7 @@ from src.db.database import (
 )
 
 from src.core.config import settings
+from src.embeddings import embedder
 
 # ── Constants ────────────────────────────────────────────────────────────────
 STORE_DIR     = Path(settings.vector_store_dir)
@@ -50,12 +51,6 @@ MEMORY_MAX_TURNS = settings.memory_max_turns  # Task 4: max conversation turns t
 STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Gemini clients ────────────────────────────────────────────────────────────
-
-def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
-    return GoogleGenerativeAIEmbeddings(
-        model=settings.embedding_model,
-        google_api_key=settings.google_api_key,
-    )
 
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
@@ -167,7 +162,7 @@ class ChromaVectorStoreWrapper:
     def _init_chroma(self):
         self._chroma = Chroma(
             collection_name=self.collection_name,
-            embedding_function=_get_embeddings(),
+            embedding_function=embedder.get_embeddings(),
             persist_directory=self.persist_directory,
             # Cosine distance, so relevance scores are cosine similarity (Chroma's default is L2).
             # Only applies when the collection is created: delete an old vector_store/ to switch.

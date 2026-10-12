@@ -6,6 +6,7 @@ import tempfile
 import rag_engine
 from fakes import HashingEmbeddings
 from src.core.config import settings
+from src.embeddings import embedder
 
 
 def test_stores_point_at_temp_dirs():
@@ -17,4 +18,4 @@ def test_stores_point_at_temp_dirs():
 
 def test_no_real_gemini_key_in_tests():
     assert os.environ["GOOGLE_API_KEY"] == ""
-    assert isinstance(rag_engine._get_embeddings(), HashingEmbeddings)
+    assert isinstance(embedder.get_embeddings(), HashingEmbeddings)
