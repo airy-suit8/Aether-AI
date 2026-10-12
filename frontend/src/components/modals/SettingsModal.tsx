@@ -3,6 +3,8 @@ import { getDocumentsDetailed, deleteAllDocuments, getHealth } from '../../servi
 import type { DocumentRecord, Schemas } from '../../services/api'
 import { Dialog, HoldButton, Lens } from '../../design/prism'
 import type { AddToast } from '../chat/types'
+// One version for the app and its API (backend/src/core/config.py APP_VERSION; a test keeps them equal)
+import { version } from '../../../package.json'
 
 type Tab = 'general' | 'documents' | 'health'
 
@@ -142,6 +144,10 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
           <div className="s-metric" data-tone={health?.status === 'ok' ? 'ok' : healthFailed ? 'bad' : undefined}>
             <b>{health?.status === 'ok' ? 'Running' : healthFailed ? 'Unreachable' : 'Checking'}</b>
             <span>Backend</span>
+          </div>
+          <div className="s-metric">
+            <b className="p-mono">{version}</b>
+            <span>Version</span>
           </div>
         </div>
       )}
