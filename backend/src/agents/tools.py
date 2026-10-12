@@ -1,20 +1,21 @@
 """
-tools.py — LangChain Tools for the Aether AI Knowledge Assistant Agent
+agents/tools.py — LangChain Tools for the Aether AI Knowledge Assistant Agent
 Task 9:  Calculator Tool (safe math evaluation via AST)
 Task 10: Date-Time Tool (current date/time, day computations)
 """
 
 import ast
-import os
 import operator
 import math
 import re
 from datetime import datetime
 
 from langchain_core.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+
+from src.core.config import settings
+from src.llm import llm_client
+from src.prompts.prompt_templates import DATETIME_PROMPT
 
 
 # ── Task 9: Calculator Tool ──────────────────────────────────────────────────
@@ -148,21 +149,8 @@ def datetime_tool(query: str) -> str:
     current_time_str = now.strftime('%A, %B %d, %Y at %I:%M:%S %p')
     
     try:
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-3.5-flash",
-            google_api_key=os.environ.get("GOOGLE_API_KEY"),
-            temperature=0.0
-        )
-        prompt = PromptTemplate.from_template(
-            "You are a precise calendar and time assistant. "
-            "The current date and time is: {current_time}. "
-            "Calculate or answer the user's date/time question accurately. "
-            "If they ask for a future or past date without a year, assume the next/previous occurrence relative to the current date. "
-            "Respond concisely with the answer.\n\n"
-            "Question: {question}\n"
-            "Answer:"
-        )
-        chain = prompt | llm | StrOutputParser()
+        llm = llm_client.get_llm(temperature=settings.tool_temperature)
+        chain = DATETIME_PROMPT | llm | StrOutputParser()
         return chain.invoke({
             "current_time": current_time_str,
             "question": query

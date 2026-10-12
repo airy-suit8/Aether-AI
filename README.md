@@ -124,6 +124,32 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 (cd frontend && npm run dev)
 ```
 
+## How the backend is laid out
+
+`backend/main.py` is the entry point: it builds the app (`create_app()`), and its lifespan hook sets up the log files and the database tables when the server starts. Everything else is in packages under `backend/src/`:
+
+| Package | What it holds |
+|---|---|
+| `core/` | `config.py` (every setting, the only place that reads the environment or `.env`), `security.py` (passwords and login tokens), `logging.py` |
+| `api/` | `schemas.py` (request and response models), `deps.py` (current user, rate limiter), and one router per resource: `routes_auth`, `routes_chat`, `routes_documents`, `routes_health` |
+| `db/` | `database.py`: SQLite for users, document records and conversations |
+| `ingestion/` | `loader.py`: reads PDF, DOCX, text, CSV and Excel files (native parsers, or LangChain's loaders when `AETHER_DOCUMENT_LOADER=langchain`) |
+| `chunking/` | `chunker.py`: splits documents into overlapping chunks |
+| `embeddings/`, `llm/` | the one factory for the Gemini embedding model and the one for the chat model |
+| `vectordb/` | `vector_store.py`: ChromaDB on disk, opened on first use |
+| `retrieval/` | `retriever.py`: dense, BM25 and hybrid search, the follow-up rewrite, and a LangChain retriever |
+| `prompts/` | `prompt_templates.py`: every prompt, once |
+| `memory/` | `conversation.py`: conversation history per user and session |
+| `pipeline/` | `rag.py`: the one question-answering pipeline (modes `default`, `hybrid`, `langchain`, `agent`); `documents.py`: ingest, list, delete |
+| `agents/` | `agent.py` and `tools.py`: the tool-calling agent, the calculator and the date-time tool |
+| `evaluation/` | `evaluate.py`: the evaluation harness, run with `python -m src.evaluation.evaluate` |
+
+**Import style.** Code imports by absolute path from `backend/`, for example `from src.core.config import settings`. Run every command from the `backend` folder: `python -m uvicorn main:app`, `python -m pytest` and `python -m src.evaluation.evaluate` all put that folder on Python's path (`pytest.ini` sets `pythonpath = .` for the tests).
+
+**Settings.** Every tunable has a default in `src/core/config.py` and can be overridden by an environment variable or a line in `backend\.env` with the `AETHER_` prefix, for example `AETHER_TOP_K=8` or `AETHER_LLM_MODEL=...`. Environment variables win over `.env`. `GOOGLE_API_KEY` and `JWT_SECRET` keep their usual names.
+
+**The no-orphan check** (`backend\tests\test_no_orphans.py`, also its own CI step) fails if a module under `src/` is imported by nothing, if a route has no test that calls it, if anything but `core/config.py` reads the environment, or if a model id is written anywhere else.
+
 ## Where data is kept
 
 All of these are created on first run and are ignored by git:
@@ -131,8 +157,8 @@ All of these are created on first run and are ignored by git:
 | Path | Contents |
 |---|---|
 | `backend/.env` | Your API key and JWT secret |
-| `backend/aether.db` | Users, uploaded-document records, conversations |
-| `backend/vector_store/` | Document chunks and their embeddings |
-| `backend/logs/` | Request, upload and error logs |
+| `backend/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
+| `backend/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
+| `backend/logs/` | Request, upload and error logs (`AETHER_LOG_DIR`) |
 
 Uploaded text and questions are sent to Google's Gemini API. Do not upload confidential documents until you have agreed with your mentor which documents and which API tier are allowed.

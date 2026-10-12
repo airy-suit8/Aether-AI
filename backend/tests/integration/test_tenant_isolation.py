@@ -8,8 +8,10 @@ Each test runs twice, once with Alice as the owner and Bob as the other user, th
 import jwt
 import pytest
 
-import database
-import rag_engine
+from src.db import database
+from src.memory import conversation
+from src.retrieval import retriever
+from src.vectordb import vector_store
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
 ALICE_DOC = ("zephyr_manual.txt", DOC_TEXT, "How often is the Zephyr turbine blade inspection?", "90 days")
@@ -20,7 +22,7 @@ BOB_DOC = (
     "45 days",
 )
 
-MODES = [{}, {"use_hybrid": True}, {"use_langchain": True}, {"use_agent": True}]
+MODES = [{}, {"mode": "hybrid"}, {"mode": "langchain"}, {"mode": "agent"}]
 MODE_IDS = ["default", "hybrid", "langchain", "agent"]
 SHARED = "shared-session"
 
@@ -40,7 +42,7 @@ def _rows(user_id, session_id):
 
 
 def _chunks_of(user_id):
-    return rag_engine._store.chroma._collection.get(where={"user_id": user_id}, include=[])["ids"]
+    return vector_store.store.chroma._collection.get(where={"user_id": user_id}, include=[])["ids"]
 
 
 @pytest.fixture(params=["alice_owns", "bob_owns"])
@@ -84,7 +86,7 @@ def test_search_never_returns_the_other_users_chunks(client, tenants, modes):
 def test_store_searches_are_filtered_by_user(tenants):
     owner, other = tenants
     owner_file, owner_text, owner_question, _ = owner["doc"]
-    store = rag_engine._store
+    store = retriever.retriever
     # Query with the owner's exact text: the strongest possible match for the owner's chunk
     for search in (store.search, store.search_bm25, store.search_hybrid):
         for query in (owner_text, owner_question):
@@ -117,7 +119,7 @@ def test_history_with_the_same_session_id_is_not_shared(client, tenants, fake_ll
     assert len(_rows(owner["id"], SHARED)) == 1
 
     # The other user's history for the same session id is empty, in memory and on disk
-    assert rag_engine._memory.get_history(other["id"], SHARED) == []
+    assert conversation.memory.get_history(other["id"], SHARED) == []
     assert _rows(other["id"], SHARED) == []
 
     # and nothing of the owner's turn reaches the model when the other user asks
@@ -155,4 +157,4 @@ def test_clearing_a_session_clears_only_your_own_history(client, tenants):
     assert r.status_code == 200
     assert _rows(other["id"], SHARED) == []
     assert len(_rows(owner["id"], SHARED)) == 1
-    assert len(rag_engine._memory.get_history(owner["id"], SHARED)) == 1
+    assert len(conversation.memory.get_history(owner["id"], SHARED)) == 1

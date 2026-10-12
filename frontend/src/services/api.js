@@ -107,9 +107,10 @@ export async function uploadDocument(file) {
 }
 
 /**
- * Send a chat message (non-streaming)
+ * Send a chat message (non-streaming).
+ * mode is one of 'default', 'hybrid', 'agent' or 'langchain'.
  */
-export async function sendChat({ question, sessionId = 'default', useAgent = false, useLangchain = false, useHybrid = false, signal }) {
+export async function sendChat({ question, sessionId = 'default', mode = 'default', signal }) {
   const res = await fetch(`${BASE_URL}/chat`, {
     method: 'POST',
     signal,
@@ -117,9 +118,7 @@ export async function sendChat({ question, sessionId = 'default', useAgent = fal
     body: JSON.stringify({
       question,
       session_id: sessionId,
-      use_agent: useAgent,
-      use_langchain: useLangchain,
-      use_hybrid: useHybrid,
+      mode,
     }),
   });
 
@@ -128,9 +127,9 @@ export async function sendChat({ question, sessionId = 'default', useAgent = fal
 }
 
 /**
- * Send a chat message with SSE streaming
+ * Send a chat message with SSE streaming (mode as for sendChat)
  */
-export async function sendChatStream({ question, sessionId = 'default', useAgent = false, useLangchain = false, useHybrid = false, signal, onToken, onDone, onError }) {
+export async function sendChatStream({ question, sessionId = 'default', mode = 'default', signal, onToken, onDone, onError }) {
   try {
     const res = await fetch(`${BASE_URL}/chat/stream`, {
       method: 'POST',
@@ -139,9 +138,7 @@ export async function sendChatStream({ question, sessionId = 'default', useAgent
       body: JSON.stringify({
         question,
         session_id: sessionId,
-        use_agent: useAgent,
-        use_langchain: useLangchain,
-        use_hybrid: useHybrid,
+        mode,
       }),
     });
 

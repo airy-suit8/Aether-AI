@@ -29,18 +29,17 @@ os.environ["JWT_SECRET"] = "test-secret-used-only-by-the-test-suite"
 os.environ["GOOGLE_API_KEY"] = ""
 
 # Now safe to import
-import rag_engine  # noqa: E402
-import rag_langchain  # noqa: E402
-import agent  # noqa: E402
-import tools  # noqa: E402
 from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402
+from src.embeddings import embedder  # noqa: E402
+from src.llm import llm_client  # noqa: E402
 
 # The vector store opens lazily; give it fake embeddings before anything touches it.
-rag_engine._get_embeddings = lambda: HashingEmbeddings()
+embedder.get_embeddings = lambda: HashingEmbeddings()
 
-from main import app, limiter  # noqa: E402
-from auth import get_password_hash, create_access_token  # noqa: E402
-from database import init_db, create_user  # noqa: E402
+from main import app  # noqa: E402
+from src.api.deps import limiter  # noqa: E402
+from src.core.security import get_password_hash, create_access_token  # noqa: E402
+from src.db.database import init_db, create_user  # noqa: E402
 
 
 def pytest_addoption(parser):
@@ -57,14 +56,9 @@ def _init_test_db():
 
 @pytest.fixture(autouse=True)
 def fake_llm(monkeypatch):
-    """Replace every Gemini chat model factory with one scripted fake, fresh per test."""
+    """Replace the one chat model factory with a scripted fake, fresh per test: covers every mode and tool."""
     llm = ScriptedChatModel()
-    monkeypatch.setattr(rag_engine, "_get_llm", lambda: llm)
-    monkeypatch.setattr(rag_langchain, "_get_llm", lambda: llm)
-    if hasattr(agent, "_get_llm"):
-        monkeypatch.setattr(agent, "_get_llm", lambda: llm)
-    # The date-time tool builds its own Gemini client inline
-    monkeypatch.setattr(tools, "ChatGoogleGenerativeAI", lambda **kwargs: llm)
+    monkeypatch.setattr(llm_client, "get_llm", lambda **kwargs: llm)
     return llm
 
 

@@ -1,32 +1,27 @@
 """
-evaluate_rag.py — Sprint 7: RAG Pipeline Evaluation & Benchmarking Subsystem
+evaluation/evaluate.py — RAG evaluation harness (moved in Sprint 3; rewritten in Sprint 4)
 
 Automated benchmark evaluator that measures retrieval & generation quality:
   1. Faithfulness Score (groundedness in context)
   2. Answer Relevance Score (direct alignment with prompt)
   3. Context Precision Score (proportion of relevant chunks retrieved)
   4. Vector Search vs. Hybrid (BM25 + Vector) Comparison
+Items 3 and 4 are not implemented, and the harness does not call the real pipeline yet (T3).
 
 Run:
-  python evaluate_rag.py
+  python -m src.evaluation.evaluate      (from backend/)
 """
 
-import os
 import json
-from dotenv import load_dotenv
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-load_dotenv(override=False)
+from src.core.config import settings
+from src.llm import llm_client
+from src.prompts.prompt_templates import EVAL_ANSWER_PROMPT, FAITHFULNESS_PROMPT, RELEVANCE_PROMPT
 
 def get_eval_llm():
-    return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ.get("GOOGLE_API_KEY"),
-        temperature=0.0
-    )
+    return llm_client.get_llm(temperature=settings.tool_temperature)
 
 BENCHMARK_DATASET = [
     {
@@ -46,21 +41,7 @@ BENCHMARK_DATASET = [
 def evaluate_faithfulness(question: str, context: str, answer: str) -> float:
     """Evaluate whether the answer is strictly grounded in the context without hallucinations."""
     llm = get_eval_llm()
-    prompt = PromptTemplate.from_template("""
-You are a strict QA evaluator assessing Faithfulness (Groundedness).
-Determine if the provided Answer contains statements that CANNOT be inferred from the Context.
-
-Context:
-{context}
-
-Answer:
-{answer}
-
-Respond ONLY with a JSON object in this exact format:
-{{"score": 0.0 to 1.0, "reasoning": "brief explanation"}}
-Score 1.0 means fully grounded. Score 0.0 means completely hallucinated.
-""")
-    chain = prompt | llm | StrOutputParser()
+    chain = FAITHFULNESS_PROMPT | llm | StrOutputParser()
     try:
         res = chain.invoke({"context": context, "answer": answer})
         data = json.loads(res.strip().strip("```json").strip("```"))
@@ -71,17 +52,7 @@ Score 1.0 means fully grounded. Score 0.0 means completely hallucinated.
 def evaluate_relevance(question: str, answer: str) -> float:
     """Evaluate if the answer directly answers the question."""
     llm = get_eval_llm()
-    prompt = PromptTemplate.from_template("""
-You are an evaluation model scoring Answer Relevance.
-Rate how well the Answer directly addresses the User Question.
-
-Question: {question}
-Answer: {answer}
-
-Respond ONLY with a JSON object in this format:
-{{"score": 0.0 to 1.0, "reasoning": "brief explanation"}}
-""")
-    chain = prompt | llm | StrOutputParser()
+    chain = RELEVANCE_PROMPT | llm | StrOutputParser()
     try:
         res = chain.invoke({"question": question, "answer": answer})
         data = json.loads(res.strip().strip("```json").strip("```"))
@@ -102,8 +73,7 @@ def run_rag_benchmark():
         
         # Simulate RAG generation using benchmark context
         llm = get_eval_llm()
-        gen_prompt = f"Context:\n{item['context']}\n\nQuestion: {item['question']}\n\nAnswer:"
-        answer = (PromptTemplate.from_template("{prompt}") | llm | StrOutputParser()).invoke({"prompt": gen_prompt}).strip()
+        answer = (EVAL_ANSWER_PROMPT | llm | StrOutputParser()).invoke({"context": item["context"], "question": item["question"]}).strip()
         
         faith_score = evaluate_faithfulness(item["question"], item["context"], answer)
         rel_score = evaluate_relevance(item["question"], answer)
