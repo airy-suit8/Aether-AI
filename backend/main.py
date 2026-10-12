@@ -50,6 +50,7 @@ from database import (
     create_user,
 )
 
+from src.core.config import settings
 from auth import get_current_user, create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
 
 # ── Rate Limiter ──────────────────────────────────────────────────────────────
@@ -68,15 +69,13 @@ _start_time = datetime.now()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown", ".docx", ".csv", ".xlsx", ".xls"}
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB max upload size
-MAX_QUESTION_CHARS = 5000
 
 # Session ids become cache keys, database values and log text: keep them short and plain
 SessionId = Field(default="default", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
@@ -143,7 +142,7 @@ class Token(BaseModel):
 # ── Authentication ────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/auth/register", tags=["Auth"])
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_register)
 def register(user: UserRegister, request: Request):
     if get_user_by_username(user.username):
         raise HTTPException(status_code=400, detail="Username already registered")
@@ -152,7 +151,7 @@ def register(user: UserRegister, request: Request):
     return {"message": "User registered successfully", "user_id": user_id}
 
 @app.post("/api/v1/auth/login", response_model=Token, tags=["Auth"])
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_login)
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     user = get_user_by_username(form_data.username)
     if not user or not verify_password(form_data.password, user["password_hash"]):
@@ -188,7 +187,7 @@ def health_check():
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/upload", response_model=UploadResponse, tags=["Documents"])
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_upload)
 def upload_document(request: Request, file: UploadFile = File(...), user_id: int = Depends(get_current_user)):
     """Upload and ingest a PDF or text/markdown document."""
     filename = file.filename or "unknown"
@@ -215,12 +214,12 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
         raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes).")
 
     # Check file size limit
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > settings.max_upload_bytes:
         size_mb = round(len(content) / (1024 * 1024), 1)
         error_logger.error(f"UPLOAD REJECTED | file={filename} | reason=too large ({size_mb}MB)")
         raise HTTPException(
             status_code=400,
-            detail=f"File too large ({size_mb}MB). Maximum allowed: {MAX_FILE_SIZE // (1024*1024)}MB.",
+            detail=f"File too large ({size_mb}MB). Maximum allowed: {settings.max_upload_bytes // (1024*1024)}MB.",
         )
 
     # Check for duplicate uploads via file hash
@@ -280,14 +279,14 @@ def upload_document(request: Request, file: UploadFile = File(...), user_id: int
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/chat", response_model=ChatResponse, tags=["Chat"])
-@limiter.limit("30/minute")
+@limiter.limit(settings.rate_limit_chat)
 def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Ask a question — answers are grounded in uploaded documents."""
     if not chat_request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    if len(chat_request.question) > MAX_QUESTION_CHARS:
-        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {MAX_QUESTION_CHARS} characters.")
+    if len(chat_request.question) > settings.max_question_chars:
+        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
     mode = "agent" if chat_request.use_agent else ("langchain" if chat_request.use_langchain else "original")
     start_time = time.time()
@@ -339,14 +338,14 @@ def submit_feedback(feedback_request: FeedbackRequest, user_id: int = Depends(ge
 # ── Streaming ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/v1/chat/stream", tags=["Chat"])
-@limiter.limit("30/minute")
+@limiter.limit(settings.rate_limit_chat)
 def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depends(get_current_user)):
     """Streaming endpoint — returns the answer token-by-token using SSE."""
     if not chat_request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    if len(chat_request.question) > MAX_QUESTION_CHARS:
-        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {MAX_QUESTION_CHARS} characters.")
+    if len(chat_request.question) > settings.max_question_chars:
+        raise HTTPException(status_code=400, detail=f"Question too long. Maximum {settings.max_question_chars} characters.")
 
     mode = "agent" if chat_request.use_agent else ("langchain" if chat_request.use_langchain else "original")
 

@@ -5,9 +5,6 @@ Uses LangGraph's create_react_agent to allow the LLM to chain multiple tools tog
 structured metadata for the UI.
 """
 
-import os
-from dotenv import load_dotenv
-
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
@@ -15,19 +12,19 @@ from langgraph.prebuilt import create_react_agent
 from tools import calculator, datetime_tool
 from rag_engine import query_rag
 
-load_dotenv(override=False)
+from src.core.config import settings
 
 
 # Maximum LangGraph steps per question (each tool call takes two). LangGraph's default is
 # 10,000, so a model that keeps calling tools would run, and bill, almost without limit.
-AGENT_RECURSION_LIMIT = 12
+AGENT_RECURSION_LIMIT = settings.agent_recursion_limit
 
 
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
-        temperature=0.0,
+        model=settings.llm_model,
+        google_api_key=settings.google_api_key,
+        temperature=settings.tool_temperature,
     )
 
 

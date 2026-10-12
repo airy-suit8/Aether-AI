@@ -11,12 +11,9 @@ Tasks covered:
   Task 15: LCEL Refactor (prompt | model | parser)
 """
 
-import os
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any
-
-from dotenv import load_dotenv
 
 # Task 12: LangChain Document Loaders
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader
@@ -42,22 +39,22 @@ from rag_engine import (
     CHUNK_OVERLAP,
 )
 
-load_dotenv(override=False)
+from src.core.config import settings
 
 
 # ── Gemini clients (same models as original) ─────────────────────────────────
 
 def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     return GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
+        model=settings.embedding_model,
+        google_api_key=settings.google_api_key,
     )
 
 def _get_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=os.environ["GOOGLE_API_KEY"],
-        temperature=0.3,
+        model=settings.llm_model,
+        google_api_key=settings.google_api_key,
+        temperature=settings.llm_temperature,
     )
 
 
