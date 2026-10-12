@@ -19,6 +19,7 @@ from src.core.config import settings
 from src.core.logging import error_logger, log_event, upload_logger
 from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document
 from src.ingestion.loader import SUPPORTED_EXTENSIONS, clean_filename
+from src.llm.llm_client import is_unavailable
 from src.pipeline.documents import (
     accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
 )
@@ -197,7 +198,13 @@ def _read_in_background(user_id: int, document_id: int, tmp_path: str, filename:
         log_event(error_logger, "upload_unreadable", level=logging.WARNING, user_id=user_id, file=filename,
                   document_id=document_id, cause=repr(e.__cause__))
         fail_document(user_id, document_id, str(e))
-    except Exception:
+    except Exception as e:
+        if is_unavailable(e):  # the embedding service was over its quota or unavailable (B10)
+            log_event(error_logger, "upload_model_unavailable", level=logging.WARNING, user_id=user_id,
+                      file=filename, document_id=document_id)
+            fail_document(user_id, document_id, "The AI service was busy or over its usage limit while reading "
+                          "this file. Please upload it again in a minute.")
+            return
         log_event(error_logger, "upload_failed", level=logging.ERROR, exc_info=True, user_id=user_id,
                   file=filename, document_id=document_id)
         fail_document(user_id, document_id,

@@ -7,6 +7,7 @@ ScriptedChatModel  — answers each pipeline prompt (rewrite, summarize, answer,
                      prompt text itself, so an answer can be traced back to the retrieved chunk.
 """
 
+import json
 import re
 import time
 import zlib
@@ -14,8 +15,8 @@ from typing import Any, List, Optional
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 
 class HashingEmbeddings(Embeddings):
@@ -59,6 +60,9 @@ class ScriptedChatModel(BaseChatModel):
 
     delay      — seconds to sleep per call (to simulate a slow model)
     fail_with  — if set, every call raises RuntimeError(fail_with)
+    errors     — exceptions raised by the next calls, one per call, before it answers normally
+                 (a Gemini quota or availability error, for the retry tests)
+    calls      — how many calls were made, failed ones included
     tool_name  — the tool the fake agent calls on its first step
     tool_input — the argument passed to that tool (defaults to the user's question)
     tool_args  — the whole argument dict, for a tool that takes more than one
@@ -69,6 +73,8 @@ class ScriptedChatModel(BaseChatModel):
 
     delay: float = 0.0
     fail_with: Optional[str] = None
+    errors: List[Any] = []
+    calls: int = 0
     tool_name: str = "document_search_wrapper"
     tool_input: Optional[str] = None
     tool_args: Optional[dict] = None
@@ -86,12 +92,24 @@ class ScriptedChatModel(BaseChatModel):
 
     def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None,
                   run_manager: Any = None, **kwargs: Any) -> ChatResult:
+        self.calls += 1
         if self.delay:
             time.sleep(self.delay)
+        if self.errors:
+            raise self.errors.pop(0)
         if self.fail_with:
             raise RuntimeError(self.fail_with)
         self.prompts.append("\n".join(str(m.content) for m in messages))
         return ChatResult(generations=[ChatGeneration(message=self._reply(messages))])
+
+    def _stream(self, messages: List[BaseMessage], stop: Optional[List[str]] = None,
+                run_manager: Any = None, **kwargs: Any):
+        """The reply in one piece, as LangChain streams a model that cannot stream."""
+        message = ScriptedChatModel._generate(self, messages, stop, run_manager, **kwargs).generations[0].message
+        yield ChatGenerationChunk(message=AIMessageChunk(content=message.content, tool_call_chunks=[
+            {"name": call["name"], "args": json.dumps(call["args"]), "id": call["id"], "index": i}
+            for i, call in enumerate(message.tool_calls)
+        ]))
 
     def _reply(self, messages: List[BaseMessage]) -> AIMessage:
         last = messages[-1]
