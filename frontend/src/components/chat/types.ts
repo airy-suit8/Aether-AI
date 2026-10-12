@@ -24,5 +24,13 @@ export interface AnswerMessage {
 
 export type ChatMessage = QuestionMessage | AnswerMessage
 
+/** A reply that failed or was stopped, and the question to ask again. */
+export interface Failure {
+  threadId: string
+  question: string
+  stopped: boolean
+  message: string
+}
+
 export type ToastType = 'info' | 'success' | 'error'
 export type AddToast = (message: string, type?: ToastType, duration?: number) => void

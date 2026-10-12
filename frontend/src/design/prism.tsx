@@ -118,16 +118,25 @@ export function ClarityRing({ value = 0, state = 'grounded' }: { value?: number;
   )
 }
 
-/** The composer. Enter sends, Shift+Enter breaks the line; Send becomes Stop while busy. */
-export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your documents', leading = null }: {
+/**
+ * The composer. Enter sends, Shift+Enter breaks the line; Send becomes Stop while busy (and stays
+ * disabled while busy when there is no onStop). restore puts text back in it, such as a question
+ * whose answer failed.
+ */
+export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your documents', leading = null, restore = null }: {
   busy?: boolean
   onSend: (text: string) => void
   onStop?: () => void
   placeholder?: string
   leading?: ReactNode
+  restore?: { text: string } | null
 }) {
   const [text, setText] = useState('')
   const canSend = text.trim().length > 0
+
+  useEffect(() => {
+    if (restore) setText(restore.text)
+  }, [restore])
 
   const send = () => {
     if (!canSend || busy) return
@@ -158,7 +167,7 @@ export function Aperture({ busy = false, onSend, onStop, placeholder = 'Ask your
         type="button"
         className="p-send"
         data-busy={busy}
-        disabled={!busy && !canSend}
+        disabled={busy ? !onStop : !canSend}
         aria-label={busy ? 'Stop generating' : 'Send'}
         onClick={busy ? onStop : send}
       >

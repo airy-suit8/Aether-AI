@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import ChatLayout from './ChatLayout'
 import { AuthProvider } from '../../services/AuthContext'
 import * as api from '../../services/api'
-import { documentList, documentRecord, documentStatus, done, session, SOURCE, turn } from '../../test/fixtures'
+import { chatReply, documentList, documentRecord, documentStatus, done, session, SOURCE, turn } from '../../test/fixtures'
 
 vi.mock('../../services/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -97,18 +97,112 @@ describe('ChatLayout', () => {
     expect((screen.getByPlaceholderText(/ask anything/i) as HTMLTextAreaElement).disabled).toBe(false)
   })
 
-  it('shows a stream error as a toast and keeps no partial answer', async () => {
+  it('shows a stream error with Retry, keeps no partial answer, and puts the question back in the composer', async () => {
+    // Decision 11 replaced the error toast with this: the question is not lost
     vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onError }) => {
       onToken?.('Half an ')
       onError?.(new Error('The connection closed before the answer was complete. Please try again.'))
     })
     const { addToast } = renderChat()
-    await ask('Will this fail?')
+    const user = await ask('Will this fail?')
 
-    expect(addToast).toHaveBeenCalledWith('The connection closed before the answer was complete. Please try again.', 'error')
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toBe('Failed. The connection closed before the answer was complete. Please try again.Retry')
+    expect(addToast).not.toHaveBeenCalled()
     expect(screen.queryByText(/Half an/)).toBeNull()
     expect(screen.queryByText('Sources')).toBeNull()
-    expect((screen.getByPlaceholderText(/ask anything/i) as HTMLTextAreaElement).disabled).toBe(false)
+    expect(screen.queryByRole('heading', { name: 'Will this fail?' })).toBeNull()  // the server saved no turn
+    const composer = screen.getByPlaceholderText(/ask anything/i) as HTMLTextAreaElement
+    expect(composer.disabled).toBe(false)
+    expect(composer.value).toBe('Will this fail?')
+
+    // Retry asks the same question again, in the same thread
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('It worked this time.')
+      onDone?.(done({ turn_id: 8 }))
+    })
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('It worked this time.')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Will this fail?' })).toBeTruthy()
+    expect(vi.mocked(api.sendChatStream).mock.calls[1][0]).toMatchObject({ question: 'Will this fail?', sessionId: 'session_1' })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(composer.value).toBe('')
+  })
+
+  it('Stop closes the stream, saves nothing, and puts the question back with Retry', async () => {
+    // The fake stream ends the way fetch does when its signal is aborted
+    vi.mocked(api.sendChatStream).mockImplementation(({ onToken, onError, signal }) => new Promise<void>((resolve) => {
+      onToken?.('The first words ')
+      signal?.addEventListener('abort', () => {
+        onError?.(new DOMException('The user aborted a request.', 'AbortError'))
+        resolve()
+      })
+    }))
+    renderChat()
+    const user = await ask('A long question')
+    // Streamed words arrive one span each
+    await vi.waitFor(() => expect(document.querySelector('[aria-busy="true"]')?.textContent).toContain('The first words'))
+
+    await user.click(screen.getByRole('button', { name: 'Stop generating' }))
+    expect(vi.mocked(api.sendChatStream).mock.calls[0][0].signal?.aborted).toBe(true)
+    expect(screen.getByRole('alert').textContent).toContain('Stopped. Your question is back in the box below. Nothing was saved.')
+    expect(document.body.textContent).not.toContain('The first words')
+    expect(screen.queryByRole('heading', { name: 'A long question' })).toBeNull()
+    expect((screen.getByPlaceholderText(/ask anything/i) as HTMLTextAreaElement).value).toBe('A long question')
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
+  })
+
+  it('cannot stop an answer that is not streamed, since only closing a stream tells the server', async () => {
+    let finish: (reply: ReturnType<typeof chatReply>) => void = () => {}
+    vi.mocked(api.sendChat).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('switch', { name: 'Stream' }))
+    await ask('Not streamed')
+    expect((screen.getByRole('button', { name: 'Stop generating' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => finish(chatReply({ answer: 'In one piece.', turn_id: 2 })))
+    expect(await screen.findByText('In one piece.')).toBeTruthy()
+    expect(api.sendChatStream).not.toHaveBeenCalled()
+  })
+
+  it('streams agent answers too, so they can be stopped', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Two plus two is 4.')
+      onDone?.(done({ tool_used: 'calculator', confidence: null, turn_id: 3 }))
+    })
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: 'Agent' }))
+    expect((screen.getByRole('switch', { name: 'Stream' }) as HTMLButtonElement).disabled).toBe(false)
+    await ask('What is 2 + 2?')
+    expect(vi.mocked(api.sendChatStream).mock.calls[0][0].mode).toBe('agent')
+    expect(await screen.findByText('Two plus two is 4.')).toBeTruthy()
+    expect(api.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('discards a reply that finishes after its thread was left, and keeps the new thread free', async () => {
+    let finish: () => void = () => {}
+    vi.mocked(api.sendChatStream).mockImplementationOnce(({ onToken, onDone }) => new Promise<void>((resolve) => {
+      finish = () => {
+        onToken?.('A late answer.')
+        onDone?.(done({ turn_id: 4 }))
+        resolve()
+      }
+    }))
+    renderChat()
+    const user = await ask('A slow question')
+    expect(screen.getByRole('button', { name: 'Stop generating' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'New thread' }))
+    expect(where()).not.toBe('/chat/session_1')
+    // The new thread is not busy: its composer sends
+    expect(screen.queryByRole('button', { name: 'Stop generating' })).toBeNull()
+    const signal = vi.mocked(api.sendChatStream).mock.calls[0][0].signal
+    expect(signal?.aborted).toBe(false)  // the old reply goes on; the server saves it to its own thread
+
+    await act(async () => finish())
+    expect(screen.queryByText('A late answer.')).toBeNull()
+    expect(screen.queryByText('A slow question')).toBeNull()
   })
 
   it('passes the Hybrid mode to the request', async () => {
