@@ -4,6 +4,7 @@ and the LangChain loaders (Task 12; used when settings.document_loader is "langc
 Tests marked R9 were known defects until Sprint 4.
 """
 
+import json
 import tempfile
 from datetime import datetime
 
@@ -248,9 +249,9 @@ def test_corrupt_upload_is_a_clean_422(client, make_user, filename, content):
     # The parser's own error is not lost: it is in the error log, for whoever runs the server
     for handler in error_logger.handlers:
         handler.flush()
-    logged = [line for line in (settings.log_dir / "errors.log").read_text(encoding="utf-8").splitlines()
-              if f"UPLOAD PARSE ERROR | file={filename}" in line]
-    assert logged and "cause=" in logged[-1] and "cause=None" not in logged[-1]
+    lines = [json.loads(line) for line in (settings.log_dir / "errors.log").read_text(encoding="utf-8").splitlines()]
+    logged = [line for line in lines if line["event"] == "upload_unreadable" and line["file"] == filename]
+    assert logged and logged[-1]["cause"] != "None"
 
 
 def test_a_scanned_pdf_upload_is_a_422_that_says_so(client, make_user, tmp_path):

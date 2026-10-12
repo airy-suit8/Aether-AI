@@ -23,7 +23,7 @@ DATA_DIR = BACKEND_DIR.parent / "data"
 OLD_DB_PATH = BACKEND_DIR / "aether.db"
 OLD_VECTOR_STORE_DIR = BACKEND_DIR / "vector_store"
 
-# Shown by /health and the OpenAPI schema. Not a tunable.
+# Shown in the OpenAPI schema. Not a tunable.
 APP_VERSION = "2.0.0"
 
 # The value .env.example ships with: treated as unset.
@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
 
     # ── Server and limits ─────────────────────────────────────────────────────
+    # "production" turns off the API pages (/docs, /redoc, /openapi.json). Set it on any machine
+    # other people can reach (AETHER_ENVIRONMENT=production).
+    environment: Literal["development", "production"] = "development"
     allowed_origins: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
