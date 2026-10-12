@@ -90,7 +90,7 @@ def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
 
     r = ask(client, headers, QUESTION)
     assert r.status_code == 200
-    assert set(r.json()) == {"answer", "sources", "confidence", "session_id", "tool_used", "turn_id", "usage"}
+    assert set(r.json()) == {"answer", "sources", "confidence", "session_id", "tool_used", "steps", "turn_id", "usage"}
     assert r.json()["session_id"] == "s1"
     turn_id = r.json()["turn_id"]
 

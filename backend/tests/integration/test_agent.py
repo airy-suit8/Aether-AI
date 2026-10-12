@@ -3,7 +3,7 @@
 import time
 from datetime import datetime
 
-from fakes import ScriptedChatModel
+from fakes import AGENT_PROMPT_MARKER, ScriptedChatModel
 from langchain_core.messages import AIMessage, ToolMessage
 
 from helpers import ask, ask_stream, upload_text
@@ -110,3 +110,69 @@ def test_empty_answer_without_a_tool_says_so(client, make_user, monkeypatch):
     assert r.json()["answer"] == "I executed the tool but encountered an issue formatting the final answer."
     assert r.json()["tool_used"] == "agent_direct"
     assert r.json()["confidence"] is None  # R11: was 1.0
+
+
+# ── The tool trace (Sprint 8, item 2) ─────────────────────────────────────────
+
+def test_an_agent_answer_lists_each_tool_call_in_order_with_what_it_asked_and_got(client, make_user, monkeypatch):
+    _, headers = make_user("steps")
+    upload_text(client, headers)
+    scripted = ScriptedChatModel._reply
+
+    def reply(self, messages):
+        if not any(AGENT_PROMPT_MARKER in str(m.content) for m in messages):
+            return scripted(self, messages)  # the document search's own summary and answer
+        done = sum(isinstance(m, ToolMessage) for m in messages)
+        script = [
+            ("document_search_wrapper", {"query": "Zephyr turbine blade inspection"}),
+            ("calculator_wrapper", {"expression": "365 / 90"}),
+            ("datetime_wrapper", {"operation": "add_days", "start": "2026-01-01", "days": 90}),
+        ]
+        if done == len(script):
+            return AIMessage(content="About four inspections a year; the first is due on 1 April.")
+        name, args = script[done]
+        return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": f"c{done}"}])
+
+    monkeypatch.setattr(ScriptedChatModel, "_reply", reply)
+    r = ask(client, headers, "How many blade inspections a year, and when is the first?", mode="agent")
+    assert r.status_code == 200, r.text
+    steps = r.json()["steps"]
+    assert [(s["tool"], s["input"]) for s in steps] == [
+        ("document_search", "Zephyr turbine blade inspection"),
+        ("calculator", "365 / 90"),
+        ("datetime", "90 days after 2026-01-01"),
+    ]
+    assert steps[0]["output"].startswith("Answer from context. ")  # the document search's own answer
+    assert steps[1]["output"] == "365 / 90 = 4.05555555555556"
+    assert "2026-04-01" in steps[2]["output"]
+    assert r.json()["tool_used"] == "calculator + datetime + document_search"
+
+
+def test_a_long_tool_reply_is_cut_short_on_one_line(client, make_user, fake_llm, monkeypatch):
+    _, headers = make_user("stepslong")
+    fake_llm.tool_name = "calculator_wrapper"
+    fake_llm.tool_input = "2 ** 2000"
+    r = ask(client, headers, "What is two to the power two thousand?", mode="agent")
+    output = r.json()["steps"][0]["output"]
+    assert len(output) == 201 and output.endswith("…") and "\n" not in output
+
+
+def test_the_stream_ends_with_the_steps_and_other_modes_have_none(client, make_user, fake_llm):
+    _, headers = make_user("stepsstream")
+    upload_text(client, headers)
+    _, events = ask_stream(client, headers, "How often is the Zephyr turbine blade inspection?", mode="agent")
+    assert [s["tool"] for s in events[-1]["steps"]] == ["document_search"]
+    assert events[-1]["steps"][0]["input"] == "How often is the Zephyr turbine blade inspection?"
+    _, events = ask_stream(client, headers, "How often is the Zephyr turbine blade inspection?")
+    assert "steps" not in events[-1] or events[-1]["steps"] is None
+    assert ask(client, headers, "How often is the Zephyr turbine blade inspection?").json()["steps"] is None
+
+
+def test_an_agent_that_runs_out_of_steps_still_lists_the_calls_it_made(client, make_user, monkeypatch):
+    _, headers = make_user("stepsloop")
+    monkeypatch.setattr(ScriptedChatModel, "_reply", lambda self, messages: AIMessage(
+        content="", tool_calls=[{"name": "calculator_wrapper", "args": {"expression": "1+1"}, "id": f"c{len(messages)}"}]))
+    r = ask(client, headers, "Loop forever", mode="agent")
+    assert "need more steps" in r.json()["answer"]
+    steps = r.json()["steps"]
+    assert steps and all(s == {"tool": "calculator", "input": "1+1", "output": "1+1 = 2"} for s in steps)

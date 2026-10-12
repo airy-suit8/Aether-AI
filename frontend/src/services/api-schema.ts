@@ -340,6 +340,18 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AgentStep
+         * @description One tool call of an agent answer, in the order they ran (Sprint 8, item 2).
+         */
+        AgentStep: {
+            /** Tool */
+            tool: string;
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+        };
         /** Body_login_api_v1_auth_login_post */
         Body_login_api_v1_auth_login_post: {
             /** Grant Type */
@@ -398,6 +410,8 @@ export interface components {
             session_id?: string;
             /** Tool Used */
             tool_used?: string | null;
+            /** Steps */
+            steps?: components["schemas"]["AgentStep"][] | null;
             /** Turn Id */
             turn_id?: number | null;
             usage?: components["schemas"]["Usage"] | null;
@@ -507,6 +521,8 @@ export interface components {
             turn_id: number | null;
             /** Tool Used */
             tool_used?: string | null;
+            /** Steps */
+            steps?: components["schemas"]["AgentStep"][] | null;
             usage?: components["schemas"]["Usage"] | null;
         };
         /**

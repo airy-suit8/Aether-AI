@@ -59,6 +59,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         confidence=result.get("confidence", 0.0),
         session_id=chat_request.session_id,
         tool_used=result.get("tool_used"),
+        steps=result.get("steps"),
         turn_id=result.get("turn_id"),
         usage=result.get("usage"),
     )

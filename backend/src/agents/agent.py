@@ -21,6 +21,25 @@ from src.prompts.prompt_templates import AGENT_SYSTEM_PROMPT
 # The answer when the agent hits settings.agent_recursion_limit
 OUT_OF_STEPS = "Sorry, need more steps to process this request."
 
+# How much of a tool's reply a step shows (Sprint 8, item 2)
+STEP_OUTPUT_CHARS = 200
+
+
+def _short(text: str, limit: int = STEP_OUTPUT_CHARS) -> str:
+    """A tool's reply on one line, cut to the limit."""
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def _date_request(operation: str, start: str, end: str, days: int) -> str:
+    """What the date tool was asked, in words."""
+    start, end = start or "today", end or "today"
+    return {
+        "weekday": f"the weekday of {start}",
+        "days_between": f"the days from {start} to {end}",
+        "add_days": f"{days} days after {start}",
+    }.get(operation, "the date and time now")
+
 
 
 
@@ -38,15 +57,22 @@ def run_agent(user_id: int, question: str, session_id: str,
     sub-question as a turn. config is a LangChain config for the agent's own model calls (the
     pipeline passes one that counts their tokens).
 
-    Returns {"answer", "sources", "confidence", "tool_used"}. The turn is not saved here: the
-    pipeline saves it once the answer has been sent, so a stream the client closed saves none.
+    Returns {"answer", "sources", "confidence", "tool_used", "steps"}. steps are the tool calls in
+    the order they ran, each {"tool", "input", "output"}, with the reply cut short (Sprint 8,
+    item 2). The turn is not saved here: the pipeline saves it once the answer has been sent, so a
+    stream the client closed saves none.
     """
     
     metadata_store = {
         "sources": [],
         "confidence": None,  # set by a document search; an answer with no search has none (R11)
-        "tool_used": set()
+        "tool_used": set(),
+        "steps": [],         # each tool call as it ran: {"tool", "input", "output"}
     }
+
+    def step(tool_name: str, asked: str, output: str) -> str:
+        metadata_store["steps"].append({"tool": tool_name, "input": asked, "output": _short(output)})
+        return output
     
     # ── Closure-based Tool Tracking Wrappers ──────────────────────────────────
     
@@ -61,13 +87,14 @@ def run_agent(user_id: int, question: str, session_id: str,
         earlier = metadata_store["confidence"]
         metadata_store["confidence"] = rag_result["confidence"] if earlier is None else min(earlier, rag_result["confidence"])
 
+        step("document_search", query, rag_result["answer"])
         return f"Document Search Result:\n{rag_result['answer']}"
 
     @tool
     def calculator_wrapper(expression: str) -> str:
         """Evaluate a mathematical expression safely."""
         metadata_store["tool_used"].add("calculator")
-        return calculator.invoke(expression)
+        return step("calculator", expression, calculator.invoke(expression))
 
     @tool
     def datetime_wrapper(operation: str = "now", start: str = "", end: str = "", days: int = 0) -> str:
@@ -80,7 +107,8 @@ def run_agent(user_id: int, question: str, session_id: str,
           "add_days"      the date `days` days after `start` (a negative number goes back)
         """
         metadata_store["tool_used"].add("datetime")
-        return datetime_tool.invoke({"operation": operation, "start": start, "end": end, "days": days})
+        return step("datetime", _date_request(operation, start, end, days),
+                    datetime_tool.invoke({"operation": operation, "start": start, "end": end, "days": days}))
         
     # ── Agent Orchestration ───────────────────────────────────────────────────
         
@@ -144,4 +172,5 @@ def run_agent(user_id: int, question: str, session_id: str,
         "sources": unique_sources,
         "confidence": metadata_store["confidence"],
         "tool_used": tools_used_str,
+        "steps": metadata_store["steps"],
     }

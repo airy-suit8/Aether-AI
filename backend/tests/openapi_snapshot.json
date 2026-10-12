@@ -713,6 +713,30 @@
   },
   "components": {
     "schemas": {
+      "AgentStep": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "input": {
+            "type": "string",
+            "title": "Input"
+          },
+          "output": {
+            "type": "string",
+            "title": "Output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "input",
+          "output"
+        ],
+        "title": "AgentStep",
+        "description": "One tool call of an agent answer, in the order they ran (Sprint 8, item 2)."
+      },
       "Body_login_api_v1_auth_login_post": {
         "properties": {
           "grant_type": {
@@ -845,6 +869,20 @@
               }
             ],
             "title": "Tool Used"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
           },
           "turn_id": {
             "anyOf": [
@@ -1141,6 +1179,20 @@
               }
             ],
             "title": "Tool Used"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
           },
           "usage": {
             "anyOf": [

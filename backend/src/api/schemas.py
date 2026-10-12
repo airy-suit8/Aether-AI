@@ -45,6 +45,13 @@ class UsageStage(BaseModel):
     output_tokens: int
 
 
+class AgentStep(BaseModel):
+    """One tool call of an agent answer, in the order they ran (Sprint 8, item 2)."""
+    tool: str    # document_search, calculator or datetime, as in tool_used
+    input: str   # what the tool was asked
+    output: str  # the start of what it returned, on one line
+
+
 class Usage(BaseModel):
     """What an answer cost (Sprint 8, item 1). Tokens are counted, never priced."""
     seconds: float      # from the question to the answer
@@ -61,6 +68,7 @@ class ChatResponse(BaseModel):
     confidence: Optional[float] = 0.0
     session_id: str = "default"
     tool_used: Optional[str] = None  # agent mode: which tools answered
+    steps: Optional[list[AgentStep]] = None  # agent mode: each tool call, in order; null in the other modes
     turn_id: Optional[int] = None    # the saved turn, for POST /feedback; null when none was saved (a refusal)
     usage: Optional[Usage] = None
 
@@ -80,6 +88,7 @@ class DoneEvent(BaseModel):
     confidence: Optional[float]  # as in ChatResponse
     turn_id: Optional[int]       # as in ChatResponse
     tool_used: Optional[str] = None  # agent mode only: which tools answered
+    steps: Optional[list[AgentStep]] = None  # as in ChatResponse
     usage: Optional[Usage] = None    # as in ChatResponse
 
 

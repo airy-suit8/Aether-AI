@@ -267,6 +267,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
             toolUsed: data.tool_used || null,
             turnId: data.turn_id ?? null,  // what feedback names it by
             usage: data.usage ?? null,
+            steps: data.steps ?? null,
           }),
           // A server error event, a dropped connection, a missing done event, or Stop
           onError: failed,
@@ -280,6 +281,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           toolUsed: result.tool_used || null,
           turnId: result.turn_id ?? null,
           usage: result.usage ?? null,
+          steps: result.steps ?? null,
         })
       }
     } catch (err) {
