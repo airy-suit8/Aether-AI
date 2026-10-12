@@ -12,8 +12,8 @@ from datetime import timedelta
 import jwt
 import pytest
 
-import auth
 import main
+from src.core import security
 from src.core.config import settings
 from helpers import DOC_TEXT, upload_text, ask, ask_stream
 
@@ -33,8 +33,8 @@ def _bearer(token):
 BAD_TOKENS = {
     "garbage": "not-a-jwt",
     "wrong_secret": jwt.encode({"sub": "1"}, "a-different-secret-that-is-at-least-32-bytes", algorithm="HS256"),
-    "no_subject": auth.create_access_token({"name": "x"}, expires_delta=timedelta(minutes=5)),
-    "expired": auth.create_access_token({"sub": "1"}, expires_delta=timedelta(seconds=-10)),
+    "no_subject": security.create_access_token({"name": "x"}, expires_delta=timedelta(minutes=5)),
+    "expired": security.create_access_token({"sub": "1"}, expires_delta=timedelta(seconds=-10)),
 }
 
 
