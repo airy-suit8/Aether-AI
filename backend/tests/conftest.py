@@ -34,9 +34,10 @@ import rag_langchain  # noqa: E402
 import agent  # noqa: E402
 import tools  # noqa: E402
 from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402
+from src.embeddings import embedder  # noqa: E402
 
 # The vector store opens lazily; give it fake embeddings before anything touches it.
-rag_engine._get_embeddings = lambda: HashingEmbeddings()
+embedder.get_embeddings = lambda: HashingEmbeddings()
 
 from main import app, limiter  # noqa: E402
 from src.core.security import get_password_hash, create_access_token  # noqa: E402
