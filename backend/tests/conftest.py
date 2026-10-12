@@ -36,7 +36,8 @@ from src.llm import llm_client  # noqa: E402
 # The vector store opens lazily; give it fake embeddings before anything touches it.
 embedder.get_embeddings = lambda: HashingEmbeddings()
 
-from main import app, limiter  # noqa: E402
+from main import app  # noqa: E402
+from src.api.deps import limiter  # noqa: E402
 from src.core.security import get_password_hash, create_access_token  # noqa: E402
 from src.db.database import init_db, create_user  # noqa: E402
 
