@@ -12,8 +12,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | Design: Prism on every screen | Done, merged 12 Oct 2026 together with Sprint 2 | [DESIGN.md](DESIGN.md) |
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
-| 5 Hardening and API completion | Not started. **This is the next sprint for a cloud session**: what is left of Sprint 4 needs the owner's machine, documents and Gemini key | See "Decisions already made" under Sprint 5 |
-| 6 Frontend rebuild | Visual redesign done early; engineering items remain | See Sprint 6 |
+| 5 Hardening and API completion | Done on the branch `claude/confident-bell-h8c2ct` (12 Oct 2026), pull request open: waiting for the owner's review and the check on Windows | See below |
+| 6 Frontend rebuild | Visual redesign done early; engineering items remain. **The next sprint for a cloud session** once Sprint 5 is merged | See Sprint 6 |
 | 7 Ship and document | Docker items deferred at the owner's request (11 Oct 2026) | |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
@@ -100,6 +100,37 @@ What Sprint 4 found, and where the plan was wrong:
 - **An unrelated question still scored 0.55** against two small documents (answerable ones scored 0.71 to 0.78). The 0.3 threshold refuses nothing; the harness's suggested threshold will set it once there is a dataset.
 - **A Gemini outage holds a request for about 60 s before the error**, because the chat model retries six times. For Sprint 5 item 10.
 - **`--retrieval-only` needs no model calls**, only embeddings: hit@5, MRR, the dense-against-hybrid comparison and the threshold can be measured on the free tier. Correctness and faithfulness need about four model calls per question and mode.
+
+Sprint 5, from the cloud session on Linux (Python 3.12, Node 22), on the branch `claude/confident-bell-h8c2ct` (the session was given that name; CLAUDE.md asks for `claude/sprint-5`):
+
+| Item | Proof |
+|---|---|
+| 1 Tenant ids, one `data/` folder (S2) | `tests/integration/test_tenants.py`: a user registered after a database reset gets the old owner's id and sees none of their data, in all four modes (keyed by user id instead, all four fail); a store built the Sprint 4 way is searchable after the startup migration, which is safe to run twice and gives no chunk to a user without a record for it; the old default paths are still used, with a note |
+| 2 Sign-up and sign-in (S7) | `tests/integration/test_sign_in.py` (30 tests), including the "done when" 100-character password (422) |
+| 3 Rate limits (S8) | `tests/integration/test_api_routes.py`: two users on one address each get their own allowance; every route has a limit |
+| 4 Upload limits (S4) | `tests/integration/test_upload_limits.py`, including the "done when" 60 MB upload, sent straight to the app over ASGI: with its size declared it is refused with 0 bytes read; without, after 51 MB, with a 3 MB peak in Python memory |
+| 5 Errors, logs, health, API pages, headers (S10) | `tests/integration/test_exposure.py`, and the log tests in `test_api_routes.py` |
+| 6 Injection filter as telemetry, file names (S5) | `tests/unit/test_prompts.py`, `tests/integration/test_injection_and_names.py` |
+| 7 `/auth/me`, `/sessions`, New thread keeps history (F8) | `tests/integration/test_sessions.py`; `App.test.jsx` and `ChatLayout.test.jsx`; the browser check below |
+| 8 `turn_id` and feedback by turn (F10) | `tests/integration/test_feedback.py` |
+| 9 Background ingestion (R12) | `tests/integration/test_documents.py` (status route, restart recovery), every content limit reported in the status |
+| 10 Retries and one clear message (B10) | `tests/unit/test_model_retries.py`, `tests/integration/test_model_unavailable.py`: a long outage is a 503 with the message in under 2 s, not about 60 s |
+| 11 `pip-audit` | Run on 12 Oct 2026: `chromadb` 1.5.9 is still the only package flagged (PYSEC-2026-311, -3813, -3814, -3815), and 1.5.9 is still its latest release, so there is nothing to upgrade to. All four are in Chroma's HTTP server (its `/api/v2` routes and its RBAC provider); this app opens Chroma as an embedded `PersistentClient` and never runs that server. `npm audit`: 0 vulnerabilities |
+
+- `python -m pytest`: 566 passed, with neither `GOOGLE_API_KEY` nor `JWT_SECRET` set. `ruff check .` clean. Coverage 99%; every module in the CI list at 95% or above. Frontend: `npm ci`, `npm run lint` (0 errors; the one warning is the old one in `AuthContext.jsx`), `npm test` 51 passed, `npm run build`.
+- The OpenAPI snapshot was refreshed in each commit that changed the API, and each diff reviewed: new routes `/auth/refresh`, `/auth/logout`, `/auth/me`, `/sessions`, `/sessions/{id}/messages` and `GET /documents/{id}`; the upload reply is now 202 `{document_id, filename, status, replaces, message}`; `ChatResponse.turn_id`; feedback takes `{turn_id, feedback}`; `Token.expires_in`; `UserRegister.invite_code`.
+- A real `uvicorn` server with fake models and the built app, in Chromium (Playwright): sign up, upload (read in the background), ask; reload: still signed in, the conversation and its sources back, the real name in the rail; New thread, reload: the earlier conversation is still there; sign out, reload: signed out. No content-security-policy violation in the console; the only console errors are the two expected 401s from asking `/auth/refresh` while signed out. Every response carried the security headers and a request id.
+
+What Sprint 5 found, and where the plan was wrong:
+
+- **The test client cannot show that an upload is not read into memory**: it reads a request body whole before the app sees it. The 60 MB test calls the app over ASGI directly, with a body made as it is read.
+- **A failed insert held SQLite's write lock**: `create_user` left its connection open when the insert failed, and the next write waited and failed with "database is locked". Found by the race test; fixed. Two tokens made in the same second were also identical; each now has an id.
+- **A refresh token is not revoked on the server.** Sign-out removes the cookie; an access token already issued works until it expires (30 minutes at most). A stolen refresh cookie would work for a week. A token table would close that; it is not built.
+- **Two defaults stay open so the owner's setup keeps working**: registration (decision 8) and the API pages (`AETHER_ENVIRONMENT` is `development` unless set). Both must be set before the app is reachable by anyone else; the README says how.
+- **Rate-limit counts live in the server's memory**, as before, and start again at a restart. A request that fails validation still never reaches a route's own limiter.
+- **DESIGN.md placed "cancelling on the server" in Sprint 5**, but the plan's items do not include it, and it was not done: Stop still only ends the reply on the screen.
+- **A store at the old path is used, not moved.** Moving the owner's `backend/aether.db` and `backend/vector_store/` into `data/` is left to the owner (README, "Where data is kept").
+- **Chunks no record accounts for are kept, unsearchable**, by decision 1. There is no tool to remove them; the startup log counts them.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
