@@ -28,7 +28,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
               }
             }
           },
@@ -121,7 +123,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
               }
             }
           }
@@ -168,7 +172,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
               }
             }
           }
@@ -236,7 +242,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentNames"
+                }
               }
             }
           }
@@ -259,7 +267,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentsCleared"
+                }
               }
             }
           }
@@ -284,7 +294,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentList"
+                }
               }
             }
           }
@@ -371,7 +383,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDeleted"
+                }
               }
             }
           },
@@ -458,7 +472,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
               }
             }
           },
@@ -500,10 +516,31 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Server-sent events, one per `data:` line: tokens in order, then one done or one error event.",
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/event-stream": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TokenEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DoneEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEvent"
+                    }
+                  ],
+                  "title": "Response 200 Chat Stream Api V1 Chat Stream Post",
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "token": "#/components/schemas/TokenEvent",
+                      "done": "#/components/schemas/DoneEvent",
+                      "error": "#/components/schemas/ErrorEvent"
+                    }
+                  }
+                }
               }
             }
           },
@@ -548,7 +585,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCleared"
+                }
               }
             }
           },
@@ -773,7 +812,9 @@
             "title": "Answer"
           },
           "sources": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
             "type": "array",
             "title": "Sources"
           },
@@ -823,6 +864,142 @@
           "sources"
         ],
         "title": "ChatResponse"
+      },
+      "DocumentDeleted": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "filename",
+          "deleted"
+        ],
+        "title": "DocumentDeleted"
+      },
+      "DocumentList": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentRecord"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documents",
+          "count"
+        ],
+        "title": "DocumentList"
+      },
+      "DocumentNames": {
+        "properties": {
+          "documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documents",
+          "count"
+        ],
+        "title": "DocumentNames"
+      },
+      "DocumentRecord": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "title": "Uploaded At"
+          },
+          "file_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "status",
+          "pages",
+          "chunks",
+          "size_bytes",
+          "uploaded_at"
+        ],
+        "title": "DocumentRecord",
+        "description": "A document as the detailed list gives it: its status, and the hash that spots a duplicate upload."
       },
       "DocumentStatus": {
         "properties": {
@@ -884,6 +1061,113 @@
         "title": "DocumentStatus",
         "description": "One document in a user's library, and how reading it went."
       },
+      "DocumentsCleared": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "status": {
+            "type": "string",
+            "const": "cleared",
+            "title": "Status"
+          },
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "status",
+          "deleted"
+        ],
+        "title": "DocumentsCleared"
+      },
+      "DoneEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "done",
+            "title": "Type"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "tool_used": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Used"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "sources",
+          "confidence",
+          "turn_id"
+        ],
+        "title": "DoneEvent",
+        "description": "The last event of an answer."
+      },
+      "ErrorEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "error",
+            "title": "Type"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "message",
+          "reference"
+        ],
+        "title": "ErrorEvent",
+        "description": "The last event of an answer that could not be finished. Nothing of it was saved."
+      },
       "FeedbackRequest": {
         "properties": {
           "turn_id": {
@@ -921,6 +1205,20 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Health"
+      },
       "Me": {
         "properties": {
           "username": {
@@ -939,6 +1237,38 @@
         ],
         "title": "Me",
         "description": "The signed-in user, for a page that was reloaded and knows only its token."
+      },
+      "Message": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "Message",
+        "description": "A reply that only says what happened."
+      },
+      "SessionCleared": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "session_id"
+        ],
+        "title": "SessionCleared"
       },
       "SessionList": {
         "properties": {
@@ -1010,6 +1340,53 @@
         ],
         "title": "SessionSummary"
       },
+      "Source": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Page"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "page",
+          "snippet",
+          "score"
+        ],
+        "title": "Source",
+        "description": "A passage an answer came from, as it is shown beside the answer."
+      },
       "Token": {
         "properties": {
           "access_token": {
@@ -1032,6 +1409,26 @@
           "expires_in"
         ],
         "title": "Token"
+      },
+      "TokenEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "token",
+            "title": "Type"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "content"
+        ],
+        "title": "TokenEvent",
+        "description": "A piece of the answer, in order."
       },
       "Turn": {
         "properties": {
@@ -1063,7 +1460,9 @@
             "title": "Mode"
           },
           "sources": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
             "type": "array",
             "title": "Sources"
           },

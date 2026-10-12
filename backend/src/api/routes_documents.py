@@ -14,7 +14,9 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 
 from src.api.deps import get_current_user, limiter
 from src.api.errors import reference, server_error
-from src.api.schemas import DocumentStatus, UploadResponse
+from src.api.schemas import (
+    DocumentDeleted, DocumentList, DocumentNames, DocumentsCleared, DocumentStatus, UploadResponse,
+)
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, upload_logger
 from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document
@@ -214,7 +216,7 @@ def _read_in_background(user_id: int, document_id: int, tmp_path: str, filename:
             os.unlink(tmp_path)
 
 
-@router.get("/api/v1/documents", tags=["Documents"])
+@router.get("/api/v1/documents", response_model=DocumentNames, tags=["Documents"])
 def get_documents(request: Request, user_id: int = Depends(get_current_user)):
     """List all ingested document filenames."""
     try:
@@ -224,7 +226,7 @@ def get_documents(request: Request, user_id: int = Depends(get_current_user)):
     return {"documents": docs, "count": len(docs)}
 
 
-@router.get("/api/v1/documents/detailed", tags=["Documents"])
+@router.get("/api/v1/documents/detailed", response_model=DocumentList, tags=["Documents"])
 def get_documents_detailed(request: Request, user_id: int = Depends(get_current_user)):
     """List detailed information of all ingested documents."""
     try:
@@ -245,7 +247,7 @@ def get_one_document(document_id: int, user_id: int = Depends(get_current_user))
     return document
 
 
-@router.delete("/api/v1/documents/{document_id}", tags=["Documents"])
+@router.delete("/api/v1/documents/{document_id}", response_model=DocumentDeleted, tags=["Documents"])
 def delete_one_document(request: Request, document_id: int, user_id: int = Depends(get_current_user)):
     """Delete one document, by the id the detailed list gives it. 404 for an id that is not yours."""
     try:
@@ -258,7 +260,7 @@ def delete_one_document(request: Request, document_id: int, user_id: int = Depen
     return {"message": f"Deleted '{result['filename']}' ({result['deleted']} chunks).", **result}
 
 
-@router.delete("/api/v1/documents", tags=["Documents"])
+@router.delete("/api/v1/documents", response_model=DocumentsCleared, tags=["Documents"])
 def delete_documents(request: Request, user_id: int = Depends(get_current_user)):
     """Clear all documents from the vector store for the user."""
     try:

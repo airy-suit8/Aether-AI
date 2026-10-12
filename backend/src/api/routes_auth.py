@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 
 from src.api.deps import get_current_user, limiter, user_for
-from src.api.schemas import Me, Token, UserRegister
+from src.api.schemas import Me, Message, Token, UserRegister
 from src.core.config import settings
 from src.core.logging import auth_logger, log_event
 from src.core.security import REFRESH, decode_access_token, get_password_hash, tokens_for, unknown_user_hash, verify_password
@@ -30,7 +30,7 @@ TAKEN = "Username already registered"
 # SQLite, bcrypt), and FastAPI runs `def` handlers in a thread pool, so one slow
 # request does not stall every other request.
 
-@router.post("/api/v1/auth/register", tags=["Auth"])
+@router.post("/api/v1/auth/register", response_model=Message, tags=["Auth"])
 @limiter.limit(settings.rate_limit_register)
 def register(user: UserRegister, request: Request):
     if settings.invite_code and not hmac.compare_digest(user.invite_code.encode(), settings.invite_code.encode()):
@@ -102,7 +102,7 @@ def refresh(request: Request, response: Response):
     return _signed_in(response, user)
 
 
-@router.post("/api/v1/auth/logout", tags=["Auth"])
+@router.post("/api/v1/auth/logout", response_model=Message, tags=["Auth"])
 def logout(request: Request, response: Response):
     """Remove the refresh cookie, so a reloaded page is signed out. The access token the client
     holds still works until it expires (at most settings.access_token_minutes)."""
