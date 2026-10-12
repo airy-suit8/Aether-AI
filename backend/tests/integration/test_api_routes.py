@@ -288,6 +288,14 @@ def _hit(client, route, headers):
     return client.post("/api/v1/chat/stream", headers=headers, json={"question": "anything"})
 
 
+def _assert_rate_limited(r):
+    """A 429 in the shape of every other error, with how long to wait (N1, second audit)."""
+    assert r.status_code == 429, r.status_code
+    wait = int(r.headers["retry-after"])
+    assert 1 <= wait <= 60  # every limit here is per minute
+    assert r.json() == {"detail": f"Too many requests. Please wait {wait} second{'s' if wait != 1 else ''} and try again."}
+
+
 @pytest.mark.parametrize("route,limit", [
     ("register", 5), ("login", 10), ("upload", 10), ("chat", 30), ("chat_stream", 30),
 ])
@@ -299,6 +307,7 @@ def test_rate_limit(client, make_user, route, limit):
         assert _hit(client, route, headers).status_code != 429
     r = _hit(client, route, headers)
     assert r.status_code == 429, (route, r.status_code)
+    _assert_rate_limited(r)
 
 
 @pytest.mark.parametrize("path", ["/api/v1/documents", "/api/v1/health"])
@@ -308,7 +317,7 @@ def test_a_route_without_a_limit_of_its_own_gets_the_default(client, make_user, 
     _, headers = make_user("default")
     for _ in range(120):
         assert client.get(path, headers=headers).status_code == 200
-    assert client.get(path, headers=headers).status_code == 429
+    _assert_rate_limited(client.get(path, headers=headers))
 
 
 def test_every_api_route_has_a_limit():
