@@ -191,6 +191,8 @@ Two more settings are worth setting there:
 - `AETHER_INVITE_CODE=<a code>`: registering then needs that code, typed into the "Invite code" field of the sign-up form. Give it only to the people who should have an account. Left empty (the default), anyone who can open the page can register.
 - `AETHER_COOKIE_SECURE=true`, but only once the app is served over HTTPS: it keeps the sign-in cookie off plain HTTP.
 
+**Rate limits.** Every route has one: requests that carry a valid sign-in count against that user, and the rest against their address, so people behind one office proxy do not share an allowance. Sign-up, sign-in, upload and chat have their own limits; everything else allows 120 requests a minute (`AETHER_RATE_LIMIT_DEFAULT`). The counts are kept in the server's memory and start again when it restarts.
+
 **Signing in.** Passwords are 8 characters to 72 bytes (72 letters, fewer with accents or symbols). Usernames use the letters A to Z, digits, hyphens and underscores, and their case does not matter: `Tirth` and `tirth` are the same account. A sign-in lasts 30 minutes and renews itself while the app is open, through a cookie that page scripts cannot read, so reloading the page keeps you signed in; a week without use signs you out. Sign-ups, sign-ins and refused tokens are written to `backend\logs\auth.log`, never with a password.
 
 When something fails on the server, the app shows a general message with a reference, for example `Reference: 3f2a9c81d0b4`. The same reference is on the matching line of `backend\logs\errors.log`, with the full error. Every response also carries it in an `X-Request-ID` header. The log files hold one JSON object per line, with the user's id and the request's reference, and never the text of a question.

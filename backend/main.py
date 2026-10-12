@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIASGIMiddleware
 
 from src.api import routes_auth, routes_chat, routes_documents, routes_health
 from src.api.deps import limiter
@@ -70,6 +71,8 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_exception_handler(Exception, unhandled_error)
+    # The default rate limit for every route that has no limit of its own (S8)
+    app.add_middleware(SlowAPIASGIMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins,

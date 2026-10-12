@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     ]
     max_upload_bytes: int = 50 * 1024 * 1024
     max_question_chars: int = 5000
+    # Per signed-in user, or per address for requests without a valid token (S8)
+    rate_limit_default: str = "120/minute"   # every route without a limit of its own
     rate_limit_register: str = "5/minute"
     rate_limit_login: str = "10/minute"
     rate_limit_upload: str = "10/minute"
