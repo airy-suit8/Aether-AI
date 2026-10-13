@@ -1,2 +1,7 @@
 # Windows batch files must keep CRLF line endings
 *.bat text eol=crlf
+
+# The generated API types keep LF on every system. The generator writes LF, so with CRLF in a
+# Windows checkout "npm run api-types -- --check" (the check CI runs) reported a difference
+# although nothing had changed.
+frontend/src/services/api-schema.ts text eol=lf

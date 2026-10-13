@@ -101,11 +101,33 @@ class VectorStore:
 
     def similarity_search(self, tenant: str, query: str, k: int) -> List[Tuple[Document, float]]:
         """The k chunks of one tenant closest to the query, with cosine similarity scores from 0 to 1."""
-        found = self.chroma.similarity_search_by_vector_with_relevance_scores(
-            self.embed_query(query), k=k, filter={"tenant_id": tenant})
+        vector = self.embed_query(query)
+        found = self.chroma.similarity_search_by_vector_with_relevance_scores(vector, k=k, filter={"tenant_id": tenant})
         # Chroma returns cosine distance. Rounding can put an exact match just above 1, and an
         # opposite vector is below 0; both are clamped so a score is always a share of 1.
-        return [(doc, max(0.0, min(1.0, 1.0 - distance))) for doc, distance in found]
+        hits = [(doc, max(0.0, min(1.0, 1.0 - distance))) for doc, distance in found]
+        # Chroma's index search can return fewer of a tenant's chunks than the tenant has, or none
+        # at all, when the store holds many identical vectors (second audit, N4). Then the
+        # tenant's chunks are compared one by one, which misses nothing. A tenant who simply has
+        # fewer than k chunks costs one count and no more.
+        if len(hits) < k and len(self.collection.get(where={"tenant_id": tenant}, include=[])["ids"]) > len(hits):
+            return self._exact_search(tenant, vector, k)
+        return hits
+
+    def _exact_search(self, tenant: str, vector: List[float], k: int) -> List[Tuple[Document, float]]:
+        """The k chunks of one tenant closest to the vector, by comparing it with every one of them."""
+        res = self.collection.get(where={"tenant_id": tenant}, include=["documents", "metadatas", "embeddings"])
+        if not res["ids"]:
+            return []
+        chunks = np.asarray(res["embeddings"], dtype=np.float32)
+        query_vector = np.asarray(vector, dtype=np.float32)
+        norms = np.linalg.norm(chunks, axis=1) * np.linalg.norm(query_vector)
+        cosines = np.divide(chunks @ query_vector, norms, out=np.zeros(len(chunks), dtype=np.float32), where=norms > 0)
+        nearest = np.argsort(-cosines, kind="stable")[:k]
+        return [
+            (Document(page_content=res["documents"][i], metadata=res["metadatas"][i]), max(0.0, min(1.0, float(cosines[i]))))
+            for i in nearest
+        ]
 
     def similarities(self, tenant: str, query: str, chunk_ids: List[str]) -> Dict[str, float]:
         """The cosine similarity (0 to 1) between the query and each named chunk of one tenant."""

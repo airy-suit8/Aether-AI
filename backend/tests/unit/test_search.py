@@ -219,6 +219,50 @@ def test_similarities_are_cosines_of_the_named_chunks_of_that_user_only(user):
     assert vector_store.store.similarities(user, question, []) == {}
 
 
+# ── When the index search comes back short (second audit, N4) ─────────────────
+# Over many identical vectors Chroma's filtered index search can return fewer of a tenant's
+# chunks than it holds, or none. On the owner's Windows machine that failed a search for a
+# passage uploaded a moment before, in two full test runs out of three.
+
+QUESTION = "When are impeller seals on centrifugal pumps replaced?"
+
+
+@pytest.mark.parametrize("kept", [0, 1], ids=["index finds nothing", "index finds one of four"])
+def test_a_search_the_index_cuts_short_is_finished_exactly(user, monkeypatch, kept):
+    full = retriever.retriever.search(user, QUESTION, k=4)
+    assert len(full) == 4
+    chroma = vector_store.store.chroma
+    real = chroma.similarity_search_by_vector_with_relevance_scores
+    monkeypatch.setattr(chroma, "similarity_search_by_vector_with_relevance_scores",
+                        lambda *args, **kwargs: real(*args, **kwargs)[:kept])
+    hits = retriever.retriever.search(user, QUESTION, k=4)
+    assert _sources(hits) == _sources(full) and _sources(hits)[0] == "pumps.txt"
+    assert [h["score"] for h in hits] == [pytest.approx(h["score"], abs=1e-5) for h in full]
+    assert [h["text"] for h in hits] == [h["text"] for h in full]
+    assert _sources(retriever.retriever.search(user, QUESTION, k=2)) == ["pumps.txt", _sources(full)[1]]  # still at most k
+    # Hybrid search rests on the same dense search, so it is whole again too
+    assert set(_sources(retriever.retriever.search_hybrid(user, QUESTION, k=4))) == set(CORPUS)
+
+
+def test_the_exact_search_never_returns_another_tenant_s_chunks(user, monkeypatch):
+    monkeypatch.setattr(vector_store.store.chroma, "similarity_search_by_vector_with_relevance_scores", lambda *a, **k: [])
+    assert retriever.retriever.search("tenant-870099", QUESTION, k=4) == []
+    stranger = database.get_tenant_id(database.create_user(f"stranger_{uuid.uuid4().hex[:8]}", "hash"))
+    vector_store.store.add_documents(stranger, [
+        Document(page_content="Centrifugal pumps are painted blue.", metadata={"source": "paint.txt", "page": 1, "chunk_id": "paint"})])
+    assert _sources(retriever.retriever.search(stranger, QUESTION, k=4)) == ["paint.txt"]
+    assert "paint.txt" not in _sources(retriever.retriever.search(user, QUESTION, k=4))
+
+
+def test_a_tenant_with_fewer_chunks_than_asked_for_is_not_searched_twice(user, monkeypatch):
+    # Asking for ten when the tenant has four is the ordinary case: it must not fetch every vector
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("the exact search ran although the index had returned every chunk")
+
+    monkeypatch.setattr(vector_store.store, "_exact_search", must_not_run)
+    assert len(retriever.retriever.search(user, QUESTION, k=10)) == 4
+
+
 # ── Fusion arithmetic, with the two inputs fixed ──────────────────────────────
 
 def _hit(text, score=0.5):
