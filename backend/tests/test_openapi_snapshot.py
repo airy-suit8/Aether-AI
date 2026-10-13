@@ -36,6 +36,8 @@ def test_snapshot_lists_every_api_route():
         ("/api/v1/auth/logout-everywhere", "post"),
         ("/api/v1/sessions", "get"), ("/api/v1/sessions/{session_id}/messages", "get"),
         ("/api/v1/sessions/{session_id}", "patch"), ("/api/v1/sessions/{session_id}", "delete"),
+        ("/api/v1/sessions/{session_id}/share", "post"), ("/api/v1/sessions/{session_id}/share", "get"),
+        ("/api/v1/sessions/{session_id}/share", "delete"), ("/api/v1/shared/{token}", "get"),
         ("/api/v1/upload", "post"), ("/api/v1/chat", "post"), ("/api/v1/feedback", "post"),
         ("/api/v1/chat/stream", "post"), ("/api/v1/session/clear", "post"),
         ("/api/v1/documents", "get"), ("/api/v1/documents", "delete"), ("/api/v1/documents/detailed", "get"),

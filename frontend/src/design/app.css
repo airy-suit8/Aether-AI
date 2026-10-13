@@ -547,6 +547,31 @@
 .l-form .p-btn { min-height: 48px; margin-top: 4px; font-size: var(--p-text-md); }
 .l-form__switch { margin: 6px 0 0; font-size: var(--p-text-sm); text-align: center; color: var(--p-ink-2); }
 
+/* ── Sharing: the sheet in the workspace, and the read-only page a link opens ── */
+
+.x-share { display: grid; gap: 18px; }
+.x-share > p { margin: 0; font-size: var(--p-text-sm); line-height: 1.6; color: var(--p-ink-2); }
+.x-share__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+
+.h-page a.x-brand,
+.h-page a.p-btn { text-decoration: none; }
+.h-page .l-top .x-brand { cursor: pointer; color: inherit; }
+.h-column { padding-top: clamp(36px, 7vw, 80px); }
+.h-column > .p-h2 { max-width: 28ch; margin: 10px 0 0; }
+.h-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 24px;
+  margin-top: clamp(56px, 9vw, 96px);
+  padding-top: 22px;
+  border-top: 1px solid var(--p-edge);
+}
+.h-foot p { max-width: 46ch; margin: 0; font-size: var(--p-text-sm); line-height: 1.55; color: var(--p-ink-2); }
+.h-gone { display: grid; justify-items: start; gap: 6px; }
+.h-gone > p:not(.p-eyebrow) { max-width: 46ch; margin: 0 0 18px; font-size: var(--p-text-lg); line-height: 1.5; color: var(--p-ink-2); }
+
 /* ── Settings ──────────────────────────────────────────────────────────────── */
 
 .s-tabs { margin-bottom: 20px; }
@@ -646,6 +671,9 @@
 /* Phones from 360 px: the top bars keep to the width of the screen. */
 @media (max-width: 420px) {
   .x-top__thread .p-eyebrow { display: none; }
+  /* Share keeps its icon and its name for screen readers; the word gives its room to the others */
+  .x-top .x-top__share { padding-inline: 10px; }
+  .x-top__share span { display: none; }
   .x-top .p-btn,
   .l-top .p-btn { padding-inline: 12px; }
   .l-top .p-lens button { padding-inline: 10px; }

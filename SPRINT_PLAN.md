@@ -16,6 +16,8 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 6 Frontend rebuild | Done, merged 13 Oct 2026 (PR #5, from the branch `vigilant-dijkstra-5swgx3`) | See below |
 | 7 Ship and document | The first part is done and merged 13 Oct 2026 (PR #6, from `sprint-7`). Open: Docker items (1, 2), deferred at the owner's request (11 Oct 2026); items 5 and 6, which wait for the owner, the mentor and the office network; and the `[OWNER: ...]` places in the report, the README and the demo checklist | See below |
 | 8 Follow-ups and observability | Done, merged 13 Oct 2026 (PR #7, from `sprint-8`) | See below |
+| Start page and sharing (asked for by the owner, 13 Oct 2026) | Done, merged 13 Oct 2026 (branch `landing-and-share`): the start page argues for the product with its evidence and shows no sample data; a conversation can be shared by a link | `LandingPage.test.tsx`, `tests/integration/test_sharing.py`, `ShareDialog.test.tsx`, `SharedPage.test.tsx`, and a step of the browser journey |
+| 9 Rooms: several people in one conversation | Proposed 13 Oct 2026; not started. Two decisions are the owner's first | See Sprint 9 |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
 
@@ -551,6 +553,39 @@ Decisions already made for this sprint (do not reopen them; say so in the pull r
 - Each item has tests, and the Playwright journey covers items 1 to 4.
 - A thumbs-down given in the journey appears in the export.
 - `python -m src.maintenance` on a store with one orphan chunk and one empty record reports both, and removes both only with `--apply`.
+
+## Sprint 9 — Rooms: several people in one conversation (about 5 days)
+
+Proposed on 13 October 2026, when the owner asked whether a group could discuss in one chat. It is not too much to ask, but it is a sprint and not an afternoon: today every conversation, every search and every test assumes one owner, and a room changes that assumption in the database, in the API, in the interface and in the security model. Sharing by link (done on 13 Oct 2026) covers "let others read"; a room is "let others take part".
+
+**Goal:** a conversation that several signed-in people can read and ask in, with everyone seeing who asked what.
+
+Two decisions are the owner's, and the sprint should not start without them:
+
+- **Whose documents answer in a room?** Proposed: the documents of the person who opened the room, and only inside it. Members ask, and see the answers and the passages cited; they cannot browse, search or download that library anywhere else. The alternative, each question answered from the asker's own documents, makes one conversation give different people different answers.
+- **Can people write to each other, or only to the model?** Proposed: both. A message is either a question (answered, with sources) or a note to the room (not answered). Without notes it is a shared queue of questions, not a discussion.
+
+1. **A room** is a conversation with an owner and members. The owner opens one from a thread and gets an invite link; a signed-in person who opens the link joins. The owner can remove a member, and close the room; a member can leave.
+2. **Who asked** is recorded with every turn and shown with it. A thread list shows rooms apart from private conversations.
+3. **Questions** in a room are answered from the room's library (see the first decision), in the mode the asker chose. One answer is written at a time; a second question waits its turn.
+4. **Notes** to the room (see the second decision): plain messages, kept in order with the turns, never sent to the model.
+5. **Everyone sees new messages** without reloading: the page asks for what is new every few seconds while the room is open. No new server technology.
+6. **Limits and cost**: each member's rate limit is their own; the model quota is the server's and is shared, and the cost line shows on every answer as it does now.
+
+Decisions already made (do not reopen them; say so in the pull request if one turns out to be wrong):
+
+1. Rooms are new tables beside the existing ones (`rooms`, `room_members`, and an asker on each turn). A private conversation stays exactly as it is; nothing existing is migrated into a room.
+2. Every room route checks membership on the server, from the verified token. `test_tenant_isolation.py` gains the room cases: a non-member reads nothing; a member cannot list, search or delete the owner's documents outside the room, nor read the owner's other conversations; a removed member loses access at once.
+3. The invite link is an unguessable token, like a share link, and is never logged. Joining needs an account: there are no anonymous members.
+4. Polling, not web sockets: a plain route that returns what is newer than the last turn seen. It must stay cheap, since every open room calls it.
+5. Both sides in one commit for every route, as in Sprints 5 to 8; the browser journey gains a room with two signed-in people.
+6. The interface follows `DESIGN.md`. A member's name is a quiet label on the turn, not a new colour: the spectrum stays for sources.
+7. Leave alone: sharing by link, the evaluation harness, `answer_from`, the threshold, Docker.
+
+**Done when**
+- Two signed-in people in the browser journey ask in one room and each sees the other's question, its answer and who asked, without reloading.
+- The isolation tests above pass.
+- A private conversation behaves exactly as before: the existing suite passes unchanged.
 
 ---
 

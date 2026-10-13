@@ -11,11 +11,14 @@ from src.api.deps import get_current_user, limiter
 from src.api.errors import reference, server_error
 from src.api.schemas import (
     ChatRequest, ChatResponse, FeedbackRequest, Message, SessionCleared, SessionList, SessionMessages, SessionRename,
-    SessionTitle, StreamEvent, SESSION_ID_PATTERN,
+    SessionTitle, SharedConversation, ShareState, StreamEvent, SESSION_ID_PATTERN,
 )
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, request_logger
-from src.db.database import get_session_turns, get_sessions, rename_session, update_conversation_feedback
+from src.db.database import (
+    get_session_turns, get_sessions, get_share_token, get_shared_session, rename_session, share_session, stop_sharing,
+    update_conversation_feedback,
+)
 from src.llm.llm_client import MODEL_BUSY, is_unavailable
 from src.memory.conversation import clear_session
 from src.pipeline import rag
@@ -186,3 +189,49 @@ def delete_conversation(session_id: str = SessionPath, user_id: int = Depends(ge
         raise HTTPException(status_code=404, detail=NO_SUCH_CONVERSATION)
     log_event(request_logger, "session_deleted", user_id=user_id, session=session_id, turns=deleted)
     return {"message": "Conversation deleted", "session_id": session_id}
+
+
+# ── Sharing a conversation: a link anyone can read it by ─────────────────────
+# The owner makes the link and can withdraw it. Whoever has it can read that one conversation,
+# with the passages it cites, and nothing else: no library, no other conversation, no asking.
+# The token is the only secret, so it is never written to a log.
+
+@router.post("/api/v1/sessions/{session_id}/share", response_model=ShareState, tags=["Session"])
+def share_conversation(session_id: str = SessionPath, user_id: int = Depends(get_current_user)):
+    """Share one of the user's conversations. Sharing it again gives the same link. 404 for a
+    conversation that is not the user's, or has no turns yet."""
+    token = share_session(user_id, session_id)
+    if token is None:
+        raise HTTPException(status_code=404, detail=NO_SUCH_CONVERSATION)
+    log_event(request_logger, "session_shared", user_id=user_id, session=session_id)
+    return {"session_id": session_id, "token": token}
+
+
+@router.get("/api/v1/sessions/{session_id}/share", response_model=ShareState, tags=["Session"])
+def sharing_of_conversation(session_id: str = SessionPath, user_id: int = Depends(get_current_user)):
+    """Whether one of the user's conversations is shared, and by which link."""
+    return {"session_id": session_id, "token": get_share_token(user_id, session_id)}
+
+
+@router.delete("/api/v1/sessions/{session_id}/share", response_model=ShareState, tags=["Session"])
+def stop_sharing_conversation(session_id: str = SessionPath, user_id: int = Depends(get_current_user)):
+    """Withdraw the link. It stops working at once; sharing again makes a new one."""
+    if stop_sharing(user_id, session_id):
+        log_event(request_logger, "session_unshared", user_id=user_id, session=session_id)
+    return {"session_id": session_id, "token": None}
+
+
+SHARE_TOKEN_PATTERN = r"^[A-Za-z0-9_-]+$"
+NOT_SHARED = "This conversation is not shared, or its link was withdrawn."
+
+
+@router.get("/api/v1/shared/{token}", response_model=SharedConversation, tags=["Session"])
+def shared_conversation(token: str = Path(min_length=20, max_length=64, pattern=SHARE_TOKEN_PATTERN)):
+    """A shared conversation, for anyone who has its link: no sign-in. 404 for a link that was
+    never made or has been withdrawn."""
+    shared = get_shared_session(token)
+    turns = get_session_turns(shared["user_id"], shared["session_id"]) if shared else []
+    if not turns:
+        raise HTTPException(status_code=404, detail=NOT_SHARED)
+    log_event(request_logger, "shared_session_read", user_id=shared["user_id"], session=shared["session_id"])
+    return {"title": shared["title"], "turns": turns}

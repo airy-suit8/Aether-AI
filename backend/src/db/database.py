@@ -14,9 +14,12 @@ Tables:
                   question (Sprint 8, item 3)
   refresh_tokens — every refresh token issued, by its id (jti), and whether it was revoked. A
                   refresh token not listed here is refused (Sprint 8, item 4)
+  shared_sessions — the conversations their owners have shared, each by an unguessable token:
+                  anyone who has the link can read that one conversation, signed in or not
 """
 
 import json
+import secrets
 import sqlite3
 import threading
 import uuid
@@ -98,6 +101,15 @@ def init_db():
                 issued_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
                 revoked_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS shared_sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (user_id, session_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
         """)
@@ -340,9 +352,71 @@ def clear_conversation(user_id: int, session_id: str) -> int:
         deleted = conn.execute("DELETE FROM conversations WHERE user_id = ? AND session_id = ?",
                                (user_id, session_id)).rowcount
         conn.execute("DELETE FROM session_titles WHERE user_id = ? AND session_id = ?", (user_id, session_id))
+        # A deleted conversation is no longer shared: its link stops working with it
+        conn.execute("DELETE FROM shared_sessions WHERE user_id = ? AND session_id = ?", (user_id, session_id))
         conn.commit()
         conn.close()
     return deleted
+
+
+# ── Sharing a conversation: a link anyone can read it by ──────────────────────
+
+def share_session(user_id: int, session_id: str) -> Optional[str]:
+    """The token of the link that shares one of a user's conversations, made now if it is not
+    shared yet. None when they have no conversation of that id."""
+    with _db_lock:
+        conn = _get_connection()
+        try:
+            if conn.execute("SELECT 1 FROM conversations WHERE user_id = ? AND session_id = ? LIMIT 1",
+                            (user_id, session_id)).fetchone() is None:
+                return None
+            row = conn.execute("SELECT token FROM shared_sessions WHERE user_id = ? AND session_id = ?",
+                               (user_id, session_id)).fetchone()
+            if row:
+                return row["token"]
+            token = secrets.token_urlsafe(24)  # 192 random bits: the link cannot be guessed
+            conn.execute("INSERT INTO shared_sessions (token, user_id, session_id, created_at) VALUES (?, ?, ?, ?)",
+                         (token, user_id, session_id, datetime.now().isoformat()))
+            conn.commit()
+            return token
+        finally:
+            conn.close()
+
+
+def get_share_token(user_id: int, session_id: str) -> Optional[str]:
+    """The token one of a user's conversations is shared by, or None when it is not shared."""
+    conn = _get_connection()
+    row = conn.execute("SELECT token FROM shared_sessions WHERE user_id = ? AND session_id = ?",
+                       (user_id, session_id)).fetchone()
+    conn.close()
+    return row["token"] if row else None
+
+
+def stop_sharing(user_id: int, session_id: str) -> bool:
+    """Stop sharing one of a user's conversations. False when it was not shared."""
+    with _db_lock:
+        conn = _get_connection()
+        stopped = conn.execute("DELETE FROM shared_sessions WHERE user_id = ? AND session_id = ?",
+                               (user_id, session_id)).rowcount
+        conn.commit()
+        conn.close()
+    return bool(stopped)
+
+
+def get_shared_session(token: str) -> Optional[Dict[str, Any]]:
+    """Whose conversation a share token opens: {user_id, session_id, title}, or None for a token
+    that was never issued or has been withdrawn."""
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT s.user_id, s.session_id, "
+        "COALESCE((SELECT title FROM session_titles t WHERE t.user_id = s.user_id AND t.session_id = s.session_id), "
+        " (SELECT question FROM conversations f WHERE f.user_id = s.user_id AND f.session_id = s.session_id "
+        "  ORDER BY f.id LIMIT 1)) AS title "
+        "FROM shared_sessions s WHERE s.token = ?",
+        (token,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def rename_session(user_id: int, session_id: str, title: str) -> bool:

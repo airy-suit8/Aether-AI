@@ -16,6 +16,7 @@ vi.mock('./services/api', async (importOriginal) => ({
   getDocumentsDetailed: vi.fn(),
   getSessions: vi.fn(),
   getSessionMessages: vi.fn(),
+  getSharedConversation: vi.fn(),
 }))
 
 function Where() {
@@ -58,6 +59,20 @@ describe('App after a page reload', () => {
     expect(screen.getByText('Tirth')).toBeTruthy()  // the real name, from /auth/me
     expect(api.getSessionMessages).toHaveBeenCalledWith('session_7')
     expect(where()).toBe('/chat/session_7')
+  })
+
+  it('opens a shared conversation without a sign-in, and does not send the visitor to sign in', async () => {
+    vi.mocked(api.refreshSession).mockResolvedValue(null)
+    vi.mocked(api.getSharedConversation).mockResolvedValue({
+      title: 'Blade inspections',
+      turns: [{ question: 'How often?', answer: 'Every 90 days.', confidence: 0.8, mode: 'original', sources: [], tool_used: null, created_at: '2026-10-13T10:00:00' }],
+    })
+    renderApp('/shared/kQ3vX9pLm2Zr7TtYb5NwEa8HcJd4UfGs')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Blade inspections' })).toBeTruthy()
+    expect(screen.getByText('Every 90 days.')).toBeTruthy()
+    expect(where()).toBe('/shared/kQ3vX9pLm2Zr7TtYb5NwEa8HcJd4UfGs')
+    expect(api.getMe).not.toHaveBeenCalled()
+    expect(api.getSessions).not.toHaveBeenCalled()
   })
 
   it('shows the start page when there is no sign-in to restore', async () => {

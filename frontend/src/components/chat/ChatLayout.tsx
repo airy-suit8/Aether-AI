@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
+import ShareDialog from './ShareDialog'
 import {
   ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages, renameSession, deleteSession, logoutEverywhere,
@@ -101,6 +102,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
 
   const streamRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -449,6 +451,11 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     handleLogout()
   }, [addToast, handleLogout])
 
+  // Sharing: only a conversation the server has a turn of, and the sheet closes with its thread
+  const canShare = sessionId !== null && messages.some((m) => m.role === 'assistant' && m.turnId != null)
+  const closeShare = useCallback(() => setShareOpen(false), [])
+  useEffect(() => setShareOpen(false), [sessionId])
+
   const goHome = useCallback(() => navigate('/'), [navigate])
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), [])
   const openSettings = useCallback(() => navigate('/settings'), [navigate])
@@ -501,6 +508,20 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           {!sidebarOpen && (
             <button type="button" className="p-btn p-btn--tonal" onClick={handleNewThread}>New thread</button>
           )}
+          {/* A conversation can be shared once the server has a turn of it */}
+          <button
+            type="button"
+            className="p-btn x-top__share"
+            aria-label="Share"
+            disabled={!canShare}
+            title={canShare ? undefined : 'Nothing to share yet: ask a question first'}
+            onClick={() => setShareOpen(true)}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 10V2.5m0 0L5.2 5.3M8 2.5l2.8 2.8M3 9.5v2.3c0 .9.8 1.7 1.7 1.7h6.6c.9 0 1.7-.8 1.7-1.7V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>Share</span>
+          </button>
           <button type="button" className="p-btn" onClick={handleLogout}>Sign out</button>
         </header>
 
@@ -531,6 +552,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           onUpload={handleUpload}
         />
       </main>
+
+      {shareOpen && sessionId && <ShareDialog sessionId={sessionId} onClose={closeShare} addToast={addToast} />}
 
       {settingsOpen && (
         <SettingsModal

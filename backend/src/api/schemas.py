@@ -268,3 +268,29 @@ class Turn(BaseModel):
 class SessionMessages(BaseModel):
     session_id: str
     turns: list[Turn]  # oldest first
+
+
+# ── Sharing a conversation ────────────────────────────────────────────────────
+
+class ShareState(BaseModel):
+    """Whether one of the user's conversations is shared. The page that shows it is /shared/{token}."""
+    session_id: str
+    token: Optional[str] = None  # null when the conversation is not shared
+
+
+class SharedTurn(BaseModel):
+    """One question and its answer in a shared conversation: what its owner saw, without the
+    turn's id or the owner's rating."""
+    question: str
+    answer: str
+    confidence: Optional[float] = None
+    mode: str
+    sources: list[Source]
+    tool_used: Optional[str] = None
+    created_at: str
+
+
+class SharedConversation(BaseModel):
+    """A conversation as anyone with its link sees it. It says nothing about whose it is."""
+    title: str
+    turns: list[SharedTurn]  # oldest first
