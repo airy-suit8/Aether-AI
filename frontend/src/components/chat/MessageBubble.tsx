@@ -115,7 +115,7 @@ function UsageLine({ usage }: { usage: Usage }) {
   return (
     <details className="x-usage">
       <summary>
-        <span className="p-mono">{seconds(usage.seconds)}</span>, <span className="p-mono">{count(tokens)}</span> {tokens === 1 ? 'token' : 'tokens'}
+        <span className="p-mono">{`${seconds(usage.seconds)}, ${count(tokens)} ${tokens === 1 ? 'token' : 'tokens'}`}</span>
       </summary>
       <ul aria-label="Stages">
         {usage.stages.map((stage, index) => (
