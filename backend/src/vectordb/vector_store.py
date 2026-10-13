@@ -152,6 +152,22 @@ class VectorStore:
         self._changed(tenant)
         return len(chunk_ids)
 
+    # ── Every tenant at once, for python -m src.maintenance ───────────────────
+
+    def all_chunks(self) -> Tuple[List[str], List[Dict]]:
+        """The ids and metadata of every chunk in the store."""
+        res = self.collection.get(include=["metadatas"])
+        return res["ids"], res["metadatas"]
+
+    def delete_chunks(self, chunk_ids: List[str]) -> int:
+        """Delete chunks by id, whichever tenant they belong to. Returns how many were asked for."""
+        if chunk_ids:
+            tenants = {meta.get("tenant_id") for meta in self.collection.get(ids=list(chunk_ids), include=["metadatas"])["metadatas"]}
+            self.collection.delete(ids=list(chunk_ids))
+            for tenant in tenants - {None}:
+                self._changed(tenant)
+        return len(chunk_ids)
+
     # ── Chunks stored before tenant ids (keyed by the integer user_id) ────────
 
     def chunks_without_tenant(self) -> Tuple[List[str], List[Dict]]:

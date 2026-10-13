@@ -205,11 +205,12 @@ def get_tenant_id(user_id: int) -> str:
 
 
 def get_document_owners() -> List[Dict[str, Any]]:
-    """Every document record with its owner's tenant id: {user_id, tenant_id, document_id, filename}."""
+    """Every document record with its owner's tenant id:
+    {user_id, tenant_id, document_id, filename, status, uploaded_at}."""
     conn = _get_connection()
     rows = conn.execute(
-        "SELECT u.id AS user_id, u.tenant_id, d.id AS document_id, d.filename "
-        "FROM documents d JOIN users u ON u.id = d.user_id"
+        "SELECT u.id AS user_id, u.tenant_id, d.id AS document_id, d.filename, d.status, d.uploaded_at "
+        "FROM documents d JOIN users u ON u.id = d.user_id ORDER BY d.id"
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
