@@ -405,20 +405,26 @@ describe('ChatLayout', () => {
     vi.mocked(api.logoutEverywhere).mockResolvedValue({ message: 'Signed out everywhere' })
     const { addToast } = renderChat('/settings')
     const user = userEvent.setup()
+    vi.mocked(api.logout).mockClear()
     await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
     expect(api.logoutEverywhere).toHaveBeenCalledTimes(1)
-    await vi.waitFor(() => expect(where()).toBe('/'))
+    // Then the ordinary sign-out here. (Where it lands is App.test.tsx's to check: this harness
+    // mounts the workspace at every path, so at / it opens a thread again.)
+    await vi.waitFor(() => expect(api.logout).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.logoutEverywhere).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.logout).mock.invocationCallOrder[0])
     expect(addToast).toHaveBeenCalledWith('Signed out on every device', 'info')
   })
 
   it('stays signed in, and says why, when signing out everywhere fails', async () => {
     vi.mocked(api.logoutEverywhere).mockReset()
     vi.mocked(api.logoutEverywhere).mockRejectedValue(new api.ApiError('Too many requests. Please wait 5 seconds and try again.', 429))
+    vi.mocked(api.logout).mockClear()
     const { addToast } = renderChat('/settings')
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
     await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Too many requests. Please wait 5 seconds and try again.', 'error'))
     expect(where()).toBe('/settings')
+    expect(api.logout).not.toHaveBeenCalled()
   })
 
   it('says "1 passage from 1 page", not "1 passages"', async () => {
