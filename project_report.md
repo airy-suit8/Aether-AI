@@ -14,9 +14,6 @@
 > **Guided By:** Ms. Binal Kaka
 >
 > **Internship at:** Netweb Software, Vadodara
-> **Department at Netweb Software:** [OWNER: the department or team]
-> **Industry mentor:** [OWNER: the mentor's name and title]
-> **Internship dates:** [OWNER: the first and last day of the internship]
 
 Built by Tirth Ganatra during an internship at Netweb Software, Vadodara.
 
@@ -290,7 +287,7 @@ A Google API key is needed only to answer real questions. The tests use fake mod
 
 ### 3.2 Hardware
 
-The application runs as one process on one machine. It was developed and checked on the author's Windows laptop (`SPRINT_PLAN.md`, the "on the owner's Windows machine" entries) and on Linux. [OWNER: the laptop's processor, memory and Windows version]
+The application runs as one process on one machine. It was developed and checked on the author's Windows laptop (`SPRINT_PLAN.md`, the "on the owner's Windows machine" entries) and on Linux.
 
 The model work happens at Google, so the server needs no GPU. Disk use is the uploaded documents' passages and vectors in `data/`, limited to 100 documents per user and 5,000 passages per document (`core/config.py`).
 
@@ -695,10 +692,6 @@ After that:
 
 | Where | What is needed |
 |---|---|
-| Front matter | The department or team at Netweb Software |
-| Front matter | The industry mentor's name and title |
-| Front matter | The first and last day of the internship |
-| 3.2 | The laptop's processor, memory and Windows version |
 | 6.3 | The documents allowed, and the API tier, agreed with the mentor (S11) |
 | 7.4 | The dataset, then the results of the baseline run |
 | 8.5 | Six screenshots with real answers: a cited answer with an open source card, a follow-up, a refusal, an agent answer, a streamed answer with Stop, an upload being read |
