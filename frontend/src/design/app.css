@@ -409,7 +409,7 @@
   padding: 32px 0;
 }
 
-.x-empty .p-display { font-size: clamp(2.2rem, 5.4vw, 4rem); margin: 14px 0 16px; }
+.x-empty .p-h2 { margin: 12px 0 14px; }
 .x-empty .p-eyebrow { margin: 0; }
 .x-empty > p:not(.p-eyebrow) { max-width: 46ch; margin: 0 0 22px; font-size: var(--p-text-lg); line-height: 1.5; color: var(--p-ink-2); }
 .x-empty__ideas { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -492,11 +492,44 @@
 .l-step h3 { margin: 8px 0 6px; font-size: var(--p-text-lg); font-weight: 620; letter-spacing: -0.015em; }
 .l-step p { max-width: 26ch; margin: 0; font-size: var(--p-text-sm); line-height: 1.55; color: var(--p-ink-2); }
 
-.l-trio { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 14px; }
-.l-card { display: grid; align-content: end; gap: 8px; min-height: 240px; padding: 26px; border-radius: var(--p-r-4); }
-.l-card h3 { margin: 0; font-size: var(--p-text-xl); font-weight: 580; font-stretch: 94%; line-height: 1.12; letter-spacing: -0.025em; text-wrap: balance; }
-.l-card p { margin: 0; font-size: var(--p-text-sm); line-height: 1.55; color: var(--p-ink-2); }
-.l-card .p-mono { align-self: start; margin-bottom: auto; color: var(--p-ink-3); }
+/* Why it is different: the claims on the left, what backs each one in the margin, joined by
+   threads. The same shape as an answer and its sources, with no sample data in it. */
+.l-why { padding: clamp(22px, 3.6vw, 48px); border-radius: var(--p-r-4); }
+
+.l-why__bench {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: clamp(32px, 7vw, 104px);
+  align-items: start;
+}
+
+.l-why .p-h2 { max-width: 18ch; margin: 10px 0 14px; }
+.l-why__lede { max-width: 44ch; margin: 0 0 26px; font-size: var(--p-text-md); line-height: 1.55; color: var(--p-ink-2); text-wrap: pretty; }
+
+.l-claims { margin: 0; padding: 0; list-style: none; }
+
+.l-claim {
+  padding: 15px 0;
+  border-top: 1px solid var(--p-edge);
+  font-size: clamp(1.125rem, 2vw, 1.4375rem);
+  font-weight: 560;
+  font-stretch: 96%;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  transition: color var(--p-dur-2);
+}
+
+/* Pointing at one claim quietens the others, as lighting a source does in an answer. */
+.l-claims[data-dim="true"] .l-claim:not([data-active="true"]) { color: var(--p-ink-3); }
+
+.l-why__margin { display: grid; gap: 12px; align-content: start; }
+.l-why__margin .p-eyebrow { margin: 6px 0 2px; }
+
+/* A source card that is read, not opened: its whole sentence shows. */
+.l-proof { cursor: default; }
+.l-proof .p-source__text { display: block; overflow: visible; }
 
 .l-foot {
   display: flex;
@@ -585,8 +618,7 @@
   .l-path::before { inset: 0 auto 0 6px; width: 2px; height: auto; background: linear-gradient(180deg, var(--p-ink) 0 26%, var(--p-s1) 40%, var(--p-s2), var(--p-s3), var(--p-s4), var(--p-s5) 100%); }
   .l-step { padding: 0 0 26px 32px; }
   .l-step::before { top: 4px; }
-  .l-trio { grid-template-columns: minmax(0, 1fr); }
-  .l-card { min-height: 0; }
+  .l-why__bench { grid-template-columns: minmax(0, 1fr); gap: 24px; }
 }
 
 /* ── Retry: a reply that failed or was stopped, above the composer ─────────── */

@@ -66,7 +66,8 @@ One material, optical glass: a translucent pane with a hairline edge. A highligh
 | `HoldButton` | `prism.tsx` | For actions that cannot be undone: nothing happens unless the press is held |
 | Library row remove | `Sidebar.tsx`, `app.css` (`.x-doc__remove`) | For removing one document, in a row too small for a hold: a quiet cross that shows with the row; one click arms it ("Remove?", in the status red), a second confirms; it disarms after four seconds or when focus leaves |
 | `Dialog` | `prism.tsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards, and the page behind it is inert while it is open (live regions excepted, so toasts are still heard) |
-| `DemoBench` | `DemoBench.tsx` | The self-playing demonstration used on the start page and in the lab |
+| `DemoBench` | `DemoBench.tsx` | The self-playing demonstration with sample data. In the design lab only: the start page shows no sample data (13 Oct 2026) |
+| `WhyDifferent` | `components/landing/WhyDifferent.tsx`, `app.css` (`.l-why`) | The start page's argument, in the shape of an answer: five claims, each with a citation marker, and in the margin the evidence for each, joined by threads. Pointing at a claim, its marker or its card lights the pair and quietens the rest. The cards say what in the product backs the claim; nothing is sample data |
 | Thread list | `Sidebar.tsx`, `app.css` (`.x-thread`) | The rail's conversations, newest first, by first question and time or date; each is a link to `/chat/<id>`. The open one is `aria-current="page"` and gains weight on a surface tone, as a selected control does, never a colour of its own |
 | Citation chips in an answer | `MessageBubble.tsx`, `citations.ts`, `Cite` | When the sources carry a number, each `[n]` in the answer is a `Cite` in source n's hue; hovering or focusing either the chip or its card lights both, and the chip's click or Enter pins the card open. Otherwise the answer is shown as written |
 | Answer rating | `MessageBubble.tsx`, `app.css` (`.x-rate`) | Two quiet icon buttons under a saved answer, Helpful and Not helpful; the chosen one is `aria-pressed` in the tonal fill, and pressing it again takes it back |
@@ -84,7 +85,7 @@ Two moments are choreographed. **Development:** streamed words arrive blurred an
 
 ## Layout
 
-The answer sits on the left and its evidence in the right margin, like notes in a scholarly book. Below 900 px in the workspace (860 px on the start page's bench) the margin moves under the answer and the threads are not drawn; below 900 px the library rail also becomes a drawer.
+The answer sits on the left and its evidence in the right margin, like notes in a scholarly book. Below 900 px, in the workspace and in the start page's claims, the margin moves under the answer and the threads are not drawn; below 900 px the library rail also becomes a drawer.
 
 ![The bench at phone width](docs/design/prism-bench-phone.png)
 
@@ -137,5 +138,5 @@ Taken with Playwright against the built app and the backend with fake models (`b
 
 1. Merge with the Sprint 2 test suite: two assertions in its chat test describe the old markup (the mode control is now a radio group, and a source card shows a preview of its passage).
 2. A screen-reader pass with a real screen reader. Sprint 6 checked the keyboard path of the settings sheet in the browser journey, and axe (no serious or critical violation) and Lighthouse (accessibility 100) on the main screens; nobody has yet used the app with NVDA or VoiceOver.
-3. Threads (the lines of light) in the real chat. Since Sprint 6 an answer written from numbered chunks (`AETHER_ANSWER_FROM=chunks`) ties each `[n]` to its source by hue, hover and focus; the lines themselves are drawn only on the start page's bench. The server's default is still the summary mode, whose answers cite nothing.
+3. Threads (the lines of light) in the real chat. Since Sprint 6 an answer written from numbered chunks (`AETHER_ANSWER_FROM=chunks`) ties each `[n]` to its source by hue, hover and focus; the lines themselves are drawn only on the start page, between its claims and their evidence. The server's default is still the summary mode, whose answers cite nothing.
 4. Done in Sprint 6 (decision 11): Stop closes the stream, a stream closed early saves no turn, and no cancel route was added.

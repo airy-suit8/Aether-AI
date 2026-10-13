@@ -4,8 +4,8 @@ import { useLocation, useMatch, useNavigate } from 'react-router'
 import { useAuth } from '../../services/AuthContext'
 import { login, register } from '../../services/api'
 import { AmbientField, Dialog, Field, Lens, PrismMark } from '../../design/prism'
-import type { FieldState, PrismStyle, Theme } from '../../design/prism'
-import DemoBench from '../../design/DemoBench'
+import type { PrismStyle, Theme } from '../../design/prism'
+import WhyDifferent from './WhyDifferent'
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -22,8 +22,9 @@ const STEPS = [
 const USERNAME_RULE = /^[A-Za-z0-9_-]{3,50}$/
 
 /**
- * LandingPage — the start page. The product demonstrates itself with sample data, then
- * explains the path a document takes, and opens the sign-in sheet.
+ * LandingPage — the start page. It says what sets the product apart, each claim with its
+ * evidence (WhyDifferent), explains the path a document takes, and opens the sign-in sheet.
+ * It shows no sample data.
  */
 interface LandingPageProps {
   theme?: Theme
@@ -49,7 +50,6 @@ export default function LandingPage({ theme = 'system', onTheme = () => {} }: La
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({})
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [phase, setPhase] = useState<FieldState>('idle')
 
   const open = (loginView: boolean) => {
     if (isAuthenticated) {
@@ -107,7 +107,7 @@ export default function LandingPage({ theme = 'system', onTheme = () => {} }: La
 
   return (
     <>
-      <AmbientField state={phase} />
+      <AmbientField state="idle" />
       <div className="l-page" id="landing-view">
         <header className="l-top">
           <span className="x-brand">
@@ -140,7 +140,7 @@ export default function LandingPage({ theme = 'system', onTheme = () => {} }: La
           </div>
         </section>
 
-        <DemoBench onPhase={setPhase} />
+        <WhyDifferent />
 
         <section className="l-section">
           <p className="p-eyebrow">How it works</p>
@@ -156,30 +156,8 @@ export default function LandingPage({ theme = 'system', onTheme = () => {} }: La
           </ol>
         </section>
 
-        <section className="l-section">
-          <p className="p-eyebrow">What you get</p>
-          <h2 className="p-h2">Built to be checked, not just believed.</h2>
-          <div className="l-trio">
-            <article className="p-pane l-card">
-              <span className="p-mono">SOURCES</span>
-              <h3>Every answer shows its evidence.</h3>
-              <p>The file, the page, a similarity score and the passage itself sit beside the answer, so you can check it in seconds.</p>
-            </article>
-            <article className="p-pane l-card">
-              <span className="p-mono">PRIVATE</span>
-              <h3>Your library is yours alone.</h3>
-              <p>Each account has its own documents and its own conversations.</p>
-            </article>
-            <article className="p-pane l-card">
-              <span className="p-mono">MODES</span>
-              <h3>Four ways to answer.</h3>
-              <p>Default, Hybrid search, an Agent with a calculator and a calendar, and a LangChain pipeline.</p>
-            </article>
-          </div>
-        </section>
-
         <footer className="l-foot">
-          <span>Built by Tirth Ganatra during an internship at Netweb Software, Vadodara.</span>
+          <span>Aether AI</span>
           <span>Powered by Google Gemini</span>
         </footer>
       </div>
