@@ -126,6 +126,13 @@ test('the whole journey, with the accessibility gate', async ({ page, browser })
   await page.reload()
   await expect(page.getByRole('button', { name: 'Helpful', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
+  // Changed to Not helpful: after the journey, e2e/check-feedback-export.js finds it in the
+  // feedback export (Sprint 8, item 5)
+  await page.getByRole('button', { name: 'Not helpful' }).click()
+  await expect(page.getByRole('button', { name: 'Not helpful' })).toHaveAttribute('aria-pressed', 'true')
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Not helpful' })).toHaveAttribute('aria-pressed', 'true')
+
   // ── A second thread, then back to the first from the thread list ──────────
   await page.locator('.x-rail').getByRole('button', { name: 'New thread' }).click()
   await expect(page).not.toHaveURL(firstThread)

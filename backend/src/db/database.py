@@ -371,6 +371,18 @@ def update_conversation_feedback(user_id: int, turn_id: int, feedback: int) -> b
     return updated == 1
 
 
+def get_turns_rated(feedback: int) -> List[Dict[str, Any]]:
+    """Every user's turns with this rating (-1: not helpful), oldest first, with what was shown:
+    for the evaluation's candidate questions (src/evaluation/export_feedback.py)."""
+    conn = _get_connection()
+    rows = conn.execute(
+        "SELECT id, question, answer, mode, sources, created_at FROM conversations WHERE feedback = ? ORDER BY id",
+        (feedback,)
+    ).fetchall()
+    conn.close()
+    return [{**dict(r), "sources": json.loads(r["sources"]) if r["sources"] else []} for r in rows]
+
+
 # ── Document Operations ───────────────────────────────────────────────────────
 
 # The columns a document's record is reported with
