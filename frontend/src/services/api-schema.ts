@@ -50,7 +50,7 @@ export interface paths {
         /**
          * Refresh
          * @description A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,
-         *     or names a user who is gone.
+         *     revoked, not recorded (issued before Sprint 8), or names a user who is gone.
          */
         post: operations["refresh_api_v1_auth_refresh_post"];
         delete?: never;
@@ -70,10 +70,33 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Remove the refresh cookie, so a reloaded page is signed out. The access token the client
-         *     holds still works until it expires (at most settings.access_token_minutes).
+         * @description Revoke the refresh token the cookie holds and remove the cookie, so a reloaded page is
+         *     signed out and the token cannot be used again. The access token the client holds still works
+         *     until it expires (at most settings.access_token_minutes).
          */
         post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout-everywhere": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout Everywhere
+         * @description Revoke every refresh token of the signed-in user, on every device, and remove this
+         *     browser's cookie. Each other device is signed out when its access token next needs renewing,
+         *     at most settings.access_token_minutes later.
+         */
+        post: operations["logout_everywhere_api_v1_auth_logout_everywhere_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -889,6 +912,26 @@ export interface operations {
         };
     };
     logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
+                };
+            };
+        };
+    };
+    logout_everywhere_api_v1_auth_logout_everywhere_post: {
         parameters: {
             query?: never;
             header?: never;

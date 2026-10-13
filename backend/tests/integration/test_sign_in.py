@@ -221,6 +221,78 @@ def test_a_token_from_before_a_database_reset_does_not_sign_in_the_new_owner_of_
     assert fresh.get("/api/v1/documents", headers=old).status_code == 401
 
 
+# ── Revoking refresh tokens (Sprint 8, item 4) ────────────────────────────────
+
+def _device():
+    """Another browser: a client with a cookie jar of its own."""
+    return TestClient(main.app)
+
+
+def test_signing_out_revokes_the_refresh_token_so_a_copy_of_the_cookie_is_refused(fresh):
+    username = _name("revoke")
+    _register(fresh, username)
+    _login(fresh, username)
+    assert fresh.post("/api/v1/auth/refresh").status_code == 200
+
+    stolen = fresh.cookies.get("aether_refresh")  # the cookie as it is now, renewed
+    assert fresh.post("/api/v1/auth/logout").status_code == 200
+    fresh.cookies.set("aether_refresh", stolen, path="/api/v1/auth")
+    assert fresh.post("/api/v1/auth/refresh").status_code == 401
+
+
+def test_signing_out_everywhere_revokes_every_refresh_token_of_that_user_only(fresh):
+    username, bystander = _name("everywhere"), _name("bystander")
+    _register(fresh, username)
+    _register(fresh, bystander)
+    with _device() as laptop, _device() as phone, _device() as theirs:
+        access = _login(laptop, username).json()["access_token"]
+        _login(phone, username)
+        _login(theirs, bystander)
+        assert phone.post("/api/v1/auth/refresh").status_code == 200  # a renewed token is recorded too
+
+        r = laptop.post("/api/v1/auth/logout-everywhere", headers=_bearer(access))
+        assert r.status_code == 200 and r.json() == {"message": "Signed out everywhere"}
+        assert "aether_refresh=" in r.headers["set-cookie"] and "Max-Age=0" in r.headers["set-cookie"]
+        assert laptop.post("/api/v1/auth/refresh").status_code == 401
+        assert phone.post("/api/v1/auth/refresh").status_code == 401
+        assert theirs.post("/api/v1/auth/refresh").status_code == 200  # another user is not touched
+
+        # Signing in again works as before
+        _login(phone, username)
+        assert phone.post("/api/v1/auth/refresh").status_code == 200
+
+
+def test_signing_out_everywhere_needs_an_access_token(fresh):
+    assert fresh.post("/api/v1/auth/logout-everywhere").status_code == 401
+
+
+def test_a_refresh_token_that_was_never_recorded_is_refused(fresh):
+    # Decision 4: tokens issued before Sprint 8 are not in the table, so their owners sign in once more
+    username = _name("unrecorded")
+    _register(fresh, username)
+    user = database.get_user_by_username(username)
+    _, unrecorded = security.tokens_for(user)
+    fresh.cookies.clear()
+    fresh.cookies.set("aether_refresh", unrecorded, path="/api/v1/auth")
+    assert fresh.post("/api/v1/auth/refresh").status_code == 401
+    for handler in auth_logger.handlers:
+        handler.flush()
+    lines = [json.loads(line) for line in (settings.log_dir / "auth.log").read_text(encoding="utf-8").splitlines()]
+    assert lines[-1]["event"] == "refresh_rejected" and lines[-1]["reason"] == "revoked_or_unknown"
+
+
+def test_expired_refresh_tokens_are_cleared_from_the_table(fresh):
+    username = _name("expired")
+    _register(fresh, username)
+    user = database.get_user_by_username(username)
+    database.record_refresh_token(user["id"], "an-old-token", datetime.now(timezone.utc) - timedelta(days=1))
+    _login(fresh, username)  # recording the new token clears the expired one
+    conn = database._get_connection()
+    left = [r["jti"] for r in conn.execute("SELECT jti FROM refresh_tokens WHERE user_id = ?", (user["id"],))]
+    conn.close()
+    assert "an-old-token" not in left and len(left) == 1
+
+
 # ── The auth log ──────────────────────────────────────────────────────────────
 
 def test_sign_ups_sign_ins_and_failures_are_logged_without_passwords(fresh):

@@ -94,7 +94,7 @@
           "Auth"
         ],
         "summary": "Refresh",
-        "description": "A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,\nor names a user who is gone.",
+        "description": "A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,\nrevoked, not recorded (issued before Sprint 8), or names a user who is gone.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "responses": {
           "200": {
@@ -116,7 +116,7 @@
           "Auth"
         ],
         "summary": "Logout",
-        "description": "Remove the refresh cookie, so a reloaded page is signed out. The access token the client\nholds still works until it expires (at most settings.access_token_minutes).",
+        "description": "Revoke the refresh token the cookie holds and remove the cookie, so a reloaded page is\nsigned out and the token cannot be used again. The access token the client holds still works\nuntil it expires (at most settings.access_token_minutes).",
         "operationId": "logout_api_v1_auth_logout_post",
         "responses": {
           "200": {
@@ -130,6 +130,33 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/auth/logout-everywhere": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Logout Everywhere",
+        "description": "Revoke every refresh token of the signed-in user, on every device, and remove this\nbrowser's cookie. Each other device is signed out when its access token next needs renewing,\nat most settings.access_token_minutes later.",
+        "operationId": "logout_everywhere_api_v1_auth_logout_everywhere_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/v1/auth/me": {

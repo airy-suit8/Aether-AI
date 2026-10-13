@@ -71,6 +71,7 @@ const CALLS: Record<string, () => Promise<unknown>> = {
   login: () => api.login('someone', 'secret123'),
   refreshSession: () => api.refreshSession(),
   logout: () => api.logout(),
+  logoutEverywhere: () => api.logoutEverywhere(),
   getMe: () => api.getMe(),
   getSessions: () => api.getSessions(),
   getSessionMessages: () => api.getSessionMessages('session_1'),

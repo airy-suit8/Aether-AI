@@ -2,9 +2,11 @@
  * The whole journey in a real browser, against the real backend with fake models (Sprint 6,
  * decisions 13 and 14): sign up, upload, wait until it is read, ask, see the sources, reload and
  * find the conversation back, start a second thread, return to the first from the thread list,
- * rate an answer, remove the document, sign out. Along the way axe checks the start page, the
- * chat and the settings sheet at 1280 px and at 375 px, and fails on any serious or critical
- * violation; at 375 px and 360 px each of them must fit the screen without scrolling sideways.
+ * rate an answer, remove the document, sign out. Sprint 8 added: what an answer cost, an agent's
+ * steps, renaming and deleting a thread, and signing out everywhere from a second browser.
+ * Along the way axe checks the start page, the chat and the settings sheet at 1280 px and at
+ * 375 px, and fails on any serious or critical violation; at 375 px and 360 px each of them must
+ * fit the screen without scrolling sideways.
  */
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -16,6 +18,7 @@ const AGENT_QUESTION = 'Where is the Zephyr blade inspection logged?'
 const WIDE = { width: 1280, height: 800 }
 const PHONE = { width: 375, height: 812 }
 const NARROW = { width: 360, height: 740 }  // item 8: usable from 360 px
+const PASSWORD = 'a long journey password'
 
 /** Run axe on the page as it is now and fail on a serious or critical violation. */
 async function checkAccessibility(page: Page, where: string) {
@@ -32,6 +35,15 @@ async function checkFits(page: Page, where: string) {
     scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth,
   }))
   expect(scroll, `${where} scrolls sideways`).toBeLessThanOrEqual(client)
+}
+
+/** Sign in on the start page's sign-in sheet (/login), and wait for the workspace. */
+async function signIn(page: Page, username: string) {
+  const sheet = page.getByRole('dialog', { name: 'Welcome back' })
+  await sheet.getByLabel('Username').fill(username)
+  await sheet.getByLabel('Password').fill(PASSWORD)
+  await sheet.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page).toHaveURL(/\/chat\/session_\d+$/)
 }
 
 /**
@@ -51,7 +63,7 @@ async function checkAtBothWidths(page: Page, where: string, ready: () => Promise
   await ready()
 }
 
-test('the whole journey, with the accessibility gate', async ({ page }) => {
+test('the whole journey, with the accessibility gate', async ({ page, browser }) => {
   const username = `journey_${Date.now().toString(36)}`
 
   // ── The start page ────────────────────────────────────────────────────────
@@ -65,7 +77,7 @@ test('the whole journey, with the accessibility gate', async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/)
   const signUp = page.getByRole('dialog', { name: 'Create your account' })
   await signUp.getByLabel('Username').fill(username)
-  await signUp.getByLabel('Password').fill('a long journey password')
+  await signUp.getByLabel('Password').fill(PASSWORD)
   await signUp.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL(/\/chat\/session_\d+$/)
   await expect(page.getByText(username, { exact: true })).toBeVisible()
@@ -194,4 +206,20 @@ test('the whole journey, with the accessibility gate', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
   await page.goto(firstThread)
   await expect(page).toHaveURL(/\/login$/)
+
+  // ── Sign out everywhere (Sprint 8, item 4): a second browser is signed out too ──
+  await signIn(page, username)
+  const elsewhere = await browser.newContext()
+  const other = await elsewhere.newPage()
+  await other.goto('/login')
+  await signIn(other, username)
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Sign out everywhere' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByText('Signed out on every device')).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
+  await other.reload()
+  await expect(other).toHaveURL(/\/login$/)
+  await elsewhere.close()
 })

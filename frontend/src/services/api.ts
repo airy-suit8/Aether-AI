@@ -215,6 +215,16 @@ export function logout() {
   return request('post', '/api/v1/auth/logout', { open: true })
 }
 
+/**
+ * Sign out on every device: the server revokes every refresh token of this user, so no browser
+ * can renew its session. Each is signed out at its next reload, or when its access token expires.
+ */
+export async function logoutEverywhere() {
+  const reply = await request('post', '/api/v1/auth/logout-everywhere')
+  setToken(null)
+  return reply
+}
+
 // ── Documents ───────────────────────────────────────────────────────────────
 
 type UploadForm = Body<'/api/v1/upload', 'post', 'multipart/form-data'>
