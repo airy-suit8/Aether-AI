@@ -36,7 +36,7 @@
 
 .x-rail {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
   gap: 16px;
   width: 292px;
   height: 100dvh;
@@ -105,8 +105,40 @@
 .x-drop span { font-size: var(--p-text-xs); color: var(--p-ink-3); }
 .x-drop .p-beam { width: 100%; margin: 8px 0 2px; }
 
-.x-library { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; min-height: 0; }
-.x-library .p-eyebrow { display: flex; justify-content: space-between; margin: 0; padding: 0 8px; }
+.x-library,
+.x-threads { display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: start; gap: 8px; min-height: 0; }
+.x-library .p-eyebrow,
+.x-threads .p-eyebrow { display: flex; justify-content: space-between; margin: 0; padding: 0 8px; }
+
+/* Threads: each conversation by its first question and when it was last used. The open one
+   gains weight and a tone, not a colour of its own. */
+.x-thread-list {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.x-thread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--p-r-2);
+  font-size: var(--p-text-sm);
+  color: var(--p-ink-2);
+  text-decoration: none;
+  transition: background var(--p-dur-1), color var(--p-dur-1), font-weight var(--p-dur-2) var(--p-out);
+}
+
+.x-thread:hover { color: var(--p-ink); background: var(--p-surface-3); }
+.x-thread[aria-current="page"] { font-weight: 640; color: var(--p-ink); background: var(--p-surface-3); }
+.x-thread__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.x-thread time { color: var(--p-ink-3); }
 
 .x-docs {
   display: grid;
@@ -223,7 +255,7 @@
   padding: 10px clamp(12px, 3vw, 28px);
 }
 
-.x-top__thread { display: inline-flex; align-items: baseline; gap: 8px; margin-right: auto; color: var(--p-ink-3); }
+.x-top__thread { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; margin-right: auto; overflow: hidden; white-space: nowrap; color: var(--p-ink-3); }
 
 /* ── Conversation: each question is a heading, its answer and evidence sit under it ── */
 
@@ -280,6 +312,19 @@
 
 .x-status__working { display: inline-flex; align-items: center; gap: 12px; color: var(--p-ink-2); }
 
+/* Tools used: the agent's tools as a labelled row of quiet chips above its answer. */
+.x-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 14px;
+  font-size: var(--p-text-sm);
+  font-weight: 560;
+}
+
+.x-tools .p-eyebrow { margin-right: 2px; }
+
 .x-tool {
   display: inline-flex;
   align-items: center;
@@ -289,6 +334,11 @@
   color: var(--p-ink-2);
   background: var(--p-surface-3);
 }
+
+/* Rating: two quiet icon buttons under an answer; the chosen one is pressed, in the tonal fill. */
+.x-rate { display: flex; gap: 2px; margin: 10px 0 0 -10px; }
+.x-rate .p-icon-btn { color: var(--p-ink-3); }
+.x-rate .p-icon-btn[aria-pressed="true"] { color: var(--p-on-primary-soft); background: var(--p-primary-soft); }
 
 .x-margin { display: grid; gap: 10px; align-content: start; }
 .x-margin .p-eyebrow { margin: 6px 0 2px; }
@@ -480,4 +530,34 @@
   .l-step::before { top: 4px; }
   .l-trio { grid-template-columns: minmax(0, 1fr); }
   .l-card { min-height: 0; }
+}
+
+/* ── Retry: a reply that failed or was stopped, above the composer ─────────── */
+
+.x-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: min(100%, 680px);
+  padding: 8px 8px 8px 18px;
+  border-radius: var(--p-r-3);
+  font-size: var(--p-text-sm);
+  color: var(--p-ink-2);
+  background: var(--p-surface-2);
+  box-shadow: inset 0 0 0 1px var(--p-edge);
+  animation: p-rise var(--p-dur-3) var(--p-spring) both;
+}
+
+.x-retry p { margin: 0; }
+.x-retry b { font-weight: 660; color: var(--p-ink); }
+.x-retry[data-tone="bad"] b { color: var(--p-bad); }
+
+/* Phones from 360 px: the top bars keep to the width of the screen. */
+@media (max-width: 420px) {
+  .x-top__thread .p-eyebrow { display: none; }
+  .x-top .p-btn,
+  .l-top .p-btn { padding-inline: 12px; }
+  .l-top .p-lens button { padding-inline: 10px; }
 }

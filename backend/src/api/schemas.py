@@ -1,7 +1,12 @@
-"""api/schemas.py — the request and response models of the HTTP API."""
+"""api/schemas.py — the request and response models of the HTTP API.
+
+Every reply has a model, so the OpenAPI schema describes it and the web app's types are generated
+from that schema (frontend/src/services/api-schema.ts). The streamed events are written as JSON
+by the pipeline; their models here describe them, and a test checks each event against them.
+"""
 
 import re
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -21,15 +26,68 @@ class ChatRequest(BaseModel):
     session_id: str = SessionId
     mode: Literal["default", "hybrid", "agent", "langchain"] = "default"
 
+
+class Source(BaseModel):
+    """A passage an answer came from, as it is shown beside the answer."""
+    source: str             # the file name
+    page: Union[int, str]   # numbered from 1; "?" when the passage has no page
+    snippet: str            # the start of the passage
+    score: float            # cosine similarity to the question, 0 to 1
+    # With AETHER_ANSWER_FROM=chunks: the [n] the answer cites this passage by. Absent otherwise.
+    number: Optional[int] = Field(default=None, exclude_if=lambda n: n is None)
+
+
 class ChatResponse(BaseModel):
     answer: str
-    sources: list
+    sources: list[Source]
     # How close the retrieved passages were, 0 to 1. null when the agent answered without
     # searching the documents: there is nothing to be confident about (R11).
     confidence: Optional[float] = 0.0
     session_id: str = "default"
     tool_used: Optional[str] = None  # agent mode: which tools answered
     turn_id: Optional[int] = None    # the saved turn, for POST /feedback; null when none was saved (a refusal)
+
+
+# ── The events of POST /chat/stream, one per `data:` line ─────────────────────
+
+class TokenEvent(BaseModel):
+    """A piece of the answer, in order."""
+    type: Literal["token"]
+    content: str
+
+
+class DoneEvent(BaseModel):
+    """The last event of an answer."""
+    type: Literal["done"]
+    sources: list[Source]
+    confidence: Optional[float]  # as in ChatResponse
+    turn_id: Optional[int]       # as in ChatResponse
+    tool_used: Optional[str] = None  # agent mode only: which tools answered
+
+
+class ErrorEvent(BaseModel):
+    """The last event of an answer that could not be finished. Nothing of it was saved."""
+    type: Literal["error"]
+    message: str    # written for the person who asked
+    reference: str  # the request id, as in a server error's message
+
+
+StreamEvent = Annotated[Union[TokenEvent, DoneEvent, ErrorEvent], Field(discriminator="type")]
+
+
+class Message(BaseModel):
+    """A reply that only says what happened."""
+    message: str
+
+
+class Health(BaseModel):
+    status: Literal["ok"]
+
+
+class SessionCleared(BaseModel):
+    message: str
+    session_id: str
+
 
 class FeedbackRequest(BaseModel):
     # Unknown fields are refused, so a client still sending the old session_id gets a 422 (F10)
@@ -59,7 +117,34 @@ class DocumentStatus(BaseModel):
     size_bytes: int
     uploaded_at: str
 
-# Sign-up rules (S7). The web app's sign-up form mirrors them (LandingPage.jsx).
+
+class DocumentRecord(DocumentStatus):
+    """A document as the detailed list gives it: its status, and the hash that spots a duplicate upload."""
+    file_hash: Optional[str] = None
+
+
+class DocumentList(BaseModel):
+    documents: list[DocumentRecord]  # newest first
+    count: int
+
+
+class DocumentNames(BaseModel):
+    documents: list[str]  # the names of the documents ready to be searched, sorted
+    count: int
+
+
+class DocumentDeleted(BaseModel):
+    message: str
+    filename: str
+    deleted: int  # chunks removed from the vector store
+
+
+class DocumentsCleared(BaseModel):
+    message: str
+    status: Literal["cleared"]
+    deleted: int  # chunks removed from the vector store
+
+# Sign-up rules (S7). The web app's sign-up form mirrors them (LandingPage.tsx).
 USERNAME_PATTERN = re.compile(r"[A-Za-z0-9_-]{3,50}")
 PASSWORD_MIN_CHARS = 8
 
@@ -124,7 +209,7 @@ class Turn(BaseModel):
     answer: str
     confidence: Optional[float] = None
     mode: str
-    sources: list
+    sources: list[Source]
     tool_used: Optional[str] = None
     feedback: int
     created_at: str

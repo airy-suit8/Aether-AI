@@ -3,7 +3,7 @@
 A multi-user document question-answering assistant (retrieval-augmented generation). You upload documents, ask questions, and get answers with citations to the passages they came from.
 
 - **Backend** (`backend/`): FastAPI, LangChain, Google Gemini (chat and embeddings), ChromaDB (vectors), SQLite (users, documents, conversations), JWT login.
-- **Frontend** (`frontend/`): React 19 + Vite. **This is the real user interface.** There is no other UI; the old page in `backend/static/` has been removed.
+- **Frontend** (`frontend/`): React 19 + Vite, in TypeScript. **This is the real user interface.** There is no other UI; the old page in `backend/static/` has been removed.
 
 Project status and history: [AUDIT_REPORT.md](AUDIT_REPORT.md) lists what was found in the October 2026 audit, [SPRINT_PLAN.md](SPRINT_PLAN.md) is the plan being worked through, and [SDLC_PLAN.md](SDLC_PLAN.md) is an older log kept for history.
 
@@ -100,14 +100,40 @@ With per-file coverage:
 ..\.venv\Scripts\python -m pytest tests\test_openapi_snapshot.py --update-openapi-snapshot
 ```
 
+The web app's API types are generated from that snapshot (`frontend/src/services/api-schema.ts`), so after refreshing it, regenerate them; a renamed field then shows up as a type error wherever the app uses it:
+
+```bat
+cd frontend
+npm run api-types
+```
+
 Frontend checks:
 
 ```bat
 cd frontend
 npm run lint
+npm run typecheck
 npm test
 npm run build
 ```
+
+`npm run build` runs the type check first.
+
+The browser journey walks through the whole app in Chromium: sign up, upload, ask, reload, a
+second thread, a rating, removing the document and signing out, with an accessibility check
+(axe) on the start page, the chat and settings at desktop and phone width. It builds the app
+and starts its own backend with fake models on temp stores (`backend/tests/e2e_server.py`), so
+it needs no API key and touches none of your data. Once, install the browser it uses; then run
+it:
+
+```bat
+cd frontend
+npx playwright install chromium
+npm run e2e
+```
+
+It runs the backend with the Python in `.venv` at the project root (or set `AETHER_PYTHON` to
+another one), on port 8765.
 
 The same checks run on GitHub for every push and pull request (`.github/workflows/ci.yml`). They need no secrets.
 

@@ -2,6 +2,8 @@
 
 Status: 11 October 2026. Prism is applied to every screen of the app: the start page, the sign-in sheet, the workspace (library rail, conversation, composer) and settings. The old stylesheets are gone. All of it lives on the branch `design/prism` until Sprint 2 is merged.
 
+Sprint 6 (13 October 2026) added the pieces in the second half of the component table (thread list, citation chips in real answers, rating, tools row, retry row, upload stage) from the same tokens and components, with no new styling approach; their screenshots are in "Added in Sprint 6" below.
+
 **See it:** run `start.bat`, then open `http://localhost:5173/` for the app or `http://localhost:5173/design-lab.html` for every component on one page. The theme control offers System and Dark.
 
 ![The workspace in the dark theme, with an answer and its source](docs/design/prism-workspace-dark.png)
@@ -51,20 +53,26 @@ One material, optical glass: a translucent pane with a hairline edge. A highligh
 
 | Component | File | Behaviour |
 |---|---|---|
-| `PrismRoot` | `prism.jsx` | Sets the theme and wires pointer light |
-| `AmbientField` | `prism.jsx` | Corner light that tightens while retrieving and relaxes when answered |
-| `Aperture` | `prism.jsx` | The composer: widens on focus, glows while busy, Send morphs into Stop |
-| `Lens` | `prism.jsx` | One sliding control for a single choice; arrow keys move it |
-| `ClarityRing` | `prism.jsx` | Confidence as optical clarity: sharp when grounded, diffuse when uncertain, hollow when refused |
-| `Cite` | `prism.jsx` | A citation marker in the hue of its source |
-| `SourceCard` | `prism.jsx` | Evidence in the margin: file, page, score and passage |
-| `Threads` | `prism.jsx` | Lines of light from each citation to its source, routed through the gutter |
-| `Switch` | `prism.jsx` | A toggle whose knob is a point of light |
-| `Field` | `prism.jsx` | A text field: the label lifts on focus and the line under it splits into the spectrum |
-| `HoldButton` | `prism.jsx` | For actions that cannot be undone: nothing happens unless the press is held |
-| Library row remove | `Sidebar.jsx`, `app.css` (`.x-doc__remove`) | For removing one document, in a row too small for a hold: a quiet cross that shows with the row; one click arms it ("Remove?", in the status red), a second confirms; it disarms after four seconds or when focus leaves |
-| `Dialog` | `prism.jsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards |
-| `DemoBench` | `DemoBench.jsx` | The self-playing demonstration used on the start page and in the lab |
+| `PrismRoot` | `prism.tsx` | Sets the theme and wires pointer light |
+| `AmbientField` | `prism.tsx` | Corner light that tightens while retrieving and relaxes when answered |
+| `Aperture` | `prism.tsx` | The composer: widens on focus, glows while busy, Send morphs into Stop |
+| `Lens` | `prism.tsx` | One sliding control for a single choice; arrow keys move it |
+| `ClarityRing` | `prism.tsx` | Confidence as optical clarity: sharp when grounded, diffuse when uncertain, hollow when refused |
+| `Cite` | `prism.tsx` | A citation marker in the hue of its source |
+| `SourceCard` | `prism.tsx` | Evidence in the margin: file, page, score and passage |
+| `Threads` | `prism.tsx` | Lines of light from each citation to its source, routed through the gutter |
+| `Switch` | `prism.tsx` | A toggle whose knob is a point of light |
+| `Field` | `prism.tsx` | A text field: the label lifts on focus and the line under it splits into the spectrum |
+| `HoldButton` | `prism.tsx` | For actions that cannot be undone: nothing happens unless the press is held |
+| Library row remove | `Sidebar.tsx`, `app.css` (`.x-doc__remove`) | For removing one document, in a row too small for a hold: a quiet cross that shows with the row; one click arms it ("Remove?", in the status red), a second confirms; it disarms after four seconds or when focus leaves |
+| `Dialog` | `prism.tsx` | A modal sheet: Escape and a click outside close it, Tab stays inside, focus returns afterwards, and the page behind it is inert while it is open (live regions excepted, so toasts are still heard) |
+| `DemoBench` | `DemoBench.tsx` | The self-playing demonstration used on the start page and in the lab |
+| Thread list | `Sidebar.tsx`, `app.css` (`.x-thread`) | The rail's conversations, newest first, by first question and time or date; each is a link to `/chat/<id>`. The open one is `aria-current="page"` and gains weight on a surface tone, as a selected control does, never a colour of its own |
+| Citation chips in an answer | `MessageBubble.tsx`, `citations.ts`, `Cite` | When the sources carry a number, each `[n]` in the answer is a `Cite` in source n's hue; hovering or focusing either the chip or its card lights both, and the chip's click or Enter pins the card open. Otherwise the answer is shown as written |
+| Answer rating | `MessageBubble.tsx`, `app.css` (`.x-rate`) | Two quiet icon buttons under a saved answer, Helpful and Not helpful; the chosen one is `aria-pressed` in the tonal fill, and pressing it again takes it back |
+| Tools used | `MessageBubble.tsx`, `app.css` (`.x-tools`) | A labelled row above an agent's answer, one quiet chip per tool |
+| Retry row | `ChatComposer.tsx`, `app.css` (`.x-retry`) | Above the composer when a reply failed or was stopped: the word first ("Failed." in the status red, or "Stopped."), then what happened, and Retry. The question is back in the composer |
+| Upload stage | `Sidebar.tsx` (the drop zone) | "Sending" while the file goes up, then "Reading" while the server splits it, with the working beam; a polite live region |
 
 Some interaction ideas (the light-point toggle, the floating-label field, hold to confirm) were prompted by browsing the open-source gallery at uiverse.io. They were written from scratch in this language; no code was copied.
 
@@ -76,16 +84,38 @@ The answer sits on the left and its evidence in the right margin, like notes in 
 
 ![The bench at phone width](docs/design/prism-bench-phone.png)
 
+## Added in Sprint 6
+
+Taken with Playwright against the built app, its API answered with sample data, at 1280 px and 375 px.
+
+![The workspace in the dark theme: the thread list, citation chip 2 lighting its card, a rating, the tools row](docs/design/sprint6-workspace-dark.png)
+
+![The same in the light theme, with chip 1 focused by keyboard](docs/design/sprint6-workspace-light.png)
+
+![An answer whose citations are tied to its numbered sources](docs/design/sprint6-citations.png)
+
+![An agent answer: the tools row, and the rating under it](docs/design/sprint6-rating-and-tools.png)
+
+![A reply that failed: the word, the reason and Retry, with the question back in the composer](docs/design/sprint6-retry.png)
+
+![The rail while an upload is read, under the thread list](docs/design/sprint6-upload-progress.png)
+
+![At 375 px: the conversation, and the rail as a drawer](docs/design/sprint6-phone-chat.png)
+
+![At 375 px, the drawer open](docs/design/sprint6-phone-threads.png)
+
 ## Rules for building with it
 
 - Every Prism screen is wrapped in `PrismRoot`; all tokens are scoped to `.prism` and prefixed `--p-`.
 - Do not animate anything behind glass while idle, and do not put a blend mode on a full-screen layer. Both were measured as expensive during the first build.
 - Status is never colour alone: pair it with a word.
 - Use the spectrum for sources only.
+- A modal sheet is a `Dialog`: the page behind it is inert while it is open.
+- Every screen fits from 360 px wide without scrolling sideways; the browser journey checks it.
 
 ## What comes next
 
 1. Merge with the Sprint 2 test suite: two assertions in its chat test describe the old markup (the mode control is now a radio group, and a source card shows a preview of its passage).
-2. A full keyboard and screen-reader pass. Focus handling, labels and Escape are built in, but so far it has been exercised with a pointer and by script.
-3. Per-sentence source colour and threads in the real chat. This needs the backend to report which source supports which claim (Sprint 4); until then an answer links to its sources as a whole.
-4. Stop only ends the reply on the screen; the server may still finish it. Sprint 5 did not cover this. Sprint 6 settles it (its decision 11): closing the stream is the signal, a stream closed early must save no turn, and no cancel route is added.
+2. A screen-reader pass with a real screen reader. Sprint 6 checked the keyboard path of the settings sheet in the browser journey, and axe (no serious or critical violation) and Lighthouse (accessibility 100) on the main screens; nobody has yet used the app with NVDA or VoiceOver.
+3. Threads (the lines of light) in the real chat. Since Sprint 6 an answer written from numbered chunks (`AETHER_ANSWER_FROM=chunks`) ties each `[n]` to its source by hue, hover and focus; the lines themselves are drawn only on the start page's bench. The server's default is still the summary mode, whose answers cite nothing.
+4. Done in Sprint 6 (decision 11): Stop closes the stream, a stream closed early saves no turn, and no cancel route was added.
