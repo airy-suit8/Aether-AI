@@ -20,8 +20,16 @@ const PHONE = { width: 375, height: 812 }
 const NARROW = { width: 360, height: 740 }  // item 8: usable from 360 px
 const PASSWORD = 'a long journey password'
 
-/** Run axe on the page as it is now and fail on a serious or critical violation. */
+/**
+ * Run axe on the page once it has come to rest and fail on a serious or critical violation.
+ * Something still fading in is measured at the contrast it has at that instant, not its own.
+ */
 async function checkAccessibility(page: Page, where: string) {
+  await page.evaluate(() => Promise.all(
+    document.getAnimations()
+      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map((animation) => animation.finished.catch(() => undefined)),
+  ))
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
   const blocking = results.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')

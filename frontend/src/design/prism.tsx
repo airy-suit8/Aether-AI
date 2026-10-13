@@ -495,12 +495,16 @@ export interface ThreadPair {
  * runs through the gutter and never strikes through a line of text. Positions are measured
  * against containerRef, so the SVG must be a child of that container. Paths use
  * pathLength=1, which lets CSS draw them with a single dash without measuring their length.
+ *
+ * `drawn`, when given, is how many threads have been drawn so far: thread n is marked
+ * data-drawn="false" until n <= drawn, so a page can trace them one after another.
  */
-export function Threads({ containerRef, getPairs, active = null, epoch = 0 }: {
+export function Threads({ containerRef, getPairs, active = null, epoch = 0, drawn }: {
   containerRef: RefObject<HTMLElement | null>
   getPairs: () => ThreadPair[]
   active?: number | null
   epoch?: number
+  drawn?: number
 }) {
   const [paths, setPaths] = useState<{ n: number; d: string }[]>([])
 
@@ -546,6 +550,7 @@ export function Threads({ containerRef, getPairs, active = null, epoch = 0 }: {
             d={path.d}
             pathLength="1"
             data-active={active === path.n}
+            data-drawn={drawn === undefined ? undefined : path.n <= drawn}
             style={style}
           />
         )
