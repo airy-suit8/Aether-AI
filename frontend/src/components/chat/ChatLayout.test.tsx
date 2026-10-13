@@ -23,6 +23,8 @@ vi.mock('../../services/api', async (importOriginal) => ({
   getSessionMessages: vi.fn(),
   renameSession: vi.fn(),
   deleteSession: vi.fn(),
+  logoutEverywhere: vi.fn(),
+  logout: vi.fn(async () => ({ message: 'Signed out' })),
 }))
 
 /** Shows the current path, so a test can read the URL the workspace navigated to. */
@@ -396,6 +398,27 @@ describe('ChatLayout', () => {
     expect(api.clearSession).toHaveBeenCalledTimes(1)
     expect(api.clearSession).toHaveBeenCalledWith('session_1')
     expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
+  })
+
+  it('signs out everywhere from Settings, then here (Sprint 8, item 4)', async () => {
+    vi.mocked(api.logoutEverywhere).mockReset()
+    vi.mocked(api.logoutEverywhere).mockResolvedValue({ message: 'Signed out everywhere' })
+    const { addToast } = renderChat('/settings')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
+    expect(api.logoutEverywhere).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(where()).toBe('/'))
+    expect(addToast).toHaveBeenCalledWith('Signed out on every device', 'info')
+  })
+
+  it('stays signed in, and says why, when signing out everywhere fails', async () => {
+    vi.mocked(api.logoutEverywhere).mockReset()
+    vi.mocked(api.logoutEverywhere).mockRejectedValue(new api.ApiError('Too many requests. Please wait 5 seconds and try again.', 429))
+    const { addToast } = renderChat('/settings')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Too many requests. Please wait 5 seconds and try again.', 'error'))
+    expect(where()).toBe('/settings')
   })
 
   it('says "1 passage from 1 page", not "1 passages"', async () => {

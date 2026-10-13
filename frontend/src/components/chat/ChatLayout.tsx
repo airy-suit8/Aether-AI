@@ -6,7 +6,7 @@ import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import {
   ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
-  getSessions, getSessionMessages, renameSession, deleteSession,
+  getSessions, getSessionMessages, renameSession, deleteSession, logoutEverywhere,
 } from '../../services/api'
 import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
@@ -437,6 +437,18 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     signOut()
   }, [signOut])
 
+  // Settings: revoke every session of this user on the server, then sign out here
+  const handleSignOutEverywhere = useCallback(async () => {
+    try {
+      await logoutEverywhere()
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not sign out everywhere', 'error')
+      return
+    }
+    addToast('Signed out on every device', 'info')
+    handleLogout()
+  }, [addToast, handleLogout])
+
   const goHome = useCallback(() => navigate('/'), [navigate])
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), [])
   const openSettings = useCallback(() => navigate('/settings'), [navigate])
@@ -526,6 +538,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           addToast={addToast}
           onDocumentsChanged={refreshDocuments}
           onClearConversation={handleClearConversation}
+          onSignOutEverywhere={handleSignOutEverywhere}
         />
       )}
     </div>

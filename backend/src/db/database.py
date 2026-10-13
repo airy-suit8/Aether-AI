@@ -12,13 +12,15 @@ Tables:
                   failed (it is read in the background after the upload is accepted, R12)
   session_titles — the name a user gave a conversation; without one it is titled by its first
                   question (Sprint 8, item 3)
+  refresh_tokens — every refresh token issued, by its id (jti), and whether it was revoked. A
+                  refresh token not listed here is refused (Sprint 8, item 4)
 """
 
 import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -89,6 +91,15 @@ def init_db():
                 PRIMARY KEY (user_id, session_id),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                jti TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                issued_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
         """)
 
         # Step 2: Migrations — add columns that may be missing on legacy databases.
@@ -121,6 +132,7 @@ def init_db():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
             CREATE INDEX IF NOT EXISTS idx_conv_user_session ON conversations(user_id, session_id);
             CREATE INDEX IF NOT EXISTS idx_doc_user_hash ON documents(user_id, file_hash);
+            CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
         """)
 
         # Usernames are unique regardless of ASCII case (S7). A database that already holds two
@@ -201,6 +213,61 @@ def get_document_owners() -> List[Dict[str, Any]]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+# ── Refresh tokens (Sprint 8, item 4) ─────────────────────────────────────────
+#
+# Times here are UTC ISO strings, so they compare as text. A token's own expiry is also checked
+# when it is decoded; the stored one lets expired rows be cleared away.
+
+def _utc(moment: Optional[datetime] = None) -> str:
+    return (moment or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+
+
+def record_refresh_token(user_id: int, jti: str, expires: datetime) -> None:
+    """Record a refresh token just issued, and clear away every one that has expired."""
+    with _db_lock:
+        conn = _get_connection()
+        try:
+            now = _utc()
+            conn.execute("DELETE FROM refresh_tokens WHERE expires_at < ?", (now,))
+            conn.execute("INSERT INTO refresh_tokens (jti, user_id, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+                         (jti, user_id, now, _utc(expires)))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def refresh_token_is_live(user_id: int, jti: str) -> bool:
+    """True when this refresh token was issued to this user and has not been revoked. A token
+    issued before tokens were recorded is not listed, so it is refused like a revoked one."""
+    conn = _get_connection()
+    row = conn.execute("SELECT 1 FROM refresh_tokens WHERE jti = ? AND user_id = ? AND revoked_at IS NULL "
+                       "AND expires_at >= ?", (jti, user_id, _utc())).fetchone()
+    conn.close()
+    return row is not None
+
+
+def revoke_refresh_token(jti: str) -> bool:
+    """Revoke one refresh token (signing out). False when it was not live."""
+    with _db_lock:
+        conn = _get_connection()
+        revoked = conn.execute("UPDATE refresh_tokens SET revoked_at = ? WHERE jti = ? AND revoked_at IS NULL",
+                               (_utc(), jti)).rowcount
+        conn.commit()
+        conn.close()
+    return revoked == 1
+
+
+def revoke_user_refresh_tokens(user_id: int) -> int:
+    """Revoke every live refresh token of a user (signing out everywhere). Returns how many."""
+    with _db_lock:
+        conn = _get_connection()
+        revoked = conn.execute("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                               (_utc(), user_id)).rowcount
+        conn.commit()
+        conn.close()
+    return revoked
+
 
 # ── Conversation Operations ───────────────────────────────────────────────────
 
