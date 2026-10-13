@@ -13,9 +13,9 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 3 Restructure and connect | Done, merged 12 Oct 2026 (PR #3) | See below |
 | 4 Retrieval quality and evaluation | In progress. Every code item is merged (12 Oct 2026). What is left is the measuring: the dataset, the baseline, the threshold value and the summary comparison wait for the owner's documents and Gemini quota | See below |
 | 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `confident-bell-h8c2ct`) | See below |
-| 6 Frontend rebuild | Done on the branch `vigilant-dijkstra-5swgx3` (13 Oct 2026), PR #5, not yet merged | See below |
-| 7 Ship and document | Done for its first part on the branch `sprint-7` (13 Oct 2026), PR #6, not yet merged; it contains Sprint 6 (PR #5). Docker items (1, 2) deferred at the owner's request (11 Oct 2026); items 5 and 6 wait for the owner, the mentor and the office network | See below |
-| 8 Follow-ups and observability | Done on the branch `sprint-8` (13 Oct 2026), PR #7, not yet merged; it contains Sprints 6 (PR #5) and 7 (PR #6) | See below |
+| 6 Frontend rebuild | Done, merged 13 Oct 2026 (PR #5, from the branch `vigilant-dijkstra-5swgx3`) | See below |
+| 7 Ship and document | The first part is done and merged 13 Oct 2026 (PR #6, from `sprint-7`). Open: Docker items (1, 2), deferred at the owner's request (11 Oct 2026); items 5 and 6, which wait for the owner, the mentor and the office network; and the `[OWNER: ...]` places in the report, the README and the demo checklist | See below |
+| 8 Follow-ups and observability | Done, merged 13 Oct 2026 (PR #7, from `sprint-8`) | See below |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
 
@@ -225,6 +225,18 @@ What Sprint 8 found, and where the plan was wrong:
 - **The housekeeping command leaves two kinds of record alone**: one still being read, and one that failed (its owner sees it and can remove it). It refuses to run without a vector store, where every record would look empty.
 - **A component test was flaky in CI** (fixed in 7c5520e): `ChatLayout.test.tsx` mounts the workspace at every path, so a test that expected `/` after signing out sometimes saw the workspace open a thread there first.
 - **Two second-audit findings are closed**: N5 (item 4) and N10 (item 3, for the thread list; Settings still uses `POST /session/clear`). `AUDIT_REPORT_2.md` and the project report describe the system before this sprint and were not changed.
+
+Sprints 6 to 8 on the owner's Windows machine, before and after the merges (13 Oct 2026):
+
+- Each branch tip was checked on its own: `ruff` clean on all three; frontend lint (0 errors), typecheck, tests (79, 82 and 92) and build on all three; `pytest` 587 passed on Sprint 7's, and 582 and 616 passed with the same one test failing on Sprint 6's and Sprint 8's.
+- **That failure was the second audit's N4, and on Windows it was not rare.** `test_langchain_ingest_stores_searchable_chunks` searches for a passage stored a moment before and got nothing back, in two full runs out of three. Fixed after the merges: when Chroma's index returns fewer of a tenant's chunks than the tenant has, the tenant's chunks are compared with the query one by one (`vector_store.py`, tests in `test_search.py`). The full suite then passed twice in a row, 621 tests.
+- **`npm run api-types -- --check` failed on Windows although nothing had changed**: the checkout had CRLF line endings and the generator writes LF. `.gitattributes` now keeps that file LF everywhere, and the check passes.
+- **The browser journey passes on Windows** from this folder, whose path has spaces: `npm run e2e`, 1 passed in about 21 s, with its axe checks and the feedback-export check. This was listed as not verified in the second audit.
+- The merged code was started twice on a copy of the owner's database before the real one was touched: every earlier user and conversation turn unchanged, the tables `refresh_tokens` and `session_titles` created, and the new routes walked with fake models (cost per stage, agent steps, rename and delete a thread, sign out everywhere, the housekeeping report, the feedback export). The database was backed up first to `.backups/before-sprints-6-8/`.
+- The owner's database was then upgraded in place by the first start (4 users, 17 conversation turns kept). `/chat/...`, `/settings` and `/login` are served by the backend; an unknown path under `/api/` is a JSON 404.
+- With the real Gemini key and temp stores, a streamed question in default mode was answered correctly with its source, and **the token counts are real**: summarize 223 in and 455 out in 10.6 s, answer 270 in and 327 out in 4.6 s. So the counter Sprint 8 could not check against the live API works, and the summary step took two thirds of that answer's time.
+- **Agent mode was not verified against the real API.** Four tries ended in Google's 503 and then 429 while single calls, with and without a tool, succeeded. An agent answer makes about six model calls within seconds, which the free tier appears to refuse. Each try ended in 15 to 30 s with the one clear message and a reference id, as Sprint 5 built it. To be repeated with the billed key.
+- The housekeeping command reports the two June 2026 records with no chunks when run on a copy that has a vector store. On the owner's machine it refuses to run, as designed, because there is no vector store yet; run it after the first upload.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 
