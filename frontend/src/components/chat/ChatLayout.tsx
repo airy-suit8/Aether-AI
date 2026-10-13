@@ -5,7 +5,7 @@ import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import {
-  sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
+  ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages,
 } from '../../services/api'
 import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
@@ -326,8 +326,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
       return
     }
     setUploadProgress({ filename: file.name, status: 'uploading' })
+    let accepted: Awaited<ReturnType<typeof uploadDocument>> | null = null
     try {
-      const accepted = await uploadDocument(file)
+      accepted = await uploadDocument(file)
       setUploadProgress({ filename: file.name, status: 'reading' })
       refreshDocuments()  // it shows in the library as being read
       let doc = await getDocument(accepted.document_id)
@@ -348,7 +349,12 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         addToast(`Still reading ${doc.filename}. It will appear in your library when it is ready.`, 'info')
       }
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Upload failed', 'error')
+      if (accepted && err instanceof ApiError && err.status === 404) {
+        // Removed from the library while it was read: the server kept nothing of it (N2)
+        addToast(`${file.name} was removed before it was read.`, 'info')
+      } else {
+        addToast(err instanceof Error ? err.message : 'Upload failed', 'error')
+      }
     } finally {
       if (mountedRef.current) {
         setUploadProgress(null)

@@ -221,7 +221,7 @@ Two more settings are worth setting there:
 
 **Rate limits.** Every route has one: requests that carry a valid sign-in count against that user, and the rest against their address, so people behind one office proxy do not share an allowance. Sign-up, sign-in, upload and chat have their own limits; everything else allows 120 requests a minute (`AETHER_RATE_LIMIT_DEFAULT`). The counts are kept in the server's memory and start again when it restarts.
 
-**Conversations.** Every question and answer is saved with the sources shown beside it. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Reloading the page keeps you signed in and shows your latest conversation again.
+**Conversations.** Every question and answer is saved with the sources shown beside it. Each conversation has its own address (`/chat/<id>`) and the rail lists them all, newest first; reloading the page keeps you signed in on the same one, and `/chat` opens the most recent. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Stop ends a streamed answer, and nothing of a stopped or failed answer is saved: its question goes back into the box, with Retry.
 
 **Signing in.** Passwords are 8 characters to 72 bytes (72 letters, fewer with accents or symbols). Usernames use the letters A to Z, digits, hyphens and underscores, and their case does not matter: `Tirth` and `tirth` are the same account. A sign-in lasts 30 minutes and renews itself while the app is open, through a cookie that page scripts cannot read, so reloading the page keeps you signed in; a week without use signs you out. Sign-ups, sign-ins and refused tokens are written to `backend\logs\auth.log`, never with a password.
 
@@ -245,3 +245,9 @@ Before Sprint 5 the database and the vector store were kept in `backend/aether.d
 Each user's chunks are filed under a random tenant id from their user record, not under the user's number, because a new database hands the same numbers out again. A store made before this change is re-filed when the backend starts; this is safe to run any number of times and deletes nothing.
 
 Uploaded text and questions are sent to Google's Gemini API. Do not upload confidential documents until you have agreed with your mentor which documents and which API tier are allowed.
+
+Agreed with the mentor: [OWNER: which documents may be uploaded, on which API tier, and the date agreed (finding S11)]
+
+## Credits
+
+Built by Tirth Ganatra during an internship at Netweb Software, Vadodara.

@@ -25,13 +25,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 from starlette.types import Scope
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIASGIMiddleware
 
 from src.api import routes_auth, routes_chat, routes_documents, routes_health
 from src.api.deps import limiter
-from src.api.errors import unhandled_error
+from src.api.errors import rate_limited, unhandled_error
 from src.api.middleware import RequestMiddleware
 from src.core.config import APP_VERSION, settings
 from src.core.logging import error_logger, log_event, setup_logging, upload_logger
@@ -75,7 +74,7 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if development else None,
     )
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limited)
     app.add_exception_handler(Exception, unhandled_error)
     # The default rate limit for every route that has no limit of its own (S8)
     app.add_middleware(SlowAPIASGIMiddleware)

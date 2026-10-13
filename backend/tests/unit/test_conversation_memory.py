@@ -100,3 +100,18 @@ def test_follow_up_is_rewritten_with_the_history(user_id, fake_llm, ask):
 def test_first_question_is_not_rewritten(user_id, fake_llm):
     rag.answer(user_id, "How often?", session_id="first")
     assert not any("Standalone Question:" in p for p in fake_llm.prompts)
+
+
+def test_the_cache_keeps_only_the_most_recently_used_sessions(user_id, monkeypatch):
+    # R10 (first audit): the cache held every session it ever saw, for as long as the server ran
+    monkeypatch.setattr(conversation, "SESSIONS_KEPT", 3)
+    memory = ConversationMemory()
+    for n in range(5):
+        memory.add_turn(user_id, f"s{n}", f"question {n}", f"answer {n}")
+    memory.get_history(user_id, "s2")  # used again: it stays
+    memory.add_turn(user_id, "s5", "question 5", "answer 5")
+    assert list(memory._cache) == [f"{user_id}:s4", f"{user_id}:s2", f"{user_id}:s5"]
+    # A session that left the cache is read back from the database, whole
+    assert memory.get_history(user_id, "s0") == [{"question": "question 0", "answer": "answer 0"}]
+    assert len(memory._cache) == 3
+
