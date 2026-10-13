@@ -527,6 +527,20 @@
 .l-why__margin { display: grid; gap: 12px; align-content: start; }
 .l-why__margin .p-eyebrow { margin: 6px 0 2px; }
 
+/* The threads lead here: bolder than under an answer, and traced one by one when the section
+   is first seen (WhyDifferent). A thread the trace has not reached is undrawn; reaching it
+   draws it along its length. */
+.l-why .p-threads path {
+  stroke-width: 2.25;
+  opacity: 0.62;
+  animation: none;
+  transition: stroke-dashoffset 680ms var(--p-out), opacity var(--p-dur-2), stroke-width var(--p-dur-2);
+}
+.l-why .p-threads path[data-active="true"] { opacity: 1; stroke-width: 3.25; }
+.l-why .p-threads[data-dim="true"] path:not([data-active="true"]) { opacity: 0.22; }
+.l-why .p-threads path[data-drawn="false"],
+.l-why .p-threads[data-dim="true"] path[data-drawn="false"] { stroke-dashoffset: 1; opacity: 0; }
+
 /* A source card that is read, not opened: its whole sentence shows. */
 .l-proof { cursor: default; }
 .l-proof .p-source__text { display: block; overflow: visible; }
