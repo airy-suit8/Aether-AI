@@ -385,6 +385,56 @@ export interface paths {
         patch: operations["rename_conversation_api_v1_sessions__session_id__patch"];
         trace?: never;
     };
+    "/api/v1/sessions/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sharing Of Conversation
+         * @description Whether one of the user's conversations is shared, and by which link.
+         */
+        get: operations["sharing_of_conversation_api_v1_sessions__session_id__share_get"];
+        put?: never;
+        /**
+         * Share Conversation
+         * @description Share one of the user's conversations. Sharing it again gives the same link. 404 for a
+         *     conversation that is not the user's, or has no turns yet.
+         */
+        post: operations["share_conversation_api_v1_sessions__session_id__share_post"];
+        /**
+         * Stop Sharing Conversation
+         * @description Withdraw the link. It stops working at once; sharing again makes a new one.
+         */
+        delete: operations["stop_sharing_conversation_api_v1_sessions__session_id__share_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shared/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Shared Conversation
+         * @description A shared conversation, for anyone who has its link: no sign-in. 404 for a link that was
+         *     never made or has been withdrawn.
+         */
+        get: operations["shared_conversation_api_v1_shared__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -676,6 +726,47 @@ export interface components {
             session_id: string;
             /** Title */
             title: string;
+        };
+        /**
+         * ShareState
+         * @description Whether one of the user's conversations is shared. The page that shows it is /shared/{token}.
+         */
+        ShareState: {
+            /** Session Id */
+            session_id: string;
+            /** Token */
+            token?: string | null;
+        };
+        /**
+         * SharedConversation
+         * @description A conversation as anyone with its link sees it. It says nothing about whose it is.
+         */
+        SharedConversation: {
+            /** Title */
+            title: string;
+            /** Turns */
+            turns: components["schemas"]["SharedTurn"][];
+        };
+        /**
+         * SharedTurn
+         * @description One question and its answer in a shared conversation: what its owner saw, without the
+         *     turn's id or the owner's rating.
+         */
+        SharedTurn: {
+            /** Question */
+            question: string;
+            /** Answer */
+            answer: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Mode */
+            mode: string;
+            /** Sources */
+            sources: components["schemas"]["Source"][];
+            /** Tool Used */
+            tool_used?: string | null;
+            /** Created At */
+            created_at: string;
         };
         /**
          * Source
@@ -1390,6 +1481,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionTitle"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sharing_of_conversation_api_v1_sessions__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    share_conversation_api_v1_sessions__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_sharing_conversation_api_v1_sessions__session_id__share_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_conversation_api_v1_shared__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedConversation"];
                 };
             };
             /** @description Validation Error */

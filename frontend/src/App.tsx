@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import LandingPage from './components/landing/LandingPage'
 import ChatLayout from './components/chat/ChatLayout'
+import SharedPage from './components/shared/SharedPage'
 import ToastContainer from './components/common/ToastContainer'
 import type { Toast } from './components/common/ToastContainer'
 import type { ToastType } from './components/chat/types'
@@ -40,6 +41,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
  *   /chat             the most recent conversation, or a new one
  *   /chat/:threadId   one conversation; the thread id is its session_id
  *   /settings         the workspace with the settings sheet open
+ *   /shared/:token    one conversation, read only, for anyone who has its link (no sign-in)
  *
  * The workspace pages share one ChatLayout, so opening settings keeps the conversation as it is.
  */
@@ -118,6 +120,7 @@ export default function App() {
             <Route path="chat/:threadId" />
             <Route path="settings" />
           </Route>
+          <Route path="shared/:token" element={<SharedPage theme={theme} onTheme={setTheme} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       )}

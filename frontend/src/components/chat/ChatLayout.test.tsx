@@ -25,6 +25,9 @@ vi.mock('../../services/api', async (importOriginal) => ({
   deleteSession: vi.fn(),
   logoutEverywhere: vi.fn(),
   logout: vi.fn(async () => ({ message: 'Signed out' })),
+  getSharing: vi.fn(async (id: string) => ({ session_id: id, token: null })),
+  shareSession: vi.fn(),
+  stopSharing: vi.fn(),
 }))
 
 /** Shows the current path, so a test can read the URL the workspace navigated to. */
@@ -66,6 +69,38 @@ describe('ChatLayout', () => {
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
     vi.mocked(api.getSessionMessages).mockReset()
     vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
+  })
+
+  it('offers Share only for a conversation the server has a turn of', async () => {
+    renderChat()
+    const share = await screen.findByRole('button', { name: 'Share' })
+    expect((share as HTMLButtonElement).disabled).toBe(true)  // an empty thread: nothing to share yet
+    expect(screen.queryByRole('dialog', { name: 'Share this conversation' })).toBeNull()
+  })
+
+  it('opens the share sheet for a saved conversation, and closes it with its thread', async () => {
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({
+      session_id: id,
+      turns: id === 'session_1' ? [turn({ turn_id: 4, question: 'How often?', answer: 'Every 90 days.' })] : [],
+    }))
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
+    renderChat()
+    const user = userEvent.setup()
+    await screen.findByText('Every 90 days.')
+
+    const share = screen.getByRole('button', { name: 'Share' })
+    expect((share as HTMLButtonElement).disabled).toBe(false)
+    await user.click(share)
+    const sheet = await screen.findByRole('dialog', { name: 'Share this conversation' })
+    expect(api.getSharing).toHaveBeenCalledWith('session_1')
+    expect(await within(sheet).findByRole('button', { name: 'Create link' })).toBeTruthy()
+
+    // Starting a new thread leaves the sheet of the old one behind
+    await user.click(within(sheet).getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: 'Share' }))
+    await screen.findByRole('dialog', { name: 'Share this conversation' })
+    await act(async () => { screen.getAllByRole('button', { name: 'New thread' })[0].click() })
+    expect(screen.queryByRole('dialog', { name: 'Share this conversation' })).toBeNull()
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {

@@ -113,6 +113,35 @@ test('the whole journey, with the accessibility gate', async ({ page, browser })
   const chatReady = () => expect(page.getByRole('heading', { name: QUESTION })).toBeVisible()
   await checkAtBothWidths(page, 'the chat', chatReady)
 
+  // ── Share the conversation: anyone with the link can read it, until it is withdrawn ──
+  await page.getByRole('button', { name: 'Share', exact: true }).click()
+  const shareSheet = page.getByRole('dialog', { name: 'Share this conversation' })
+  await shareSheet.getByRole('button', { name: 'Create link' }).click()
+  const link = await shareSheet.getByLabel('Link').inputValue()
+  expect(link).toMatch(/\/shared\/[A-Za-z0-9_-]{32}$/)
+
+  const visitor = await browser.newContext()  // someone who is not signed in
+  const shared = await visitor.newPage()
+  const sharedReady = () => expect(shared.getByRole('heading', { level: 2, name: QUESTION })).toBeVisible()
+  for (const size of [WIDE, PHONE]) {
+    await shared.setViewportSize(size)
+    await shared.goto(new URL(link).pathname)
+    await sharedReady()
+    await checkAccessibility(shared, `the shared page at ${size.width} px`)
+    if (size === PHONE) await checkFits(shared, 'the shared page at 375 px')
+  }
+  await expect(shared.locator('.p-answer').first()).toContainText('blade inspection every 90 days')
+  await expect(shared.getByText('zephyr_manual.txt').first()).toBeVisible()
+  await expect(shared.getByRole('button', { name: 'Helpful', exact: true })).toHaveCount(0)  // read only
+  await expect(shared.getByLabel('Your question')).toHaveCount(0)
+
+  await shareSheet.getByRole('button', { name: 'Stop sharing' }).click()
+  await expect(shareSheet.getByRole('button', { name: 'Create link' })).toBeVisible()
+  await shared.reload()
+  await expect(shared.getByRole('heading', { name: 'This link no longer works.' })).toBeVisible()
+  await visitor.close()
+  await shareSheet.getByRole('button', { name: 'Close' }).click()
+
   // ── Reload: the conversation is still there ──────────────────────────────
   await page.reload()
   await expect(page).toHaveURL(firstThread)

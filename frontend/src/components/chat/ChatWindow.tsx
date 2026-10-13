@@ -32,11 +32,7 @@ export default function ChatWindow({ messages, streamingText, streamingPhase, is
         {isEmpty ? (
           <div className="x-empty">
             <p className="p-eyebrow">{hasDocuments ? 'Your library is ready' : 'Start with a document'}</p>
-            <h2 className="p-display">
-              Ask in white light.
-              <br />
-              Read the <em>spectrum.</em>
-            </h2>
+            <h2 className="p-h2">{hasDocuments ? 'What do you want to know?' : 'Add a document to begin.'}</h2>
             <p>
               {hasDocuments
                 ? 'Ask a question about your documents. Every answer shows the passages it came from, with the page and a similarity score.'

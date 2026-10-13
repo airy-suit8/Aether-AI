@@ -386,6 +386,31 @@ export function clearSession(sessionId: string) {
   return request('post', '/api/v1/session/clear', { json })
 }
 
+// ── Sharing a conversation ──────────────────────────────────────────────────
+
+export type SharedConversation = Schemas['SharedConversation']
+export type SharedTurn = Schemas['SharedTurn']
+
+/** Share a conversation. The reply's token makes its link, /shared/{token}; sharing again gives the same one. */
+export function shareSession(sessionId: string) {
+  return request('post', '/api/v1/sessions/{session_id}/share', { params: { session_id: sessionId } })
+}
+
+/** Whether a conversation is shared: its token, or null. */
+export function getSharing(sessionId: string) {
+  return request('get', '/api/v1/sessions/{session_id}/share', { params: { session_id: sessionId } })
+}
+
+/** Withdraw a conversation's link. It stops working at once; sharing again makes a new one. */
+export function stopSharing(sessionId: string) {
+  return request('delete', '/api/v1/sessions/{session_id}/share', { params: { session_id: sessionId } })
+}
+
+/** A shared conversation, read by its link's token. Needs no sign-in. */
+export function getSharedConversation(token: string) {
+  return request('get', '/api/v1/shared/{token}', { params: { token }, open: true })
+}
+
 // ── System ──────────────────────────────────────────────────────────────────
 
 /** Health check: { status: 'ok' } when the backend is running. */
