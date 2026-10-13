@@ -142,7 +142,21 @@
 
 /* Rename and Delete: the library row's quiet controls, showing with the thread's row. Delete is
    armed by a first click ("Delete?") and confirmed by a second, as Remove is for a document. */
-.x-thread-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px; }
+.x-thread-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  border-radius: var(--p-r-2);
+  transition: background var(--p-dur-1);
+}
+/* The row, controls and all, takes the tone the thread link had on its own */
+.x-thread-row:hover,
+.x-thread-row:has(.x-thread[aria-current="page"]) { background: var(--p-surface-3); }
+.x-thread-row .x-thread,
+.x-thread-row .x-thread:hover,
+.x-thread-row .x-thread[aria-current="page"] { background: none; }
 .x-thread-row[data-removing="true"] { opacity: 0.5; }
 .x-thread-row .x-thread__act { margin: 0; }
 .x-thread-row:hover .x-thread__act,

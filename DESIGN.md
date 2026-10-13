@@ -2,7 +2,7 @@
 
 Status: 11 October 2026. Prism is applied to every screen of the app: the start page, the sign-in sheet, the workspace (library rail, conversation, composer) and settings. The old stylesheets are gone. It was merged together with Sprint 2 on 12 October 2026.
 
-Sprint 6 (13 October 2026) added the pieces in the second half of the component table (thread list, citation chips in real answers, rating, tools row, retry row, upload stage) from the same tokens and components, with no new styling approach; their screenshots are in "Added in Sprint 6" below.
+Sprint 6 (13 October 2026) added the pieces in the second half of the component table (thread list, citation chips in real answers, rating, tools row, retry row, upload stage) from the same tokens and components, with no new styling approach; their screenshots are in "Added in Sprint 6" below. Sprint 8 added the last four rows (cost line, agent steps, thread row controls, sign out everywhere) the same way; see "Added in Sprint 8".
 
 **See it:** run `start.bat`, then open `http://localhost:5173/` for the app or `http://localhost:5173/design-lab.html` for every component on one page. The theme control offers System and Dark.
 
@@ -73,6 +73,10 @@ One material, optical glass: a translucent pane with a hairline edge. A highligh
 | Tools used | `MessageBubble.tsx`, `app.css` (`.x-tools`) | A labelled row above an agent's answer, one quiet chip per tool |
 | Retry row | `ChatComposer.tsx`, `app.css` (`.x-retry`) | Above the composer when a reply failed or was stopped: the word first ("Failed." in the status red, or "Stopped."), then what happened, and Retry. The question is back in the composer |
 | Upload stage | `Sidebar.tsx` (the drop zone) | "Sending" while the file goes up, then "Reading" while the server splits it, with the working beam; a polite live region |
+| Cost line | `MessageBubble.tsx`, `app.css` (`.x-usage`) | One quiet line in mono under a new answer, "4.2 s, 1,240 tokens", in the third ink. It is a native disclosure: opened, it lists the stages in the order they ran, each with its seconds and tokens in and out, or "no model call". Tokens are never priced. An answer read back after a reload has no line |
+| Agent steps | `MessageBubble.tsx`, `app.css` (`.x-steps`) | Above an agent's answer, under the eyebrow "Steps": each tool call numbered in mono, the tool as the tools row's chip, what it was asked in the first ink and the start of what it returned in the third. It takes the tools row's place; an answer read back after a reload keeps the tools row |
+| Thread row controls | `Sidebar.tsx`, `app.css` (`.x-thread-row`) | Rename and Delete on each thread: the library row's quiet controls, showing with the row. Rename edits the name in place (Enter or leaving the field keeps it, Escape gives up, and focus goes back to Rename); Delete is armed by a first click ("Delete?", in the status red) and confirmed by a second, and disarms as Remove does. The whole row takes the open thread's tone |
+| Sign out everywhere | `SettingsModal.tsx` (General) | A settings row like Clear conversation: what it does in one sentence, and a tonal button |
 
 Some interaction ideas (the light-point toggle, the floating-label field, hold to confirm) were prompted by browsing the open-source gallery at uiverse.io. They were written from scratch in this language; no code was copied.
 
@@ -103,6 +107,22 @@ Taken with Playwright against the built app, its API answered with sample data, 
 ![At 375 px: the conversation, and the rail as a drawer](docs/design/sprint6-phone-chat.png)
 
 ![At 375 px, the drawer open](docs/design/sprint6-phone-threads.png)
+
+## Added in Sprint 8
+
+Taken with Playwright against the built app and the backend with fake models (`backend/tests/e2e_server.py`), at 1280 px and 375 px. The answers are the fake model's, which quotes the passages it was given.
+
+![An agent answer: its steps above it, and what it cost, opened, under it](docs/design/sprint8-agent-steps-and-cost-dark.png)
+
+![A default answer and its cost by stage, in the light theme](docs/design/sprint8-cost-light.png)
+
+![The thread list: Rename and Delete show with the row; Delete is armed](docs/design/sprint8-thread-delete-light.png)
+
+![Renaming a thread in place](docs/design/sprint8-thread-rename-light.png)
+
+![Settings, General: Sign out everywhere](docs/design/sprint8-settings-sign-out-everywhere-dark.png)
+
+![At 375 px, an agent answer and its steps](docs/design/sprint8-phone-agent-light.png)
 
 ## Rules for building with it
 
