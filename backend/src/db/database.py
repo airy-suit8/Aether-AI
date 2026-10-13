@@ -10,13 +10,17 @@ Tables:
   conversations — stores every Q&A turn with timestamps, and the sources and tool shown with it
   documents     — tracks uploaded document metadata, and whether each is processing, ready or
                   failed (it is read in the background after the upload is accepted, R12)
+  session_titles — the name a user gave a conversation; without one it is titled by its first
+                  question (Sprint 8, item 3)
+  refresh_tokens — every refresh token issued, by its id (jti), and whether it was revoked. A
+                  refresh token not listed here is refused (Sprint 8, item 4)
 """
 
 import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -79,6 +83,23 @@ def init_db():
                 error TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS session_titles (
+                user_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                PRIMARY KEY (user_id, session_id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                jti TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                issued_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
         """)
 
         # Step 2: Migrations — add columns that may be missing on legacy databases.
@@ -111,6 +132,7 @@ def init_db():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
             CREATE INDEX IF NOT EXISTS idx_conv_user_session ON conversations(user_id, session_id);
             CREATE INDEX IF NOT EXISTS idx_doc_user_hash ON documents(user_id, file_hash);
+            CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
         """)
 
         # Usernames are unique regardless of ASCII case (S7). A database that already holds two
@@ -183,14 +205,70 @@ def get_tenant_id(user_id: int) -> str:
 
 
 def get_document_owners() -> List[Dict[str, Any]]:
-    """Every document record with its owner's tenant id: {user_id, tenant_id, document_id, filename}."""
+    """Every document record with its owner's tenant id:
+    {user_id, tenant_id, document_id, filename, status, uploaded_at}."""
     conn = _get_connection()
     rows = conn.execute(
-        "SELECT u.id AS user_id, u.tenant_id, d.id AS document_id, d.filename "
-        "FROM documents d JOIN users u ON u.id = d.user_id"
+        "SELECT u.id AS user_id, u.tenant_id, d.id AS document_id, d.filename, d.status, d.uploaded_at "
+        "FROM documents d JOIN users u ON u.id = d.user_id ORDER BY d.id"
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+# ── Refresh tokens (Sprint 8, item 4) ─────────────────────────────────────────
+#
+# Times here are UTC ISO strings, so they compare as text. A token's own expiry is also checked
+# when it is decoded; the stored one lets expired rows be cleared away.
+
+def _utc(moment: Optional[datetime] = None) -> str:
+    return (moment or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+
+
+def record_refresh_token(user_id: int, jti: str, expires: datetime) -> None:
+    """Record a refresh token just issued, and clear away every one that has expired."""
+    with _db_lock:
+        conn = _get_connection()
+        try:
+            now = _utc()
+            conn.execute("DELETE FROM refresh_tokens WHERE expires_at < ?", (now,))
+            conn.execute("INSERT INTO refresh_tokens (jti, user_id, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+                         (jti, user_id, now, _utc(expires)))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def refresh_token_is_live(user_id: int, jti: str) -> bool:
+    """True when this refresh token was issued to this user and has not been revoked. A token
+    issued before tokens were recorded is not listed, so it is refused like a revoked one."""
+    conn = _get_connection()
+    row = conn.execute("SELECT 1 FROM refresh_tokens WHERE jti = ? AND user_id = ? AND revoked_at IS NULL "
+                       "AND expires_at >= ?", (jti, user_id, _utc())).fetchone()
+    conn.close()
+    return row is not None
+
+
+def revoke_refresh_token(jti: str) -> bool:
+    """Revoke one refresh token (signing out). False when it was not live."""
+    with _db_lock:
+        conn = _get_connection()
+        revoked = conn.execute("UPDATE refresh_tokens SET revoked_at = ? WHERE jti = ? AND revoked_at IS NULL",
+                               (_utc(), jti)).rowcount
+        conn.commit()
+        conn.close()
+    return revoked == 1
+
+
+def revoke_user_refresh_tokens(user_id: int) -> int:
+    """Revoke every live refresh token of a user (signing out everywhere). Returns how many."""
+    with _db_lock:
+        conn = _get_connection()
+        revoked = conn.execute("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                               (_utc(), user_id)).rowcount
+        conn.commit()
+        conn.close()
+    return revoked
+
 
 # ── Conversation Operations ───────────────────────────────────────────────────
 
@@ -213,13 +291,15 @@ def save_conversation(user_id: int, session_id: str, question: str, answer: str,
 
 
 def get_sessions(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
-    """A user's conversations, most recently used first: the session id, its first question as a
-    title, how many turns it has, and when it started and was last used."""
+    """A user's conversations, most recently used first: the session id, its title (the name the
+    user gave it, else its first question), how many turns it has, and when it started and was
+    last used."""
     conn = _get_connection()
     rows = conn.execute(
         "SELECT session_id, COUNT(*) AS turns, MIN(created_at) AS started_at, MAX(created_at) AS updated_at, "
-        "(SELECT question FROM conversations f WHERE f.user_id = c.user_id AND f.session_id = c.session_id "
-        " ORDER BY f.id LIMIT 1) AS title "
+        "COALESCE((SELECT title FROM session_titles t WHERE t.user_id = c.user_id AND t.session_id = c.session_id), "
+        " (SELECT question FROM conversations f WHERE f.user_id = c.user_id AND f.session_id = c.session_id "
+        "  ORDER BY f.id LIMIT 1)) AS title "
         "FROM conversations c WHERE user_id = ? GROUP BY session_id ORDER BY MAX(id) DESC LIMIT ?",
         (user_id, limit)
     ).fetchall()
@@ -252,13 +332,33 @@ def get_conversation_history(user_id: int, session_id: str, limit: int = 10) -> 
     return [{"question": r["question"], "answer": r["answer"]} for r in reversed(rows)]
 
 
-def clear_conversation(user_id: int, session_id: str):
-    """Delete all conversation history for a session."""
+def clear_conversation(user_id: int, session_id: str) -> int:
+    """Delete all conversation history for a session, and the name given to it. Returns how many
+    turns were deleted (0 when the user has no such conversation)."""
     with _db_lock:
         conn = _get_connection()
-        conn.execute("DELETE FROM conversations WHERE user_id = ? AND session_id = ?", (user_id, session_id))
+        deleted = conn.execute("DELETE FROM conversations WHERE user_id = ? AND session_id = ?",
+                               (user_id, session_id)).rowcount
+        conn.execute("DELETE FROM session_titles WHERE user_id = ? AND session_id = ?", (user_id, session_id))
         conn.commit()
         conn.close()
+    return deleted
+
+
+def rename_session(user_id: int, session_id: str, title: str) -> bool:
+    """Name one of a user's conversations. False when they have no conversation of that id."""
+    with _db_lock:
+        conn = _get_connection()
+        try:
+            if conn.execute("SELECT 1 FROM conversations WHERE user_id = ? AND session_id = ? LIMIT 1",
+                            (user_id, session_id)).fetchone() is None:
+                return False
+            conn.execute("INSERT OR REPLACE INTO session_titles (user_id, session_id, title) VALUES (?, ?, ?)",
+                         (user_id, session_id, title))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
 
 
 def update_conversation_feedback(user_id: int, turn_id: int, feedback: int) -> bool:
@@ -270,6 +370,18 @@ def update_conversation_feedback(user_id: int, turn_id: int, feedback: int) -> b
         conn.commit()
         conn.close()
     return updated == 1
+
+
+def get_turns_rated(feedback: int) -> List[Dict[str, Any]]:
+    """Every user's turns with this rating (-1: not helpful), oldest first, with what was shown:
+    for the evaluation's candidate questions (src/evaluation/export_feedback.py)."""
+    conn = _get_connection()
+    rows = conn.execute(
+        "SELECT id, question, answer, mode, sources, created_at FROM conversations WHERE feedback = ? ORDER BY id",
+        (feedback,)
+    ).fetchall()
+    conn.close()
+    return [{**dict(r), "sources": json.loads(r["sources"]) if r["sources"] else []} for r in rows]
 
 
 # ── Document Operations ───────────────────────────────────────────────────────

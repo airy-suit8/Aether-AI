@@ -168,7 +168,8 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 | `memory/` | `conversation.py`: conversation history per user and session |
 | `pipeline/` | `rag.py`: the one question-answering pipeline (modes `default`, `hybrid`, `langchain`, `agent`); `documents.py`: ingest, list, delete |
 | `agents/` | `agent.py` and `tools.py`: the tool-calling agent, the calculator and the date-time tool |
-| `evaluation/` | `evaluate.py`: measures the pipeline on labelled questions (see "Measuring answer quality" below) |
+| `evaluation/` | `evaluate.py`: measures the pipeline on labelled questions (see "Measuring answer quality" below); `export_feedback.py`: answers rated "not helpful", as questions to label |
+| `maintenance.py` | Reports chunks and document records that do not match, and removes them when asked (see "Where data is kept") |
 
 **Import style.** Code imports by absolute path from `backend/`, for example `from src.core.config import settings`. Run every command from the `backend` folder: `python -m uvicorn main:app`, `python -m pytest` and `python -m src.evaluation.evaluate` all put that folder on Python's path (`pytest.ini` sets `pythonpath = .` for the tests).
 
@@ -200,6 +201,8 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 
 Each run is saved as `docs\evaluation\<label>.json`, and `docs\evaluation.md` is rebuilt to show every saved run side by side, with a section explaining how each number is computed.
 
+**Questions from feedback.** `..\.venv\Scripts\python -m src.evaluation.export_feedback` writes every answer rated "Not helpful" to `data\feedback_candidates.jsonl` (or `--output <file>`), one line per answer in the dataset's shape: the question, with `expected_answer`, `source` and `page` left empty, and the answer and sources the app gave beside them. Nothing is added to `dataset.jsonl` by itself: label a line, remove its `answer_given`, `sources_given`, `mode` and `asked_at` fields, and copy it in. The file holds users' questions, so it stays in `data\`, which git ignores; the command prints only how many lines it wrote.
+
 To compare two settings, run it once for each with a different label. For example, `AETHER_ANSWER_FROM=chunks` in `backend\.env` makes the app write its answer straight from the retrieved passages and cite them as [1], [2], with no summary step (one model call per answer, not two). The default stays `summary` until a run shows which is better.
 
 ## Running it where other people can reach it
@@ -221,9 +224,11 @@ Two more settings are worth setting there:
 
 **Rate limits.** Every route has one: requests that carry a valid sign-in count against that user, and the rest against their address, so people behind one office proxy do not share an allowance. Sign-up, sign-in, upload and chat have their own limits; everything else allows 120 requests a minute (`AETHER_RATE_LIMIT_DEFAULT`). The counts are kept in the server's memory and start again when it restarts.
 
-**Conversations.** Every question and answer is saved with the sources shown beside it. Each conversation has its own address (`/chat/<id>`) and the rail lists them all, newest first; reloading the page keeps you signed in on the same one, and `/chat` opens the most recent. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Stop ends a streamed answer, and nothing of a stopped or failed answer is saved: its question goes back into the box, with Retry.
+**Conversations.** Every question and answer is saved with the sources shown beside it. Each conversation has its own address (`/chat/<id>`) and the rail lists them all, newest first; reloading the page keeps you signed in on the same one, and `/chat` opens the most recent. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Stop ends a streamed answer, and nothing of a stopped or failed answer is saved: its question goes back into the box, with Retry. Each thread in the rail can be renamed in place, or deleted with two clicks ("Delete?", then again).
 
-**Signing in.** Passwords are 8 characters to 72 bytes (72 letters, fewer with accents or symbols). Usernames use the letters A to Z, digits, hyphens and underscores, and their case does not matter: `Tirth` and `tirth` are the same account. A sign-in lasts 30 minutes and renews itself while the app is open, through a cookie that page scripts cannot read, so reloading the page keeps you signed in; a week without use signs you out. Sign-ups, sign-ins and refused tokens are written to `backend\logs\auth.log`, never with a password.
+**What an answer cost.** Under each new answer a quiet line says how long it took and how many tokens the model reported, for example "4.2 s, 1,240 tokens"; opening it lists each stage (search, summary, answer; or the agent and each document search). The same numbers are written to `backend\logs\requests.log`. They are not priced: prices change, and the app does not know your tier. An agent answer also lists its steps above it: each tool, what it was asked and the start of what it returned.
+
+**Signing in.** Passwords are 8 characters to 72 bytes (72 letters, fewer with accents or symbols). Usernames use the letters A to Z, digits, hyphens and underscores, and their case does not matter: `Tirth` and `tirth` are the same account. A sign-in lasts 30 minutes and renews itself while the app is open, through a cookie that page scripts cannot read, so reloading the page keeps you signed in; a week without use signs you out. Signing out revokes that browser's sign-in on the server; Settings, "Sign out everywhere" revokes every one of yours, and each other browser is signed out when it next reloads, or within 30 minutes. Sign-ins from before Sprint 8 are not recorded on the server, so everyone signs in once more after that upgrade. Sign-ups, sign-ins and refused tokens are written to `backend\logs\auth.log`, never with a password.
 
 When Gemini is over its quota or unavailable, each model call is tried three times in all, waiting 2 and then 4 seconds (`AETHER_LLM_MAX_ATTEMPTS`, `AETHER_LLM_RETRY_SECONDS`), and then the app says "The AI service is busy or over its usage limit right now. Please try again in a minute." Other errors are not retried. A free-tier key allows only a few questions a day; for a demo, use a billed key, and on an office network that inspects HTTPS, add the organisation's root certificate to the machine's trust store rather than turning certificate checks off.
 
@@ -243,6 +248,8 @@ All of these are created on first run and are ignored by git:
 Before Sprint 5 the database and the vector store were kept in `backend/aether.db` and `backend/vector_store/`. If they are still there and nothing is in `data/` yet, the backend keeps using them and says so in `backend/logs/errors.log`. To move them, stop the backend and move both into a `data` folder in the project folder; nothing else needs to change.
 
 Each user's chunks are filed under a random tenant id from their user record, not under the user's number, because a new database hands the same numbers out again. A store made before this change is re-filed when the backend starts; this is safe to run any number of times and deletes nothing.
+
+**Housekeeping.** With the backend stopped, `..\.venv\Scripts\python -m src.maintenance` (from `backend`) lists the chunks no document accounts for (left by an earlier database, for example) and the documents listed as ready that have no chunks. It deletes nothing; `--apply` deletes exactly what it listed. A document still being read, or one that failed, is left alone.
 
 Uploaded text and questions are sent to Google's Gemini API. Do not upload confidential documents until you have agreed with your mentor which documents and which API tier are allowed.
 

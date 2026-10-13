@@ -50,7 +50,7 @@ export interface paths {
         /**
          * Refresh
          * @description A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,
-         *     or names a user who is gone.
+         *     revoked, not recorded (issued before Sprint 8), or names a user who is gone.
          */
         post: operations["refresh_api_v1_auth_refresh_post"];
         delete?: never;
@@ -70,10 +70,33 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Remove the refresh cookie, so a reloaded page is signed out. The access token the client
-         *     holds still works until it expires (at most settings.access_token_minutes).
+         * @description Revoke the refresh token the cookie holds and remove the cookie, so a reloaded page is
+         *     signed out and the token cannot be used again. The access token the client holds still works
+         *     until it expires (at most settings.access_token_minutes).
          */
         post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout-everywhere": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout Everywhere
+         * @description Revoke every refresh token of the signed-in user, on every device, and remove this
+         *     browser's cookie. Each other device is signed out when its access token next needs renewing,
+         *     at most settings.access_token_minutes later.
+         */
+        post: operations["logout_everywhere_api_v1_auth_logout_everywhere_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -336,10 +359,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Conversation
+         * @description Delete one of the user's conversations: every turn, its feedback and its name. 404 for a
+         *     conversation that is not the user's.
+         */
+        delete: operations["delete_conversation_api_v1_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Conversation
+         * @description Give one of the user's conversations a name, shown in place of its first question.
+         *     404 for a conversation that is not the user's, or has no turns yet.
+         */
+        patch: operations["rename_conversation_api_v1_sessions__session_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AgentStep
+         * @description One tool call of an agent answer, in the order they ran (Sprint 8, item 2).
+         */
+        AgentStep: {
+            /** Tool */
+            tool: string;
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+        };
         /** Body_login_api_v1_auth_login_post */
         Body_login_api_v1_auth_login_post: {
             /** Grant Type */
@@ -398,8 +459,11 @@ export interface components {
             session_id?: string;
             /** Tool Used */
             tool_used?: string | null;
+            /** Steps */
+            steps?: components["schemas"]["AgentStep"][] | null;
             /** Turn Id */
             turn_id?: number | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /** DocumentDeleted */
         DocumentDeleted: {
@@ -506,6 +570,9 @@ export interface components {
             turn_id: number | null;
             /** Tool Used */
             tool_used?: string | null;
+            /** Steps */
+            steps?: components["schemas"]["AgentStep"][] | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /**
          * ErrorEvent
@@ -582,6 +649,14 @@ export interface components {
             /** Turns */
             turns: components["schemas"]["Turn"][];
         };
+        /**
+         * SessionRename
+         * @description A new name for a conversation (Sprint 8, item 3).
+         */
+        SessionRename: {
+            /** Title */
+            title: string;
+        };
         /** SessionSummary */
         SessionSummary: {
             /** Session Id */
@@ -594,6 +669,13 @@ export interface components {
             started_at: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** SessionTitle */
+        SessionTitle: {
+            /** Session Id */
+            session_id: string;
+            /** Title */
+            title: string;
         };
         /**
          * Source
@@ -680,6 +762,34 @@ export interface components {
             replaces?: boolean;
             /** Message */
             message: string;
+        };
+        /**
+         * Usage
+         * @description What an answer cost (Sprint 8, item 1). Tokens are counted, never priced.
+         */
+        Usage: {
+            /** Seconds */
+            seconds: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Stages */
+            stages: components["schemas"]["UsageStage"][];
+        };
+        /**
+         * UsageStage
+         * @description One stage of an answer: rewrite, retrieve, summarize, answer; or agent, document_search.
+         */
+        UsageStage: {
+            /** Name */
+            name: string;
+            /** Seconds */
+            seconds: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
         };
         /** UserRegister */
         UserRegister: {
@@ -802,6 +912,26 @@ export interface operations {
         };
     };
     logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
+                };
+            };
+        };
+    };
+    logout_everywhere_api_v1_auth_logout_everywhere_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1194,6 +1324,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionMessages"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_conversation_api_v1_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionCleared"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_conversation_api_v1_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionTitle"];
                 };
             };
             /** @description Validation Error */

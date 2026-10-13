@@ -4,10 +4,16 @@ Signing in returns a short-lived access token and sets a refresh token in an htt
 which page scripts cannot read and the browser sends only to /api/v1/auth. /auth/refresh trades
 it for a new access token, and a new refresh token, so a reloaded page stays signed in and a
 week without use signs the user out; /auth/logout removes it.
+
+Every refresh token issued is recorded (Sprint 8, item 4). /auth/logout revokes the one it is
+sent, /auth/logout-everywhere revokes all of the user's, and /auth/refresh refuses a token that
+is revoked or not recorded. An access token already issued still works until it expires, at
+most settings.access_token_minutes later.
 """
 
 import hmac
 import sqlite3
+from datetime import datetime, timezone
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -18,7 +24,10 @@ from src.api.schemas import Me, Message, Token, UserRegister
 from src.core.config import settings
 from src.core.logging import auth_logger, log_event
 from src.core.security import REFRESH, decode_access_token, get_password_hash, tokens_for, unknown_user_hash, verify_password
-from src.db.database import create_user, get_user_by_id, get_user_by_username
+from src.db.database import (
+    create_user, get_user_by_id, get_user_by_username, record_refresh_token, refresh_token_is_live,
+    revoke_refresh_token, revoke_user_refresh_tokens,
+)
 
 router = APIRouter()
 
@@ -60,6 +69,8 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
 
 def _signed_in(response: Response, user: dict) -> Token:
     access_token, refresh_token = tokens_for(user)
+    claims = decode_access_token(refresh_token, kind=REFRESH)
+    record_refresh_token(user["id"], claims["jti"], datetime.fromtimestamp(claims["exp"], timezone.utc))
     _set_refresh_cookie(response, refresh_token)
     return Token(access_token=access_token, token_type="bearer", expires_in=settings.access_token_minutes * 60)
 
@@ -86,17 +97,20 @@ def login(request: Request, response: Response, form_data: OAuth2PasswordRequest
 @router.post("/api/v1/auth/refresh", response_model=Token, tags=["Auth"])
 def refresh(request: Request, response: Response):
     """A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,
-    or names a user who is gone."""
-    user = None
+    revoked, not recorded (issued before Sprint 8), or names a user who is gone."""
+    user, reason = None, "invalid"
     token = request.cookies.get(REFRESH_COOKIE)
     if token:
         try:
-            user = user_for(decode_access_token(token, kind=REFRESH))
+            claims = decode_access_token(token, kind=REFRESH)
+            user = user_for(claims)
+            if user is not None and not refresh_token_is_live(user["id"], claims.get("jti", "")):
+                user, reason = None, "revoked_or_unknown"
         except jwt.PyJWTError:
             user = None
     if user is None:
         if token:
-            log_event(auth_logger, "refresh_rejected")
+            log_event(auth_logger, "refresh_rejected", reason=reason)
         response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH)
         raise HTTPException(status_code=401, detail="Not signed in.", headers={"WWW-Authenticate": "Bearer"})
     return _signed_in(response, user)
@@ -104,12 +118,35 @@ def refresh(request: Request, response: Response):
 
 @router.post("/api/v1/auth/logout", response_model=Message, tags=["Auth"])
 def logout(request: Request, response: Response):
-    """Remove the refresh cookie, so a reloaded page is signed out. The access token the client
-    holds still works until it expires (at most settings.access_token_minutes)."""
+    """Revoke the refresh token the cookie holds and remove the cookie, so a reloaded page is
+    signed out and the token cannot be used again. The access token the client holds still works
+    until it expires (at most settings.access_token_minutes)."""
+    token = request.cookies.get(REFRESH_COOKIE)
+    revoked = False
+    if token:
+        try:
+            revoked = revoke_refresh_token(decode_access_token(token, kind=REFRESH).get("jti", ""))
+        except jwt.PyJWTError:
+            pass  # expired or not ours: nothing to revoke
+    _remove_refresh_cookie(response)
+    log_event(auth_logger, "logout", revoked=revoked)
+    return {"message": "Signed out"}
+
+
+@router.post("/api/v1/auth/logout-everywhere", response_model=Message, tags=["Auth"])
+def logout_everywhere(response: Response, user_id: int = Depends(get_current_user)):
+    """Revoke every refresh token of the signed-in user, on every device, and remove this
+    browser's cookie. Each other device is signed out when its access token next needs renewing,
+    at most settings.access_token_minutes later."""
+    revoked = revoke_user_refresh_tokens(user_id)
+    _remove_refresh_cookie(response)
+    log_event(auth_logger, "logout_everywhere", user_id=user_id, revoked=revoked)
+    return {"message": "Signed out everywhere"}
+
+
+def _remove_refresh_cookie(response: Response) -> None:
     response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH, httponly=True, samesite="strict",
                            secure=settings.cookie_secure)
-    log_event(auth_logger, "logout")
-    return {"message": "Signed out"}
 
 
 @router.get("/api/v1/auth/me", response_model=Me, tags=["Auth"])

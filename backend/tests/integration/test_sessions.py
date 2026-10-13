@@ -78,3 +78,78 @@ def test_a_bad_session_id_is_a_422(client, make_user, session_id):
 def test_reading_conversations_needs_a_token(client):
     assert client.get("/api/v1/sessions").status_code == 401
     assert client.get("/api/v1/sessions/s/messages").status_code == 401
+
+
+# ── Renaming and deleting a conversation (Sprint 8, item 3) ──────────────────
+
+def _titles(client, headers):
+    return {s["session_id"]: s["title"] for s in client.get("/api/v1/sessions", headers=headers).json()["sessions"]}
+
+
+def test_a_conversation_can_be_renamed_and_keeps_its_turns(client, make_user):
+    _, headers = make_user("rename")
+    upload_text(client, headers)
+    ask(client, headers, QUESTION, session_id="named")
+    ask(client, headers, "Who logs the Zephyr inspection?", session_id="other")
+
+    r = client.patch("/api/v1/sessions/named", headers=headers, json={"title": "  Blade\n inspections  "})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"session_id": "named", "title": "Blade inspections"}
+    assert _titles(client, headers) == {"named": "Blade inspections", "other": "Who logs the Zephyr inspection?"}
+    turns = client.get("/api/v1/sessions/named/messages", headers=headers).json()["turns"]
+    assert [t["question"] for t in turns] == [QUESTION]
+
+    # Renamed again, the latest name wins
+    client.patch("/api/v1/sessions/named", headers=headers, json={"title": "Inspections"})
+    assert _titles(client, headers)["named"] == "Inspections"
+
+
+@pytest.mark.parametrize("body", [{"title": ""}, {"title": "   "}, {"title": "x" * 201}, {}, {"title": "ok", "extra": 1}])
+def test_a_name_must_be_one_to_200_characters(client, make_user, body):
+    _, headers = make_user("renamebad")
+    upload_text(client, headers)
+    ask(client, headers, QUESTION, session_id="s")
+    assert client.patch("/api/v1/sessions/s", headers=headers, json=body).status_code == 422
+
+
+def test_a_conversation_is_deleted_with_its_name_and_its_memory(client, make_user, fake_llm):
+    _, headers = make_user("deleteconv")
+    upload_text(client, headers)
+    ask(client, headers, QUESTION, session_id="gone")
+    client.patch("/api/v1/sessions/gone", headers=headers, json={"title": "To be deleted"})
+    ask(client, headers, "Who logs the Zephyr inspection?", session_id="kept")
+
+    r = client.delete("/api/v1/sessions/gone", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"message": "Conversation deleted", "session_id": "gone"}
+    assert set(_titles(client, headers)) == {"kept"}
+    assert client.get("/api/v1/sessions/gone/messages", headers=headers).json()["turns"] == []
+    assert client.delete("/api/v1/sessions/gone", headers=headers).status_code == 404  # already gone
+
+    # Asked again under the same id, it starts afresh: no history to rewrite against, no old name
+    fake_llm.prompts.clear()
+    ask(client, headers, QUESTION, session_id="gone")
+    assert not any("Standalone Question:" in p for p in fake_llm.prompts)
+    assert _titles(client, headers)["gone"] == QUESTION
+
+
+def test_another_user_s_conversation_can_be_neither_renamed_nor_deleted(client, make_user):
+    _, owner = make_user("convowner")
+    _, other = make_user("convother")
+    upload_text(client, owner)
+    ask(client, owner, QUESTION, session_id="mine")
+
+    assert client.patch("/api/v1/sessions/mine", headers=other, json={"title": "Taken"}).status_code == 404
+    assert client.delete("/api/v1/sessions/mine", headers=other).status_code == 404
+    assert _titles(client, owner) == {"mine": QUESTION}
+    # A conversation with no turns yet has nothing to rename or delete
+    assert client.patch("/api/v1/sessions/empty", headers=owner, json={"title": "New"}).status_code == 404
+    assert client.delete("/api/v1/sessions/empty", headers=owner).status_code == 404
+
+
+def test_renaming_and_deleting_need_a_token_and_a_good_id(client, make_user):
+    assert client.patch("/api/v1/sessions/s", json={"title": "x"}).status_code == 401
+    assert client.delete("/api/v1/sessions/s").status_code == 401
+    _, headers = make_user("convid")
+    assert client.patch("/api/v1/sessions/has space", headers=headers, json={"title": "x"}).status_code == 422
+    assert client.delete("/api/v1/sessions/" + "x" * 101, headers=headers).status_code == 422

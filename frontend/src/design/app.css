@@ -140,6 +140,41 @@
 .x-thread__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .x-thread time { color: var(--p-ink-3); }
 
+/* Rename and Delete: the library row's quiet controls, showing with the thread's row. Delete is
+   armed by a first click ("Delete?") and confirmed by a second, as Remove is for a document. */
+.x-thread-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  border-radius: var(--p-r-2);
+  transition: background var(--p-dur-1);
+}
+/* The row, controls and all, takes the tone the thread link had on its own */
+.x-thread-row:hover,
+.x-thread-row:has(.x-thread[aria-current="page"]) { background: var(--p-surface-3); }
+.x-thread-row .x-thread,
+.x-thread-row .x-thread:hover,
+.x-thread-row .x-thread[aria-current="page"] { background: none; }
+.x-thread-row[data-removing="true"] { opacity: 0.5; }
+.x-thread-row .x-thread__act { margin: 0; }
+.x-thread-row:hover .x-thread__act,
+.x-thread-row:focus-within .x-thread__act,
+.x-thread-row[data-armed="true"] .x-thread__act { opacity: 1; }
+.x-thread-row .x-thread--edit { grid-column: 1 / -1; padding: 4px; }
+.x-thread--edit input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--p-r-1);
+  font: inherit;
+  color: var(--p-ink);
+  background: var(--p-surface);
+  box-shadow: inset 0 0 0 1px var(--p-outline);
+}
+
 .x-docs {
   display: grid;
   gap: 2px;
@@ -335,10 +370,32 @@
   background: var(--p-surface-3);
 }
 
+/* An agent's steps above its answer: the tool's chip, what it was asked, the start of its reply. */
+.x-steps { margin: -2px 0 14px; font-size: var(--p-text-sm); }
+.x-steps ol { display: grid; gap: 8px; margin: 6px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.x-steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  align-items: baseline;
+  counter-increment: step;
+}
+.x-steps li::before { content: counter(step); grid-row: span 3; font-family: var(--p-mono); color: var(--p-ink-3); }
+.x-steps .x-tool { justify-self: start; font-weight: 560; }
+.x-steps__asked { grid-column: 2; color: var(--p-ink); overflow-wrap: anywhere; }
+.x-steps__got { grid-column: 2; color: var(--p-ink-3); overflow-wrap: anywhere; }
+
 /* Rating: two quiet icon buttons under an answer; the chosen one is pressed, in the tonal fill. */
 .x-rate { display: flex; gap: 2px; margin: 10px 0 0 -10px; }
 .x-rate .p-icon-btn { color: var(--p-ink-3); }
 .x-rate .p-icon-btn[aria-pressed="true"] { color: var(--p-on-primary-soft); background: var(--p-primary-soft); }
+
+/* What an answer cost: one quiet line of mono numbers under it; its stages open on demand. */
+.x-usage { margin: 6px 0 0; font-size: var(--p-text-xs); color: var(--p-ink-3); }
+.x-usage summary { width: fit-content; padding: 4px 0; cursor: pointer; border-radius: var(--p-r-1); }
+.x-usage summary:hover { color: var(--p-ink-2); }
+.x-usage ul { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+.x-usage li { display: grid; grid-template-columns: minmax(0, 11rem) 4rem auto; gap: 12px; color: var(--p-ink-2); }
 
 .x-margin { display: grid; gap: 10px; align-content: start; }
 .x-margin .p-eyebrow { margin: 6px 0 2px; }

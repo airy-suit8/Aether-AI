@@ -6,7 +6,7 @@ import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import {
   ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
-  getSessions, getSessionMessages,
+  getSessions, getSessionMessages, renameSession, deleteSession, logoutEverywhere,
 } from '../../services/api'
 import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
@@ -266,6 +266,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
             confidence: data.confidence || 0,
             toolUsed: data.tool_used || null,
             turnId: data.turn_id ?? null,  // what feedback names it by
+            usage: data.usage ?? null,
+            steps: data.steps ?? null,
           }),
           // A server error event, a dropped connection, a missing done event, or Stop
           onError: failed,
@@ -278,6 +280,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           confidence: result.confidence || 0,
           toolUsed: result.tool_used || null,
           turnId: result.turn_id ?? null,
+          usage: result.usage ?? null,
+          steps: result.steps ?? null,
         })
       }
     } catch (err) {
@@ -386,6 +390,30 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     if (!isWide()) setSidebarOpen(false)
   }, [])
 
+  // ── Rename or delete a thread from the list ──────────────────────────
+  // A new name shows at once; the list is read again from the server either way
+  const handleRenameThread = useCallback(async (thread: SessionSummary, title: string) => {
+    setThreads(prev => prev.map(t => (t.session_id === thread.session_id ? { ...t, title } : t)))
+    try {
+      await renameSession(thread.session_id, title)
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not rename the conversation', 'error')
+    }
+    await refreshThreads()
+  }, [addToast, refreshThreads])
+
+  // Deleting the open conversation starts a new one in its place
+  const handleDeleteThread = useCallback(async (thread: SessionSummary) => {
+    try {
+      await deleteSession(thread.session_id)
+      addToast('Conversation deleted', 'info')
+      if (thread.session_id === sessionId) startThread()
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not delete the conversation', 'error')
+    }
+    await refreshThreads()
+  }, [addToast, refreshThreads, sessionId, startThread])
+
   const handleNewThread = useCallback(() => {
     startThread()
     addToast('New thread started', 'info')
@@ -409,6 +437,18 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     signOut()
   }, [signOut])
 
+  // Settings: revoke every session of this user on the server, then sign out here
+  const handleSignOutEverywhere = useCallback(async () => {
+    try {
+      await logoutEverywhere()
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not sign out everywhere', 'error')
+      return
+    }
+    addToast('Signed out on every device', 'info')
+    handleLogout()
+  }, [addToast, handleLogout])
+
   const goHome = useCallback(() => navigate('/'), [navigate])
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), [])
   const openSettings = useCallback(() => navigate('/settings'), [navigate])
@@ -430,6 +470,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         threads={threads}
         currentThread={sessionId}
         onChooseThread={chooseThread}
+        onRenameThread={handleRenameThread}
+        onDeleteThread={handleDeleteThread}
         onNewThread={handleNewThread}
         onOpenSettings={openSettings}
         onNavigateHome={goHome}
@@ -496,6 +538,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           addToast={addToast}
           onDocumentsChanged={refreshDocuments}
           onClearConversation={handleClearConversation}
+          onSignOutEverywhere={handleSignOutEverywhere}
         />
       )}
     </div>

@@ -27,7 +27,7 @@ TESTS_DIR = BACKEND_DIR / "tests"
 CONFIG_FILE = SRC_DIR / "core" / "config.py"
 
 # Modules started directly rather than imported
-ENTRY_POINTS = {"main", "src.evaluation.evaluate"}
+ENTRY_POINTS = {"main", "src.evaluation.evaluate", "src.evaluation.export_feedback", "src.maintenance"}
 
 
 def _module_name(path: Path) -> str:

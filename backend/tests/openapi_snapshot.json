@@ -94,7 +94,7 @@
           "Auth"
         ],
         "summary": "Refresh",
-        "description": "A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,\nor names a user who is gone.",
+        "description": "A new access token for the refresh cookie set at sign-in. 401 when it is missing, expired,\nrevoked, not recorded (issued before Sprint 8), or names a user who is gone.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "responses": {
           "200": {
@@ -116,7 +116,7 @@
           "Auth"
         ],
         "summary": "Logout",
-        "description": "Remove the refresh cookie, so a reloaded page is signed out. The access token the client\nholds still works until it expires (at most settings.access_token_minutes).",
+        "description": "Revoke the refresh token the cookie holds and remove the cookie, so a reloaded page is\nsigned out and the token cannot be used again. The access token the client holds still works\nuntil it expires (at most settings.access_token_minutes).",
         "operationId": "logout_api_v1_auth_logout_post",
         "responses": {
           "200": {
@@ -130,6 +130,33 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/auth/logout-everywhere": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Logout Everywhere",
+        "description": "Revoke every refresh token of the signed-in user, on every device, and remove this\nbrowser's cookie. Each other device is signed out when its access token next needs renewing,\nat most settings.access_token_minutes later.",
+        "operationId": "logout_everywhere_api_v1_auth_logout_everywhere_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/v1/auth/me": {
@@ -709,10 +736,142 @@
           }
         }
       }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "patch": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Rename Conversation",
+        "description": "Give one of the user's conversations a name, shown in place of its first question.\n404 for a conversation that is not the user's, or has no turns yet.",
+        "operationId": "rename_conversation_api_v1_sessions__session_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRename"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTitle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Delete Conversation",
+        "description": "Delete one of the user's conversations: every turn, its feedback and its name. 404 for a\nconversation that is not the user's.",
+        "operationId": "delete_conversation_api_v1_sessions__session_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCleared"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AgentStep": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "input": {
+            "type": "string",
+            "title": "Input"
+          },
+          "output": {
+            "type": "string",
+            "title": "Output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "input",
+          "output"
+        ],
+        "title": "AgentStep",
+        "description": "One tool call of an agent answer, in the order they ran (Sprint 8, item 2)."
+      },
       "Body_login_api_v1_auth_login_post": {
         "properties": {
           "grant_type": {
@@ -846,6 +1005,20 @@
             ],
             "title": "Tool Used"
           },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
           "turn_id": {
             "anyOf": [
               {
@@ -856,6 +1029,16 @@
               }
             ],
             "title": "Turn Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1131,6 +1314,30 @@
               }
             ],
             "title": "Tool Used"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1307,6 +1514,22 @@
         ],
         "title": "SessionMessages"
       },
+      "SessionRename": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "SessionRename",
+        "description": "A new name for a conversation (Sprint 8, item 3)."
+      },
       "SessionSummary": {
         "properties": {
           "session_id": {
@@ -1339,6 +1562,24 @@
           "updated_at"
         ],
         "title": "SessionSummary"
+      },
+      "SessionTitle": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "title"
+        ],
+        "title": "SessionTitle"
       },
       "Source": {
         "properties": {
@@ -1533,6 +1774,67 @@
         ],
         "title": "UploadResponse",
         "description": "An accepted upload. It is read in the background: GET /documents/{document_id} says when\nit is ready, or why it failed (R12)."
+      },
+      "Usage": {
+        "properties": {
+          "seconds": {
+            "type": "number",
+            "title": "Seconds"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/UsageStage"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seconds",
+          "input_tokens",
+          "output_tokens",
+          "stages"
+        ],
+        "title": "Usage",
+        "description": "What an answer cost (Sprint 8, item 1). Tokens are counted, never priced."
+      },
+      "UsageStage": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "seconds": {
+            "type": "number",
+            "title": "Seconds"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "seconds",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "UsageStage",
+        "description": "One stage of an answer: rewrite, retrieve, summarize, answer; or agent, document_search."
       },
       "UserRegister": {
         "properties": {

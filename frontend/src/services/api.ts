@@ -20,6 +20,8 @@ export type SessionSummary = Schemas['SessionSummary']
 export type DocumentRecord = Schemas['DocumentRecord']
 export type DocumentStatus = Schemas['DocumentStatus']
 export type DoneEvent = Schemas['DoneEvent']
+export type Usage = Schemas['Usage']
+export type AgentStep = Schemas['AgentStep']
 export type StreamEvent = Schemas['TokenEvent'] | Schemas['DoneEvent'] | Schemas['ErrorEvent']
 export type Mode = NonNullable<Schemas['ChatRequest']['mode']>
 export type FeedbackValue = Schemas['FeedbackRequest']['feedback']
@@ -27,7 +29,7 @@ export type FeedbackValue = Schemas['FeedbackRequest']['feedback']
 // ── Types read from the schema ──────────────────────────────────────────────
 
 type ApiPath = keyof paths
-type Method = 'get' | 'post' | 'delete'
+type Method = 'get' | 'post' | 'patch' | 'delete'
 type Operation<P extends ApiPath, M extends Method> = Exclude<paths[P][M], undefined>
 /** The methods a path has in the schema. */
 type MethodOf<P extends ApiPath> = { [M in Method]: [Operation<P, M>] extends [never] ? never : M }[Method]
@@ -213,6 +215,16 @@ export function logout() {
   return request('post', '/api/v1/auth/logout', { open: true })
 }
 
+/**
+ * Sign out on every device: the server revokes every refresh token of this user, so no browser
+ * can renew its session. Each is signed out at its next reload, or when its access token expires.
+ */
+export async function logoutEverywhere() {
+  const reply = await request('post', '/api/v1/auth/logout-everywhere')
+  setToken(null)
+  return reply
+}
+
 // ── Documents ───────────────────────────────────────────────────────────────
 
 type UploadForm = Body<'/api/v1/upload', 'post', 'multipart/form-data'>
@@ -355,6 +367,17 @@ export function getSessions() {
 /** Every turn of one conversation, oldest first, with the sources and tool shown with each answer. */
 export function getSessionMessages(sessionId: string) {
   return request('get', '/api/v1/sessions/{session_id}/messages', { params: { session_id: sessionId } })
+}
+
+/** Give a conversation a name, shown in the rail in place of its first question. */
+export function renameSession(sessionId: string, title: string) {
+  const json: Schemas['SessionRename'] = { title }
+  return request('patch', '/api/v1/sessions/{session_id}', { params: { session_id: sessionId }, json })
+}
+
+/** Delete a conversation, from the thread list. 404 when it has no turns, or is not the user's. */
+export function deleteSession(sessionId: string) {
+  return request('delete', '/api/v1/sessions/{session_id}', { params: { session_id: sessionId } })
 }
 
 /** Delete a conversation from the server (Settings: Clear conversation). New thread keeps it. */

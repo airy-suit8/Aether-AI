@@ -29,9 +29,10 @@ interface SettingsModalProps {
   addToast: AddToast
   onDocumentsChanged: () => void
   onClearConversation: () => void
+  onSignOutEverywhere: () => void
 }
 
-export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation }: SettingsModalProps) {
+export default function SettingsModal({ onClose, addToast, onDocumentsChanged, onClearConversation, onSignOutEverywhere }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('general')
   const [docs, setDocs] = useState<DocumentRecord[]>([])
   const [health, setHealth] = useState<Schemas['Health'] | null>(null)
@@ -94,6 +95,18 @@ export default function SettingsModal({ onClose, addToast, onDocumentsChanged, o
             }}
           >
             Clear conversation
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'general' && (
+        <div className="s-row">
+          <div>
+            <b>Sign out everywhere</b>
+            <span>Sign out on every device and browser, this one too. Each is signed out when it next reloads, and within 30 minutes at most.</span>
+          </div>
+          <button type="button" className="p-btn p-btn--tonal" onClick={onSignOutEverywhere}>
+            Sign out everywhere
           </button>
         </div>
       )}

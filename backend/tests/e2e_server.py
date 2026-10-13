@@ -10,6 +10,9 @@ Playwright starts it (frontend/playwright.config.js). By hand, from backend/:
     python tests/e2e_server.py --port 8765
     python tests/e2e_server.py --answer-from chunks     (answers cite their passages as [1], [2])
 
+With --data-dir the stores go in that folder instead, emptied at the start and kept afterwards,
+so the journey's check can read them once it has finished (frontend/e2e/check-feedback-export.js).
+
 Settings a developer's backend/.env may hold that would change the journey (an invite code, a
 production environment, HTTPS-only cookies) are set here for this process only.
 """
@@ -32,10 +35,17 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--answer-from", choices=["summary", "chunks"], default="summary",
                         help="AETHER_ANSWER_FROM for this server; chunks shows citation markers")
+    parser.add_argument("--data-dir", type=Path,
+                        help="keep the stores in this folder (emptied first) instead of a temp folder removed at exit")
     args = parser.parse_args()
 
-    data = Path(tempfile.mkdtemp(prefix="aether_e2e_"))
-    atexit.register(shutil.rmtree, data, ignore_errors=True)
+    if args.data_dir:
+        data = args.data_dir
+        shutil.rmtree(data, ignore_errors=True)
+        data.mkdir(parents=True)
+    else:
+        data = Path(tempfile.mkdtemp(prefix="aether_e2e_"))
+        atexit.register(shutil.rmtree, data, ignore_errors=True)
     # Before any app module is imported: environment variables win over backend/.env
     os.environ.update({
         "AETHER_DB_PATH": str(data / "aether.db"),

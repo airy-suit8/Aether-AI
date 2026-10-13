@@ -15,7 +15,7 @@ Written 11 October 2026 from [AUDIT_REPORT.md](AUDIT_REPORT.md). Finding ids (B1
 | 5 Hardening and API completion | Done, merged 13 Oct 2026 (from the branch `confident-bell-h8c2ct`) | See below |
 | 6 Frontend rebuild | Done on the branch `vigilant-dijkstra-5swgx3` (13 Oct 2026), PR #5, not yet merged | See below |
 | 7 Ship and document | Done for its first part on the branch `sprint-7` (13 Oct 2026), PR #6, not yet merged; it contains Sprint 6 (PR #5). Docker items (1, 2) deferred at the owner's request (11 Oct 2026); items 5 and 6 wait for the owner, the mentor and the office network | See below |
-| 8 Follow-ups and observability | Not started. **Next**: starting from Sprint 7's branch | See Sprint 8 |
+| 8 Follow-ups and observability | Done on the branch `sprint-8` (13 Oct 2026), PR #7, not yet merged; it contains Sprints 6 (PR #5) and 7 (PR #6) | See below |
 
 Evidence for Sprints 0 and 1, checked on the owner's Windows machine against the merged code:
 
@@ -196,6 +196,35 @@ What Sprint 7 found, and where the plan was wrong:
 - **"Done when" is met for what could be done without the owner, and not for the rest.** `docker compose up` was not tried (deferred). Every statement in the report names its test, file or number. Answering the ten reviewer questions of the first audit's section 9 without notes is the owner's to do.
 - **The report keeps the college's chapter layout** (front matter, index, chapters for screenshots, limitations, outcome and references), with chapters for the security model and the evaluation added, so it can still be handed in in the college's format. Page numbers were dropped from the index: Markdown has none.
 - **The 429 body changed shape (N1).** Sprint 6 recorded it as `{"error": ...}` without `Retry-After` and left the server alone; the second audit fixed it on the server, and the web app's existing `Retry-After` handling now gets a number.
+
+Sprint 8, checked on Linux (Python 3.12, Node 22, Chromium 1194), on the branch `sprint-8`, started from Sprint 7's branch:
+
+| Item | Proof |
+|---|---|
+| 1 What an answer cost (audit 7.19) | 8ca6565. `tests/integration/test_usage.py`: each stage with the tokens the model reported (the fake reports one per word, so the counts are exact); the rewrite on a follow-up; the stream; a refusal (its search, no tokens); an agent answer, its own calls and each document search counted once; the `chat_ok` and `stream_ok` lines in `requests.log`. `ChatLayout.test.tsx`; the journey |
+| 2 Agent tool trace (audit 7.20) | 6108ae7. `tests/integration/test_agent.py`: three tools in order with what each was asked and returned; a long reply cut short; the stream; none in other modes; a loop stopped at its limit still lists its calls. `ChatLayout.test.tsx`; the journey (agent mode) |
+| 3 Rename and delete a thread | 5489f23. `tests/integration/test_sessions.py`: rename and its rules, delete with its name and memory, another user's, no token or a bad id. `ChatLayout.test.tsx` (Enter, Escape, two-click delete, the open thread); the journey |
+| 4 Sign out everywhere (second audit, N5) | e0f4350, 7c5520e. `tests/integration/test_sign_in.py`: a copied cookie refused after sign-out; every device of one user signed out and no one else; an unrecorded token (issued before this sprint) refused; expired rows cleared. `ChatLayout.test.tsx`; the journey signs out a second browser |
+| 5 Feedback into the evaluation set (audit 7.18) | ea36193. `tests/integration/test_feedback.py`: one thumbs-down exported with its fields, not a thumbs-up or a rating taken back; nothing printed or logged but the count; the default path is in `data/`, which git ignores. "Done when": the journey rates its first answer Not helpful, and `e2e/check-feedback-export.js` (Playwright's globalTeardown) runs the export on the journey's database and fails the run unless that answer is there (checked: with the wrong question it exits 1) |
+| 6 Housekeeping command | 65df156. `tests/unit/test_maintenance.py`, on a database and store of its own: one orphan chunk and one empty record reported and nothing deleted; with `--apply` both deleted and nothing else; then "Nothing to tidy."; older chunks matched by name or user id; no store, no database |
+| Decision 3 | 1d051d9: four rows in DESIGN.md's component table, six screenshots under "Added in Sprint 8" |
+
+- `python -m pytest`: 617 passed (587 before, and 30 new), with neither `GOOGLE_API_KEY` nor `JWT_SECRET` set. `ruff check .` clean. Coverage 99% in total; the new modules at 97% (`export_feedback.py`) and 98% (`maintenance.py`), the uncovered line in each being the `if __name__ == "__main__"` call.
+- Frontend: `npm ci`, `npm run api-types -- --check`, `npm run lint` (0 errors; the one old warning in `AuthContext.tsx`), `npm run typecheck`, `npm test` 92 passed (82 before, and 10 new), `npm run build`, `npm audit` 0 vulnerabilities. `npm run e2e`: the journey and the export check pass.
+- The OpenAPI snapshot changed in four commits, each with its generated types and client: `usage` (Usage, UsageStage) and `steps` (AgentStep) on the chat reply and the done event; `PATCH` and `DELETE /api/v1/sessions/{session_id}`; `POST /api/v1/auth/logout-everywhere`, and the refresh and logout descriptions.
+- No new dependency (decision 2). Two new tables, created in `init_db()`: `refresh_tokens` and `session_titles`.
+
+What Sprint 8 found, and where the plan was wrong:
+
+- **Item 3 needed a table too.** Decision 4 names a new table for item 4 only; a thread's name has to be kept somewhere, so `session_titles` is created the same way.
+- **LangChain's usage counter counts only replies that name their model.** Gemini names it on the last streamed piece (`langchain_google_genai/chat_models.py`, 4.2.6), so its calls are counted; the fake now does the same. This was not checked against the live API, and the evaluation harness's token numbers rest on the same counter.
+- **A chain given its own callbacks does not report to its caller's.** The agent's counter does not see its document searches' model calls, so each search is a stage of its own, and nothing is counted twice (`test_usage.py`).
+- **The cost line and the agent's steps are not stored.** An answer read back after a reload shows neither; it keeps the "Tools used" row.
+- **Sign out everywhere leaves access tokens alone.** One already issued works until it expires, 30 minutes at most; each other browser is signed out at its next reload or renewal. A refresh does not revoke the token it was given, so two tabs renewing at once cannot sign each other out.
+- **Everyone signs in once more after the upgrade** (decision 4): refresh tokens from before this sprint are not recorded, so they are refused.
+- **The housekeeping command leaves two kinds of record alone**: one still being read, and one that failed (its owner sees it and can remove it). It refuses to run without a vector store, where every record would look empty.
+- **A component test was flaky in CI** (fixed in 7c5520e): `ChatLayout.test.tsx` mounts the workspace at every path, so a test that expected `/` after signing out sometimes saw the workspace open a thread there first.
+- **Two second-audit findings are closed**: N5 (item 4) and N10 (item 3, for the thread list; Settings still uses `POST /session/clear`). `AUDIT_REPORT_2.md` and the project report describe the system before this sprint and were not changed.
 
 ## How these sprints differ from the ones in SDLC_PLAN.md
 

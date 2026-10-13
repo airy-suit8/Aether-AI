@@ -71,6 +71,7 @@ const CALLS: Record<string, () => Promise<unknown>> = {
   login: () => api.login('someone', 'secret123'),
   refreshSession: () => api.refreshSession(),
   logout: () => api.logout(),
+  logoutEverywhere: () => api.logoutEverywhere(),
   getMe: () => api.getMe(),
   getSessions: () => api.getSessions(),
   getSessionMessages: () => api.getSessionMessages('session_1'),
@@ -84,6 +85,8 @@ const CALLS: Record<string, () => Promise<unknown>> = {
   deleteDocument: () => api.deleteDocument(7),
   deleteAllDocuments: () => api.deleteAllDocuments(),
   clearSession: () => api.clearSession('s1'),
+  renameSession: () => api.renameSession('session_1', 'Blade inspections'),
+  deleteSession: () => api.deleteSession('session_1'),
   getHealth: () => api.getHealth(),
 }
 

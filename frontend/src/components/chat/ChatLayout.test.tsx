@@ -21,6 +21,10 @@ vi.mock('../../services/api', async (importOriginal) => ({
   clearSession: vi.fn(),
   getSessions: vi.fn(),
   getSessionMessages: vi.fn(),
+  renameSession: vi.fn(),
+  deleteSession: vi.fn(),
+  logoutEverywhere: vi.fn(),
+  logout: vi.fn(async () => ({ message: 'Signed out' })),
 }))
 
 /** Shows the current path, so a test can read the URL the workspace navigated to. */
@@ -98,6 +102,43 @@ describe('ChatLayout', () => {
 
     // The composer is usable again
     expect((screen.getByPlaceholderText(/ask anything/i) as HTMLTextAreaElement).disabled).toBe(false)
+  })
+
+  it('shows what an answer cost in one line, with its stages on demand (Sprint 8, item 1)', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Every 90 days.')
+      onDone?.(done({
+        sources: [SOURCE], confidence: 0.81, turn_id: 4,
+        usage: {
+          seconds: 4.23, input_tokens: 1100, output_tokens: 140,
+          stages: [
+            { name: 'retrieve', seconds: 0.31, input_tokens: 0, output_tokens: 0 },
+            { name: 'summarize', seconds: 1.9, input_tokens: 600, output_tokens: 90 },
+            { name: 'answer', seconds: 2.0, input_tokens: 500, output_tokens: 50 },
+          ],
+        },
+      }))
+    })
+    renderChat()
+    const user = await ask('How often are the blades inspected?')
+
+    const line = await screen.findByText((_, el) => el?.tagName === 'SUMMARY' && el.textContent === '4.2 s, 1,240 tokens')
+    const stages = screen.getByRole('list', { name: 'Stages', hidden: true })
+    expect(stages.closest('details')?.open).toBe(false)
+    await user.click(line)
+    expect(stages.closest('details')?.open).toBe(true)
+    expect(within(stages).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Search0.3 sno model call', 'Summary1.9 s600 in, 90 out', 'Answer2.0 s500 in, 50 out',
+    ])
+  })
+
+  it('shows no cost line for an answer read back from the server', async () => {
+    vi.mocked(api.getSessionMessages).mockResolvedValue({
+      session_id: 'session_1', turns: [turn({ turn_id: 3, question: 'Earlier?', answer: 'Yes.', sources: [SOURCE] })],
+    })
+    renderChat()
+    expect(await screen.findByText('Yes.')).toBeTruthy()
+    expect(document.querySelector('.x-usage')).toBeNull()
   })
 
   it('shows a stream error with Retry, keeps no partial answer, and puts the question back in the composer', async () => {
@@ -359,6 +400,33 @@ describe('ChatLayout', () => {
     expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
   })
 
+  it('signs out everywhere from Settings, then here (Sprint 8, item 4)', async () => {
+    vi.mocked(api.logoutEverywhere).mockReset()
+    vi.mocked(api.logoutEverywhere).mockResolvedValue({ message: 'Signed out everywhere' })
+    const { addToast } = renderChat('/settings')
+    const user = userEvent.setup()
+    vi.mocked(api.logout).mockClear()
+    await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
+    expect(api.logoutEverywhere).toHaveBeenCalledTimes(1)
+    // Then the ordinary sign-out here. (Where it lands is App.test.tsx's to check: this harness
+    // mounts the workspace at every path, so at / it opens a thread again.)
+    await vi.waitFor(() => expect(api.logout).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.logoutEverywhere).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.logout).mock.invocationCallOrder[0])
+    expect(addToast).toHaveBeenCalledWith('Signed out on every device', 'info')
+  })
+
+  it('stays signed in, and says why, when signing out everywhere fails', async () => {
+    vi.mocked(api.logoutEverywhere).mockReset()
+    vi.mocked(api.logoutEverywhere).mockRejectedValue(new api.ApiError('Too many requests. Please wait 5 seconds and try again.', 429))
+    vi.mocked(api.logout).mockClear()
+    const { addToast } = renderChat('/settings')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Too many requests. Please wait 5 seconds and try again.', 'error'))
+    expect(where()).toBe('/settings')
+    expect(api.logout).not.toHaveBeenCalled()
+  })
+
   it('says "1 passage from 1 page", not "1 passages"', async () => {
     vi.mocked(api.uploadDocument).mockResolvedValue({ document_id: 11, filename: 'note.txt', status: 'processing', replaces: false, message: "Reading 'note.txt'." })
     vi.mocked(api.getDocument).mockReset()
@@ -569,6 +637,96 @@ describe('ChatLayout', () => {
     await ask('Hello')
     await vi.waitFor(() => expect(screen.getAllByText('Tools used')).toHaveLength(2))
     expect(screen.getByText('None: it answered directly')).toBeTruthy()
+  })
+
+  it('lists an agent answer\'s steps in order above it, in place of the tools row (Sprint 8, item 2)', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('The inspection is due in 12 days.')
+      onDone?.(done({
+        sources: [SOURCE], confidence: 0.8, tool_used: 'datetime + document_search', turn_id: 43,
+        steps: [
+          { tool: 'document_search', input: 'last blade inspection date', output: 'The last inspection was on 2026-07-24.' },
+          { tool: 'datetime', input: '90 days after 2026-07-24', output: '90 days after 2026-07-24 is 2026-10-22.' },
+        ],
+      }))
+    })
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: 'Agent' }))
+    await ask('When is the next inspection?')
+
+    const steps = await screen.findByRole('list', { name: 'Steps the agent took' })
+    expect(within(steps).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Document searchlast blade inspection dateThe last inspection was on 2026-07-24.',
+      'Date and time90 days after 2026-07-2490 days after 2026-07-24 is 2026-10-22.',
+    ])
+    expect(screen.queryByText('Tools used')).toBeNull()
+    // Above the answer: the list comes before the answer's text in the page
+    const answer = screen.getByText('The inspection is due in 12 days.')
+    expect(steps.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('renames a thread in place: Enter keeps the name, Escape gives up (Sprint 8, item 3)', async () => {
+    let titles = { session_1: 'How often?', session_2: 'Who inspects?' }
+    vi.mocked(api.getSessions).mockImplementation(async () => ({
+      sessions: Object.entries(titles).map(([session_id, title]) => session({ session_id, title })),
+    }))
+    vi.mocked(api.renameSession).mockReset()
+    vi.mocked(api.renameSession).mockImplementation(async (session_id, title) => {
+      titles = { ...titles, [session_id]: title }
+      return { session_id, title }
+    })
+    renderChat()
+    const user = userEvent.setup()
+    const threads = screen.getByRole('navigation', { name: 'Conversations' })
+    await user.click(await within(threads).findByRole('button', { name: 'Rename Who inspects?' }))
+
+    const field = within(threads).getByRole('textbox', { name: 'New name for Who inspects?' })
+    expect(document.activeElement).toBe(field)
+    await user.keyboard('{Escape}')
+    expect(api.renameSession).not.toHaveBeenCalled()
+    expect(within(threads).getByRole('link', { name: /Who inspects\?/ })).toBeTruthy()
+
+    await user.click(within(threads).getByRole('button', { name: 'Rename Who inspects?' }))
+    await user.clear(within(threads).getByRole('textbox', { name: 'New name for Who inspects?' }))
+    await user.type(within(threads).getByRole('textbox', { name: 'New name for Who inspects?' }), 'Field team{Enter}')
+    expect(api.renameSession).toHaveBeenCalledWith('session_2', 'Field team')
+    expect(await within(threads).findByRole('link', { name: /Field team/ })).toBeTruthy()
+    await vi.waitFor(() => expect(document.activeElement).toBe(within(threads).getByRole('button', { name: 'Rename Field team' })))
+    expect(where()).toBe('/chat/session_1')  // renaming does not open the thread
+  })
+
+  it('deletes a thread with two clicks, and starts a new one when it was the open one', async () => {
+    let listed = ['session_1', 'session_2']
+    vi.mocked(api.getSessions).mockImplementation(async () => ({
+      sessions: listed.map((session_id) => session({ session_id, title: `Thread ${session_id.slice(-1)}` })),
+    }))
+    vi.mocked(api.deleteSession).mockReset()
+    vi.mocked(api.deleteSession).mockImplementation(async (session_id) => {
+      listed = listed.filter((id) => id !== session_id)
+      return { message: 'Conversation deleted', session_id }
+    })
+    const { addToast } = renderChat()
+    const user = userEvent.setup()
+    const threads = screen.getByRole('navigation', { name: 'Conversations' })
+
+    // The first click only arms it
+    await user.click(await within(threads).findByRole('button', { name: 'Delete Thread 2' }))
+    expect(api.deleteSession).not.toHaveBeenCalled()
+    const confirm = within(threads).getByRole('button', { name: 'Confirm deleting Thread 2' })
+    expect(confirm.textContent).toBe('Delete?')
+    await user.click(confirm)
+    expect(api.deleteSession).toHaveBeenCalledWith('session_2')
+    await vi.waitFor(() => expect(within(threads).queryByRole('link', { name: /Thread 2/ })).toBeNull())
+    expect(addToast).toHaveBeenCalledWith('Conversation deleted', 'info')
+    expect(where()).toBe('/chat/session_1')
+
+    // The open thread: deleted, and a new one takes its place
+    await user.click(within(threads).getByRole('button', { name: 'Delete Thread 1' }))
+    await user.click(within(threads).getByRole('button', { name: 'Confirm deleting Thread 1' }))
+    expect(api.deleteSession).toHaveBeenLastCalledWith('session_1')
+    await vi.waitFor(() => expect(where()).toMatch(/^\/chat\/session_\d{6,}$/))
+    expect(within(threads).getByText('No conversations yet')).toBeTruthy()
   })
 
   it('shows no tools row for an answer that did not come from the agent', async () => {
