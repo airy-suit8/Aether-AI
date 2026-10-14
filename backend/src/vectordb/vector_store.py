@@ -7,19 +7,24 @@ restart in a new database while this store lives on in its own folder.
 
 The store opens on first use, so importing this module opens nothing. Reading, re-tagging and
 deleting chunks need no API key; adding and searching do (they embed text).
+
+The collection records the embedding model that made its vectors. Vectors from two models cannot
+be compared, so once the configured model differs, adding and searching stop with a
+ModelSetupError that says how to re-embed (python -m src.reembed); reading and deleting go on.
 """
 
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import chromadb
 import numpy as np
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-from src.core.config import settings
+from src.core.config import Settings, settings
 from src.embeddings import embedder
+from src.embeddings.embedder import ModelSetupError
 
 # How many recent query embeddings embed_query() keeps
 QUERY_VECTORS_KEPT = 32
@@ -28,10 +33,20 @@ QUERY_VECTORS_KEPT = 32
 # applies when the collection is created.
 COLLECTION_CONFIGURATION = {"hnsw": {"space": "cosine"}}
 
+# The collection's metadata key for the model that made its vectors
+EMBEDDING_KEY = "embedding"
+# A store made before the model was recorded was made by Gemini's default embedding model
+FIRST_EMBEDDING = Settings.model_fields["embedding_provider"].default + ":" + Settings.model_fields["embedding_model"].default
+
+# How many passages python -m src.reembed embeds in one request
+REEMBED_BATCH = 64
+
 
 class VectorStore:
     """Every tenant's chunks in one ChromaDB collection on disk, each tagged with its tenant_id."""
     collection_name = "aether_collection"
+    # Where src.reembed builds the new vectors before they replace the old ones
+    rebuild_name = "aether_collection_reembed"
 
     def __init__(self):
         self._client = None
@@ -53,15 +68,41 @@ class VectorStore:
         if self._collection is None:
             self._path().mkdir(parents=True, exist_ok=True)
             self._client = chromadb.PersistentClient(path=str(self._path()))
+            self._finish_interrupted_rebuild()
             self._collection = self._client.get_or_create_collection(
                 self.collection_name, configuration=COLLECTION_CONFIGURATION)
         return self._collection
 
+    def embedding_model(self) -> str:
+        """The embedding model that made the stored vectors ("provider:model"). An empty store has
+        no vectors to keep apart, so it takes the configured model, whatever it recorded before."""
+        coll = self.collection
+        recorded = (coll.metadata or {}).get(EMBEDDING_KEY)
+        if coll.count():
+            return recorded or FIRST_EMBEDDING
+        if recorded != settings.embedding_label():
+            coll.modify(metadata={EMBEDDING_KEY: settings.embedding_label()})
+        return settings.embedding_label()
+
+    def embedding_model_changed(self) -> Optional[str]:
+        """What to tell the person asking when the stored vectors are not the configured model's,
+        or None when they are."""
+        stored = self.embedding_model()
+        if stored == settings.embedding_label():
+            return None
+        return (f"The documents here were read with the embedding model {stored}, and the app is now set to "
+                f"use {settings.embedding_label()}. Their passages cannot be searched until they are read "
+                "again: stop the server and run python -m src.reembed --apply in backend/, or set the "
+                "embedding model back.")
+
     @property
     def chroma(self) -> Chroma:
-        """The same collection through LangChain, which embeds text: needs the API key."""
+        """The same collection through LangChain, which embeds text: needs the configured embedding
+        model, and stored vectors made by that model."""
         if self._chroma is None:
-            self.collection  # opens the client
+            changed = self.embedding_model_changed()  # opens the client
+            if changed:
+                raise ModelSetupError(changed)
             self._chroma = Chroma(
                 collection_name=self.collection_name,
                 embedding_function=embedder.get_embeddings(),
@@ -205,6 +246,49 @@ class VectorStore:
         self.collection.update(ids=ids, metadatas=[{"tenant_id": tenants[i], "user_id": None} for i in ids])
         for tenant in set(tenants.values()):
             self._changed(tenant)
+
+    # ── Another embedding model, for python -m src.reembed ────────────────────
+
+    def reembed(self, progress: Callable[[int, int], None] = lambda done, total: None) -> int:
+        """Embed every stored passage again with the configured embedding model, keeping its id, text
+        and metadata, and return how many there were. The new vectors are built in a collection of
+        their own and replace the old ones only once all are made, so a failure part-way leaves
+        the store as it was. progress(done, total) is called after each batch."""
+        coll = self.collection
+        res = coll.get(include=["documents", "metadatas"])
+        ids, texts, metas = res["ids"], res["documents"], res["metadatas"]
+        try:
+            self._client.delete_collection(self.rebuild_name)  # left by a run that failed
+        except Exception:
+            pass
+        rebuild = self._client.create_collection(self.rebuild_name, configuration=COLLECTION_CONFIGURATION,
+                                                 metadata={EMBEDDING_KEY: settings.embedding_label()})
+        embeddings = embedder.get_embeddings()
+        for start in range(0, len(ids), REEMBED_BATCH):
+            end = start + REEMBED_BATCH
+            rebuild.add(ids=ids[start:end], documents=texts[start:end], metadatas=metas[start:end],
+                        embeddings=embeddings.embed_documents(texts[start:end]))
+            progress(min(end, len(ids)), len(ids))
+        # Complete: from here on the rebuild is the store, even if this process stops before the rename
+        rebuild.modify(metadata={EMBEDDING_KEY: settings.embedding_label(), "complete": True})
+        self._client.delete_collection(self.collection_name)
+        self._finish_interrupted_rebuild()
+        self._collection = self._client.get_collection(self.collection_name)
+        self._chroma = None
+        self._query_vectors.clear()
+        for tenant in {meta.get("tenant_id") for meta in metas} - {None}:
+            self._changed(tenant)
+        return len(ids)
+
+    def _finish_interrupted_rebuild(self) -> None:
+        """A complete rebuild whose old collection is already deleted becomes the store. One that is
+        not complete is left for the next python -m src.reembed to replace."""
+        names = {getattr(c, "name", c) for c in self._client.list_collections()}
+        if self.rebuild_name not in names or self.collection_name in names:
+            return
+        rebuild = self._client.get_collection(self.rebuild_name)
+        if (rebuild.metadata or {}).get("complete"):
+            rebuild.modify(name=self.collection_name, metadata={EMBEDDING_KEY: rebuild.metadata[EMBEDDING_KEY]})
 
 
 # Module-level singleton — opens the store on first use

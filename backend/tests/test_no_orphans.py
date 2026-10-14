@@ -19,7 +19,7 @@ from fastapi.routing import APIRoute
 from starlette.routing import Mount
 
 from main import app
-from src.core.config import Settings
+from src.core.config import OLLAMA_EMBEDDING_MODEL, OLLAMA_LLM_MODEL, Settings
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = BACKEND_DIR / "src"
@@ -27,7 +27,7 @@ TESTS_DIR = BACKEND_DIR / "tests"
 CONFIG_FILE = SRC_DIR / "core" / "config.py"
 
 # Modules started directly rather than imported
-ENTRY_POINTS = {"main", "src.evaluation.evaluate", "src.evaluation.export_feedback", "src.maintenance"}
+ENTRY_POINTS = {"main", "src.evaluation.evaluate", "src.evaluation.export_feedback", "src.maintenance", "src.reembed"}
 
 
 def _module_name(path: Path) -> str:
@@ -147,7 +147,8 @@ def test_the_environment_check_notices_a_reader(tmp_path):
 
 def test_each_model_id_is_written_in_exactly_one_place():
     # Seam checklist: "Config: the model id appears in exactly one place"
-    for model_id in (Settings.model_fields["llm_model"].default, Settings.model_fields["embedding_model"].default):
+    for model_id in (Settings.model_fields["llm_model"].default, Settings.model_fields["embedding_model"].default,
+                     OLLAMA_LLM_MODEL, OLLAMA_EMBEDDING_MODEL):
         places = [(p.relative_to(BACKEND_DIR), n) for p in _app_files()
                   for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if model_id in line]
         assert places == [(CONFIG_FILE.relative_to(BACKEND_DIR), places[0][1])], (model_id, places)

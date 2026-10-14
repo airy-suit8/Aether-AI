@@ -53,6 +53,8 @@ def main() -> None:
         "AETHER_LOG_DIR": str(data / "logs"),
         "JWT_SECRET": "used-only-by-the-browser-journey",
         "GOOGLE_API_KEY": "",  # set but empty, so a real key in backend/.env is not read
+        "AETHER_LLM_PROVIDER": "gemini",  # the fakes stand in for the default providers' models
+        "AETHER_EMBEDDING_PROVIDER": "gemini",
         "AETHER_INVITE_CODE": "",
         "AETHER_ENVIRONMENT": "development",
         "AETHER_COOKIE_SECURE": "false",
