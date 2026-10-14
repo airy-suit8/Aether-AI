@@ -19,7 +19,7 @@ from src.db.database import (
     get_session_turns, get_sessions, get_share_token, get_shared_session, rename_session, share_session, stop_sharing,
     update_conversation_feedback,
 )
-from src.llm.llm_client import MODEL_BUSY, is_unavailable
+from src.llm.llm_client import MODEL_BUSY, is_unavailable, setup_problem
 from src.memory.conversation import clear_session
 from src.pipeline import rag
 
@@ -48,6 +48,10 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
             log_event(error_logger, "chat_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
             raise HTTPException(status_code=503, detail=MODEL_BUSY)
+        problem = setup_problem(e)
+        if problem:  # something the owner must fix on this computer, such as Ollama not running
+            log_event(error_logger, "chat_model_setup", level=logging.ERROR, user_id=user_id, mode=mode, cause=repr(e))
+            raise HTTPException(status_code=503, detail=problem)
         raise server_error(request, "chat_failed", user_id=user_id, mode=mode, session=chat_request.session_id)
 
     # The question's length is logged, never its text (S10); with what each stage cost (Sprint 8)
@@ -125,9 +129,13 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
                               confidence=event.get("confidence"), sources=len(event["sources"]), usage=event.get("usage"))
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
+            problem = setup_problem(e)
             if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
                 log_event(error_logger, "stream_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
                 message = MODEL_BUSY
+            elif problem:  # something the owner must fix on this computer, such as Ollama not running
+                log_event(error_logger, "stream_model_setup", level=logging.ERROR, user_id=user_id, mode=mode, cause=repr(e))
+                message = problem
             else:
                 log_event(error_logger, "stream_failed", level=logging.ERROR, exc_info=True,
                           user_id=user_id, mode=mode, session=session)

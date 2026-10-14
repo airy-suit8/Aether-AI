@@ -29,6 +29,11 @@ APP_VERSION = "2.0.0"
 # The value .env.example ships with: treated as unset.
 JWT_SECRET_PLACEHOLDER = "replace_with_a_long_random_string"
 
+# The models used through Ollama unless AETHER_LLM_MODEL or AETHER_EMBEDDING_MODEL names others.
+# The chat model can call tools (agent mode needs that) and fits in 6 GB of graphics memory.
+OLLAMA_LLM_MODEL = "qwen2.5:7b"
+OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
+
 
 class Settings(BaseSettings):
     """Application settings: environment variables win over backend/.env, which wins over these defaults."""
@@ -56,6 +61,17 @@ class Settings(BaseSettings):
     invite_code: str = ""
 
     # ── Models ────────────────────────────────────────────────────────────────
+    # Where each model runs: "gemini", Google's API (needs GOOGLE_API_KEY), or "ollama", a model
+    # on this computer served by Ollama (no key, no quota). With "ollama" the model ids below
+    # default to OLLAMA_LLM_MODEL and OLLAMA_EMBEDDING_MODEL. Passages embedded by one embedding
+    # model cannot be searched with another: after changing it, run python -m src.reembed.
+    llm_provider: Literal["gemini", "ollama"] = "gemini"
+    embedding_provider: Literal["gemini", "ollama"] = "gemini"
+    ollama_url: str = "http://127.0.0.1:11434"
+    # The context Ollama gives a chat model, in tokens. Ollama's own default (2048 or 4096,
+    # depending on its version) cuts a long prompt from the start, which would drop the
+    # instructions; this holds them, five passages and the remembered conversation.
+    ollama_num_ctx: int = 8192
     llm_model: str = "gemini-3.5-flash"
     llm_temperature: float = 0.3
     tool_temperature: float = 0.0          # the agent and the evaluation judge
@@ -117,6 +133,19 @@ class Settings(BaseSettings):
     log_dir: Path = BACKEND_DIR / "logs"
 
     _path_notes: List[str] = PrivateAttr(default_factory=list)
+
+    @model_validator(mode="after")
+    def _ollama_models_unless_named(self) -> "Settings":
+        """With a provider of "ollama", a model id that was not set is Ollama's default, not Gemini's."""
+        if self.llm_provider == "ollama" and "llm_model" not in self.model_fields_set:
+            self.llm_model = OLLAMA_LLM_MODEL
+        if self.embedding_provider == "ollama" and "embedding_model" not in self.model_fields_set:
+            self.embedding_model = OLLAMA_EMBEDDING_MODEL
+        return self
+
+    def embedding_label(self) -> str:
+        """The embedding model as the vector store records it: provider and model id."""
+        return f"{self.embedding_provider}:{self.embedding_model}"
 
     @model_validator(mode="after")
     def _keep_using_stores_at_the_old_default_paths(self) -> "Settings":
