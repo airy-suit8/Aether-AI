@@ -55,6 +55,8 @@ def main() -> None:
         "GOOGLE_API_KEY": "",  # set but empty, so a real key in backend/.env is not read
         "AETHER_LLM_PROVIDER": "gemini",  # the fakes stand in for the default providers' models
         "AETHER_EMBEDDING_PROVIDER": "gemini",
+        "AETHER_RERANK_MODEL": "",  # no model download: the search's own order
+        "AETHER_MODEL_DIR": str(data / "models"),
         "AETHER_INVITE_CODE": "",
         "AETHER_ENVIRONMENT": "development",
         "AETHER_COOKIE_SECURE": "false",

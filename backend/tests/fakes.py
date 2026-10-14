@@ -3,6 +3,8 @@ tests/fakes.py — Offline stand-ins for Gemini, so tests need no API key and ma
 
 HashingEmbeddings  — bag-of-words vectors: texts that share words get a high cosine similarity,
                      so retrieval behaves meaningfully (unlike random fake embeddings).
+FakeCrossEncoder   — stands in for the reranking model: scores a passage by the question's words
+                     it has, and much higher when it has a word the test prefers.
 ScriptedChatModel  — answers each pipeline prompt (rewrite, summarize, answer, agent) from the
                      prompt text itself, so an answer can be traced back to the retrieved chunk.
 """
@@ -39,6 +41,21 @@ class HashingEmbeddings(Embeddings):
 
     def embed_query(self, text: str) -> List[float]:
         return self._embed(text)
+
+
+class FakeCrossEncoder:
+    """The reranker's model, offline. Records each call as (question, passages)."""
+
+    def __init__(self, prefer: tuple = ()):
+        self.prefer = {w.lower() for w in prefer}
+        self.calls: List[tuple] = []
+
+    def rerank(self, query: str, documents: List[str], **kwargs: Any):
+        self.calls.append((query, list(documents)))
+        asked = set(re.findall(r"[a-z0-9.]+", query.lower()))
+        for doc in documents:
+            words = set(re.findall(r"[a-z0-9.]+", doc.lower()))
+            yield float(len(asked & words) + 10 * len(self.prefer & words))
 
 
 AGENT_PROMPT_MARKER = "You can chain multiple tools"

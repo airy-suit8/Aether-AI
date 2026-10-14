@@ -36,6 +36,7 @@ JWT_SECRET_PLACEHOLDER = "replace_with_a_long_random_string"
 # "Document scope"). It needs Ollama 0.40 or later.
 OLLAMA_LLM_MODEL = "qwen3.5:4b"
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
+GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
 
 
 class Settings(BaseSettings):
@@ -91,7 +92,7 @@ class Settings(BaseSettings):
     llm_max_attempts: int = 3
     llm_retry_seconds: float = 2.0
     llm_max_output_tokens: int = 8192
-    embedding_model: str = "models/gemini-embedding-001"
+    embedding_model: str = GEMINI_EMBEDDING_MODEL
     embedding_timeout_seconds: float = 60.0
     # The evaluation's judge (AETHER_JUDGE_MODEL). It must differ from llm_model, so it has no
     # default: an answer scored by the model that wrote it is not a measurement.
@@ -112,7 +113,15 @@ class Settings(BaseSettings):
     # How many passages either side of the two best hits are read with them, for the context
     # around a passage (Verba's "chunk window"). 0: none.
     chunk_window: int = 1
-    memory_max_turns: int = 10             # conversation turns remembered per session (Task 4)
+    # Reranking: a search finds rerank_candidates passages, then a cross-encoder model on this
+    # computer reads the question with each one and keeps the top_k that answer it best. kotaemon
+    # and bRAG rerank the same way, through Cohere's API. "" turns it off. The model (about 90 MB)
+    # is downloaded from Hugging Face the first time, into model_dir, and runs on the processor.
+    # On the owner's papers it brought the passage with a paper's own result into the five read,
+    # where search alone had left it sixth, behind a cited study's (SPRINT_PLAN.md, "Reranking").
+    rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    rerank_candidates: int = 20
+    memory_max_turns: int = 10            # conversation turns remembered per session (Task 4)
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
 
     # ── Server and limits ─────────────────────────────────────────────────────
@@ -139,9 +148,10 @@ class Settings(BaseSettings):
     rate_limit_upload: str = "10/minute"
     rate_limit_chat: str = "30/minute"
 
-    # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR) ──
+    # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR, AETHER_MODEL_DIR) ──
     db_path: Path = Field(default_factory=lambda: DATA_DIR / "aether.db")
     vector_store_dir: Path = Field(default_factory=lambda: DATA_DIR / "vector_store")
+    model_dir: Path = Field(default_factory=lambda: DATA_DIR / "models")  # models run by the app itself (reranking)
     log_dir: Path = BACKEND_DIR / "logs"
 
     _path_notes: List[str] = PrivateAttr(default_factory=list)

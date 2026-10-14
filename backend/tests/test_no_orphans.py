@@ -148,7 +148,7 @@ def test_the_environment_check_notices_a_reader(tmp_path):
 def test_each_model_id_is_written_in_exactly_one_place():
     # Seam checklist: "Config: the model id appears in exactly one place"
     for model_id in (Settings.model_fields["llm_model"].default, Settings.model_fields["embedding_model"].default,
-                     OLLAMA_LLM_MODEL, OLLAMA_EMBEDDING_MODEL):
+                     OLLAMA_LLM_MODEL, OLLAMA_EMBEDDING_MODEL, Settings.model_fields["rerank_model"].default):
         places = [(p.relative_to(BACKEND_DIR), n) for p in _app_files()
                   for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if model_id in line]
         assert places == [(CONFIG_FILE.relative_to(BACKEND_DIR), places[0][1])], (model_id, places)
