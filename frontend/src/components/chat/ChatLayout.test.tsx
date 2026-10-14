@@ -68,7 +68,7 @@ describe('ChatLayout', () => {
     vi.mocked(api.getSessions).mockReset()
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
     vi.mocked(api.getSessionMessages).mockReset()
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [] }))
   })
 
   it('offers Share only for a conversation the server has a turn of', async () => {
@@ -81,6 +81,7 @@ describe('ChatLayout', () => {
   it('opens the share sheet for a saved conversation, and closes it with its thread', async () => {
     vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({
       session_id: id,
+      grounded_at: 0.6,
       turns: id === 'session_1' ? [turn({ turn_id: 4, question: 'How often?', answer: 'Every 90 days.' })] : [],
     }))
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
@@ -101,6 +102,34 @@ describe('ChatLayout', () => {
     await screen.findByRole('dialog', { name: 'Share this conversation' })
     await act(async () => { screen.getAllByRole('button', { name: 'New thread' })[0].click() })
     expect(screen.queryByRole('dialog', { name: 'Share this conversation' })).toBeNull()
+  })
+
+  it('judges an answer by the line the server sends for the embedding model that searched', async () => {
+    // A local embedding model scores lower: the server sends 0.5 for it, 0.6 for Gemini's
+    vi.mocked(api.sendChatStream)
+      .mockImplementationOnce(async ({ onToken, onDone }) => {
+        onToken?.('Every 90 days.')
+        onDone?.(done({ sources: [SOURCE], confidence: 0.55, grounded_at: 0.5 }))
+      })
+      .mockImplementationOnce(async ({ onToken, onDone }) => {
+        onToken?.('Every 90 days.')
+        onDone?.(done({ sources: [SOURCE], confidence: 0.55, grounded_at: 0.6 }))
+      })
+    renderChat()
+    await ask('How often are the blades inspected?')
+    expect(await screen.findByRole('img', { name: 'Confidence: Grounded · 55%' })).toBeTruthy()
+    await ask('And by whom?')
+    expect(await screen.findByRole('img', { name: 'Confidence: Uncertain · 55%' })).toBeTruthy()
+  })
+
+  it('judges a saved conversation by the line that comes with it', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
+    vi.mocked(api.getSessionMessages).mockResolvedValue({
+      session_id: 'session_1', grounded_at: 0.5,
+      turns: [turn({ turn_id: 3, question: 'How often?', answer: 'Every 90 days.', confidence: 0.52, sources: [SOURCE] })],
+    })
+    renderChat('/chat/session_1')
+    expect(await screen.findByRole('img', { name: 'Confidence: Grounded · 52%' })).toBeTruthy()
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {
@@ -169,7 +198,7 @@ describe('ChatLayout', () => {
 
   it('shows no cost line for an answer read back from the server', async () => {
     vi.mocked(api.getSessionMessages).mockResolvedValue({
-      session_id: 'session_1', turns: [turn({ turn_id: 3, question: 'Earlier?', answer: 'Yes.', sources: [SOURCE] })],
+      session_id: 'session_1', grounded_at: 0.6, turns: [turn({ turn_id: 3, question: 'Earlier?', answer: 'Yes.', sources: [SOURCE] })],
     })
     renderChat()
     expect(await screen.findByText('Yes.')).toBeTruthy()
@@ -419,7 +448,7 @@ describe('ChatLayout', () => {
 
   it('opens the latest conversation at /chat, with its sources, and puts its id in the URL', async () => {
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_42', title: 'How often?', turns: 1 })] })
-    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', turns: [turn({
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', grounded_at: 0.6, turns: [turn({
       turn_id: 5, question: 'How often are the blades inspected?', answer: 'Every **90 days**.',
       sources: [SOURCE], confidence: 0.81, mode: 'original', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
     })] })
@@ -508,7 +537,7 @@ describe('ChatLayout', () => {
   })
 
   it('opens settings over the open conversation, and closing it returns to that conversation', async () => {
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [turn({
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [turn({
       turn_id: 3, question: 'Who logs the inspections?', answer: 'The Halcyon register.',
     })] }))
     renderChat('/chat/session_9')
@@ -542,7 +571,7 @@ describe('ChatLayout', () => {
       session({ session_id: 'session_2', title: 'Who logs the inspections?', updated_at: '2026-10-12T11:00:00' }),
       session({ session_id: 'session_1', title: 'How often are the blades inspected?', updated_at: '2026-10-11T09:30:00' }),
     ] })
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [turn({
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [turn({
       turn_id: id === 'session_2' ? 2 : 1, question: `The question of ${id}`, answer: `The answer of ${id}`,
     })] }))
     renderChat('/chat/session_1')
@@ -607,7 +636,7 @@ describe('ChatLayout', () => {
   it('shows the rating saved with a turn after a reload, and puts it back if a change fails', async () => {
     vi.mocked(api.sendFeedback).mockReset()
     vi.mocked(api.sendFeedback).mockRejectedValue(new Error('No such answer.'))
-    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_1', turns: [turn({
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_1', grounded_at: 0.6, turns: [turn({
       turn_id: 5, question: 'How often?', answer: 'Every 90 days.', sources: [SOURCE], feedback: -1,
     })] })
     const { addToast } = renderChat()

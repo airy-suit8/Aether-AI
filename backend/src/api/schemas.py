@@ -95,6 +95,9 @@ class ChatResponse(BaseModel):
     turn_id: Optional[int] = None    # the saved turn, for POST /feedback; null when none was saved (a refusal)
     usage: Optional[Usage] = None
     scope: Optional[Scope] = None    # what was searched; null when there was nothing to search
+    # The confidence at or above which an answer reads as grounded, for the embedding model in
+    # use: models spread their similarities differently (core/config.py, GROUNDED_LINES)
+    grounded_at: Optional[float] = None
 
 
 # ── The events of POST /chat/stream, one per `data:` line ─────────────────────
@@ -115,6 +118,7 @@ class DoneEvent(BaseModel):
     steps: Optional[list[AgentStep]] = None  # as in ChatResponse
     usage: Optional[Usage] = None    # as in ChatResponse
     scope: Optional[Scope] = None    # as in ChatResponse
+    grounded_at: Optional[float] = None  # as in ChatResponse
 
 
 class ErrorEvent(BaseModel):
@@ -297,6 +301,7 @@ class Turn(BaseModel):
 class SessionMessages(BaseModel):
     session_id: str
     turns: list[Turn]  # oldest first
+    grounded_at: float  # as in ChatResponse, for the embedding model in use now
 
 
 # ── Sharing a conversation ────────────────────────────────────────────────────
@@ -323,3 +328,4 @@ class SharedConversation(BaseModel):
     """A conversation as anyone with its link sees it. It says nothing about whose it is."""
     title: str
     turns: list[SharedTurn]  # oldest first
+    grounded_at: float  # as in ChatResponse

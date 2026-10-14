@@ -517,6 +517,8 @@ export interface components {
             turn_id?: number | null;
             usage?: components["schemas"]["Usage"] | null;
             scope?: components["schemas"]["Scope"] | null;
+            /** Grounded At */
+            grounded_at?: number | null;
         };
         /** DocumentDeleted */
         DocumentDeleted: {
@@ -631,6 +633,8 @@ export interface components {
             steps?: components["schemas"]["AgentStep"][] | null;
             usage?: components["schemas"]["Usage"] | null;
             scope?: components["schemas"]["Scope"] | null;
+            /** Grounded At */
+            grounded_at?: number | null;
         };
         /**
          * ErrorEvent
@@ -732,6 +736,8 @@ export interface components {
             session_id: string;
             /** Turns */
             turns: components["schemas"]["Turn"][];
+            /** Grounded At */
+            grounded_at: number;
         };
         /**
          * SessionRename
@@ -780,6 +786,8 @@ export interface components {
             title: string;
             /** Turns */
             turns: components["schemas"]["SharedTurn"][];
+            /** Grounded At */
+            grounded_at: number;
         };
         /**
          * SharedTurn

@@ -16,7 +16,7 @@ const THEMES: { value: Theme; label: string }[] = [
 const MODE_OF_STORED: Record<string, string> = { original: 'default' }
 
 /** A shared turn as the two messages a conversation shows. It has no turn id: it cannot be rated here. */
-function toMessages(turn: SharedTurn, index: number): ChatMessage[] {
+function toMessages(turn: SharedTurn, index: number, groundedAt: number): ChatMessage[] {
   return [
     { id: `q${index}`, role: 'user', content: turn.question, timestamp: turn.created_at },
     {
@@ -25,6 +25,7 @@ function toMessages(turn: SharedTurn, index: number): ChatMessage[] {
       content: turn.answer,
       sources: turn.sources || [],
       confidence: turn.confidence || 0,
+      groundedAt,
       toolUsed: turn.tool_used || null,
       mode: MODE_OF_STORED[turn.mode] || turn.mode,
       turnId: null,
@@ -88,7 +89,7 @@ export default function SharedPage({ theme = 'system', onTheme = () => {} }: Sha
               <h1 className="p-h2">
                 {state.conversation.title === state.conversation.turns[0]?.question ? 'A conversation shared with you' : state.conversation.title}
               </h1>
-              {state.conversation.turns.flatMap(toMessages).map((message) => (
+              {state.conversation.turns.flatMap((turn, i) => toMessages(turn, i, state.conversation.grounded_at)).map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
               <footer className="h-foot">

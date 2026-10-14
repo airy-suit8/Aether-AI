@@ -11,7 +11,7 @@ and the JWT secret when the app is built (main.create_app).
 """
 
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,6 +37,16 @@ JWT_SECRET_PLACEHOLDER = "replace_with_a_long_random_string"
 OLLAMA_LLM_MODEL = "qwen3.5:4b"
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
+
+# The average similarity of an answer's passages at which it reads as grounded (the ring under an
+# answer), for each embedding model, since each spreads its scores differently. Gemini: from the
+# first real run (answerable questions 0.67 to 0.80, an unrelated one 0.50), until Sprint 4
+# measures it. nomic-embed-text: on the owner's three documents, 15 Oct 2026 (SPRINT_PLAN.md,
+# "Reranking"): 20 full questions averaged 0.61 to 0.78 and 13 short ones ("which dataset",
+# "who are the authors") 0.40 to 0.67, while 6 unrelated ones ("what is the price of gold")
+# averaged 0.38 to 0.48; at 0.5, 28 of the 33 read as grounded and none of the 6.
+GROUNDED_LINES = {f"gemini:{GEMINI_EMBEDDING_MODEL}": 0.6, f"ollama:{OLLAMA_EMBEDDING_MODEL}": 0.5}
+GROUNDED_LINE_UNMEASURED = 0.6
 
 
 class Settings(BaseSettings):
@@ -103,7 +113,13 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 150
     top_k: int = 5
-    confidence_threshold: float = 0.3      # minimum best cosine similarity to answer (Task 7)
+    # The best passage's similarity under which a question is refused without asking the model
+    # (Task 7). Not raised for nomic-embed-text: short questions about the documents ("orcid ids",
+    # 0.42) scored below unrelated ones ("who is the prime minister of India", 0.52), so a line
+    # that refused those refused real questions too; the model says when the passages do not answer.
+    confidence_threshold: float = 0.3
+    # The line of GROUNDED_LINES for the embedding model, unless set (AETHER_GROUNDED_AT)
+    grounded_at: Optional[float] = None
     # What the answer is written from. "chunks": the numbered chunks themselves, cited as [1],
     # [2] (one model call; the sources are then the chunks cited). "summary": a model summary of
     # the retrieved chunks, then the answer from it (two calls). "chunks" is the default since
@@ -164,6 +180,12 @@ class Settings(BaseSettings):
         if self.embedding_provider == "ollama" and "embedding_model" not in self.model_fields_set:
             self.embedding_model = OLLAMA_EMBEDDING_MODEL
         return self
+
+    def grounded_line(self) -> float:
+        """The average similarity at which an answer reads as grounded, for the embedding model in use."""
+        if self.grounded_at is not None:
+            return self.grounded_at
+        return GROUNDED_LINES.get(self.embedding_label(), GROUNDED_LINE_UNMEASURED)
 
     def embedding_label(self) -> str:
         """The embedding model as the vector store records it: provider and model id."""

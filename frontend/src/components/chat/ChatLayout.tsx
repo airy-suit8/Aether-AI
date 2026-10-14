@@ -33,7 +33,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const MODE_OF_STORED: Record<string, string> = { original: 'default' }
 
 /** A saved turn as the two messages the conversation shows: the question and its answer. */
-function turnToMessages(turn: Turn): ChatMessage[] {
+function turnToMessages(turn: Turn, groundedAt: number): ChatMessage[] {
   return [
     { id: `q${turn.turn_id}`, role: 'user', content: turn.question, timestamp: turn.created_at },
     {
@@ -42,6 +42,7 @@ function turnToMessages(turn: Turn): ChatMessage[] {
       content: turn.answer,
       sources: turn.sources || [],
       confidence: turn.confidence || 0,
+      groundedAt,
       toolUsed: turn.tool_used || null,
       mode: MODE_OF_STORED[turn.mode] || turn.mode,
       turnId: turn.turn_id,
@@ -189,10 +190,10 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     let cancelled = false
     loadingRef.current = threadId
     getSessionMessages(threadId)
-      .then(({ turns }) => {
+      .then(({ turns, grounded_at }) => {
         // Not if the user has asked in it meanwhile: their question is already on screen
         if (cancelled || loadingRef.current !== threadId) return
-        setMessages(turns.flatMap(turnToMessages))
+        setMessages(turns.flatMap((turn) => turnToMessages(turn, grounded_at)))
       })
       .catch((e) => console.error('Failed to load the conversation:', e))
       .finally(() => {
@@ -278,6 +279,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
             content: fullText,
             sources: data.sources || [],
             confidence: data.confidence || 0,
+            groundedAt: data.grounded_at ?? null,
             toolUsed: data.tool_used || null,
             turnId: data.turn_id ?? null,  // what feedback names it by
             usage: data.usage ?? null,
@@ -293,6 +295,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           content: result.answer,
           sources: result.sources || [],
           confidence: result.confidence || 0,
+          groundedAt: result.grounded_at ?? null,
           toolUsed: result.tool_used || null,
           turnId: result.turn_id ?? null,
           usage: result.usage ?? null,

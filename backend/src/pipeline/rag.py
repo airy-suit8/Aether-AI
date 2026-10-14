@@ -83,6 +83,7 @@ class RAGResponse(BaseModel):
     usage: Optional[Dict[str, Any]] = Field(default=None, description="Seconds and tokens, in all and by stage")
     steps: Optional[List[Dict[str, str]]] = Field(default=None, description="Agent mode: each tool call, in order")
     scope: Optional[Dict[str, Any]] = Field(default=None, description="The documents searched, and how they were picked")
+    grounded_at: Optional[float] = Field(default=None, description="The confidence at which an answer reads as grounded")
 
 
 # ── What one question did (read by the evaluation harness) ───────────────────
@@ -313,7 +314,7 @@ def _report_injection_patterns(user_id: int, results: List[Dict[str, Any]]) -> N
 def _refusal(text: str, confidence: float, usage: Dict[str, Any], scope: Optional[Scope] = None) -> Iterator[Dict[str, Any]]:
     yield {"type": "token", "content": text}
     yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None, "usage": usage,
-           "scope": scope.described() if scope else None}
+           "scope": scope.described() if scope else None, "grounded_at": settings.grounded_line()}
 
 
 # ── The pipeline ──────────────────────────────────────────────────────────────
@@ -374,7 +375,7 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         turn_id = memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode],
                                   sources=sources)
     yield {"type": "done", "sources": sources, "confidence": confidence, "turn_id": turn_id,
-           "usage": _usage(trace, started), "scope": scope.described()}
+           "usage": _usage(trace, started), "scope": scope.described(), "grounded_at": settings.grounded_line()}
 
 
 def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, started: float,
@@ -402,14 +403,15 @@ def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, st
                               mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
            "tool_used": result["tool_used"], "steps": result["steps"], "turn_id": turn_id,
-           "usage": _usage(trace, started, searches), "scope": scope.described()}
+           "usage": _usage(trace, started, searches), "scope": scope.described(),
+           "grounded_at": settings.grounded_line()}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
            save_turn: bool = True, trace: Optional[Trace] = None,
            document_ids: Optional[List[int]] = None) -> Dict[str, Any]:
     """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "steps",
-    "turn_id", "usage", "scope"}."""
+    "turn_id", "usage", "scope", "grounded_at"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
     for event in events(user_id, question, session_id, mode, save_turn, trace, document_ids):
@@ -426,4 +428,5 @@ def answer(user_id: int, question: str, session_id: str = "default", mode: Mode 
         turn_id=done.get("turn_id"),
         usage=done.get("usage"),
         scope=done.get("scope"),
+        grounded_at=done.get("grounded_at"),
     ).model_dump()

@@ -81,6 +81,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         turn_id=result.get("turn_id"),
         usage=result.get("usage"),
         scope=result.get("scope"),
+        grounded_at=result.get("grounded_at"),
     )
 
 
@@ -187,7 +188,7 @@ def session_messages(session_id: str = SessionPath, user_id: int = Depends(get_c
     """Every turn of one of the user's conversations, oldest first, with the sources and tool
     shown with each answer. Empty for a session with no turns, or one that is not the user's."""
     turns = [{**t, "turn_id": t["id"]} for t in get_session_turns(user_id, session_id)]
-    return {"session_id": session_id, "turns": turns}
+    return {"session_id": session_id, "turns": turns, "grounded_at": settings.grounded_line()}
 
 
 # ── Renaming and deleting a conversation (Sprint 8, item 3) ──────────────────
@@ -256,4 +257,4 @@ def shared_conversation(token: str = Path(min_length=20, max_length=64, pattern=
     if not turns:
         raise HTTPException(status_code=404, detail=NOT_SHARED)
     log_event(request_logger, "shared_session_read", user_id=shared["user_id"], session=shared["session_id"])
-    return {"title": shared["title"], "turns": turns}
+    return {"title": shared["title"], "turns": turns, "grounded_at": settings.grounded_line()}

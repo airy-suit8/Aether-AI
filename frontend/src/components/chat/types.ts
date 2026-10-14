@@ -15,6 +15,8 @@ export interface AnswerMessage {
   content: string
   sources: Source[]
   confidence: number | null
+  /** The confidence at which it reads as grounded: the server's line for the embedding model that searched */
+  groundedAt?: number | null
   toolUsed: string | null
   mode: string
   turnId: number | null

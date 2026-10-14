@@ -1257,6 +1257,17 @@
                 "type": "null"
               }
             ]
+          },
+          "grounded_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounded At"
           }
         },
         "type": "object",
@@ -1588,6 +1599,17 @@
                 "type": "null"
               }
             ]
+          },
+          "grounded_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounded At"
           }
         },
         "type": "object",
@@ -1807,12 +1829,17 @@
             },
             "type": "array",
             "title": "Turns"
+          },
+          "grounded_at": {
+            "type": "number",
+            "title": "Grounded At"
           }
         },
         "type": "object",
         "required": [
           "session_id",
-          "turns"
+          "turns",
+          "grounded_at"
         ],
         "title": "SessionMessages"
       },
@@ -1920,12 +1947,17 @@
             },
             "type": "array",
             "title": "Turns"
+          },
+          "grounded_at": {
+            "type": "number",
+            "title": "Grounded At"
           }
         },
         "type": "object",
         "required": [
           "title",
-          "turns"
+          "turns",
+          "grounded_at"
         ],
         "title": "SharedConversation",
         "description": "A conversation as anyone with its link sees it. It says nothing about whose it is."

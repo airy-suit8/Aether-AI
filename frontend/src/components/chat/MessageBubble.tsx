@@ -8,14 +8,14 @@ import type { AgentStep, FeedbackValue, Scope, Source, Usage } from '../../servi
 import { remarkCitations } from './citations'
 import type { AnswerMessage, ChatMessage } from './types'
 
-// Similarity at or above this reads as grounded. From the first real run: relevant passages
-// scored 0.67 to 0.80 and an unrelated question 0.50. To be calibrated on a dataset in Sprint 4.
+// Similarity at or above this reads as grounded, when the server sends no line of its own with the
+// answer: each embedding model has its own (backend core/config.py, GROUNDED_LINES)
 const GROUNDED_AT = 0.6
 
 function clarityOf(message: AnswerMessage): { state: ClarityState; value: number } | null {
   if (!message.sources?.length) return message.toolUsed ? null : { state: 'refused', value: 0 }
   const value = Math.max(0, Math.min(1, message.confidence || 0))
-  return { state: value >= GROUNDED_AT ? 'grounded' : 'uncertain', value }
+  return { state: value >= (message.groundedAt ?? GROUNDED_AT) ? 'grounded' : 'uncertain', value }
 }
 
 /** Which source card is lit or pinned open, shared by an answer's citation chips and its cards. */
