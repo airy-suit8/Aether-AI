@@ -36,6 +36,7 @@ from src.core.config import APP_VERSION, settings
 from src.core.logging import error_logger, log_event, setup_logging, upload_logger
 from src.db.database import init_db
 from src.pipeline.documents import migrate_chunks_to_tenants, recover_interrupted_uploads
+from src.vectordb.vector_store import store
 
 
 @asynccontextmanager
@@ -55,6 +56,10 @@ async def lifespan(app: FastAPI):
     interrupted = recover_interrupted_uploads()
     if interrupted:
         error_logger.warning(f"{interrupted} uploads were still being read when the server stopped; they are marked failed.")
+    if store.exists():
+        changed = store.embedding_model_changed()
+        if changed:
+            error_logger.warning(changed)
     yield
 
 
