@@ -22,6 +22,7 @@ from src.core.logging import error_logger, log_event, upload_logger
 from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document
 from src.ingestion.loader import SUPPORTED_EXTENSIONS, clean_filename
 from src.llm.llm_client import is_unavailable, setup_problem
+from src.retrieval.scope import documents_of
 from src.pipeline.documents import (
     DocumentRemoved, accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
 )
@@ -239,8 +240,12 @@ def get_documents_detailed(request: Request, user_id: int = Depends(get_current_
     """List detailed information of all ingested documents."""
     try:
         docs = get_all_documents_detailed(user_id)
+        named = {d.id: d for d in documents_of(user_id)}  # titles and kinds, for "Search in"
     except Exception:
         raise server_error(request, "document_list_failed", user_id=user_id)
+    for doc in docs:
+        if doc["id"] in named:
+            doc["title"], doc["kind"] = named[doc["id"]].title or None, named[doc["id"]].kind
     return {"documents": docs, "count": len(docs)}
 
 

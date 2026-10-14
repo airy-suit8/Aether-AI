@@ -25,6 +25,9 @@ class ChatRequest(BaseModel):
     question: str
     session_id: str = SessionId
     mode: Literal["default", "hybrid", "agent", "langchain"] = "default"
+    # Search only these documents (ids from GET /documents/detailed): the composer's "Search in".
+    # Absent: every document, unless the question names some (retrieval/scope.py).
+    document_ids: Optional[list[int]] = Field(default=None, min_length=1, max_length=100)
 
 
 class Source(BaseModel):
@@ -35,6 +38,26 @@ class Source(BaseModel):
     score: float            # cosine similarity to the question, 0 to 1
     # With AETHER_ANSWER_FROM=chunks: the [n] the answer cites this passage by. Absent otherwise.
     number: Optional[int] = Field(default=None, exclude_if=lambda n: n is None)
+    # Which document it is, of what kind (pdf, docx, text, csv, xlsx, xls), and where the passage
+    # sits in it: passage 3 of passages 74. Absent for a passage stored before these were kept.
+    document_id: Optional[int] = Field(default=None, exclude_if=lambda n: n is None)
+    kind: Optional[str] = Field(default=None, exclude_if=lambda n: n is None)
+    passage: Optional[int] = Field(default=None, exclude_if=lambda n: n is None)
+    passages: Optional[int] = Field(default=None, exclude_if=lambda n: n is None)
+
+
+class ScopeDocument(BaseModel):
+    """A document an answer searched."""
+    document_id: int
+    name: str       # its title, when its first passage has one; else its file name
+    filename: str
+
+
+class Scope(BaseModel):
+    """The documents an answer searched, and how they were picked: "all" of them, "chosen" in the
+    request, "named" in the question, or the "kind" of file the question named."""
+    how: Literal["all", "chosen", "named", "kind"]
+    documents: list[ScopeDocument]
 
 
 class UsageStage(BaseModel):
@@ -71,6 +94,7 @@ class ChatResponse(BaseModel):
     steps: Optional[list[AgentStep]] = None  # agent mode: each tool call, in order; null in the other modes
     turn_id: Optional[int] = None    # the saved turn, for POST /feedback; null when none was saved (a refusal)
     usage: Optional[Usage] = None
+    scope: Optional[Scope] = None    # what was searched; null when there was nothing to search
 
 
 # ── The events of POST /chat/stream, one per `data:` line ─────────────────────
@@ -90,6 +114,7 @@ class DoneEvent(BaseModel):
     tool_used: Optional[str] = None  # agent mode only: which tools answered
     steps: Optional[list[AgentStep]] = None  # as in ChatResponse
     usage: Optional[Usage] = None    # as in ChatResponse
+    scope: Optional[Scope] = None    # as in ChatResponse
 
 
 class ErrorEvent(BaseModel):
@@ -148,6 +173,10 @@ class DocumentStatus(BaseModel):
 class DocumentRecord(DocumentStatus):
     """A document as the detailed list gives it: its status, and the hash that spots a duplicate upload."""
     file_hash: Optional[str] = None
+    # The first line of its first passage that reads like a title ("Classification of Maternal
+    # Health Risks using Boosting Technique"); null while it is read, or when it has none
+    title: Optional[str] = None
+    kind: Optional[str] = None  # pdf, docx, text, csv, xlsx or xls; null while it is read
 
 
 class DocumentList(BaseModel):

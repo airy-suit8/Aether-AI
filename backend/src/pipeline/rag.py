@@ -21,8 +21,16 @@ One pipeline, four modes:
   agent      the tool-calling agent (Task 11); its document search runs this pipeline in
              default mode without saving a turn
 Every mode shares the prompts, the memory, the confidence threshold and the source list.
-A refusal lists no sources. With settings.answer_from = "chunks" there is no summary step in
-any mode: the answer is written from the numbered chunks and its sources are the ones it cites.
+A refusal lists no sources. With settings.answer_from = "chunks" (the default) there is no
+summary step in any mode: the answer is written from the numbered chunks and its sources are the
+ones it cites.
+
+Every mode also shares the scope (retrieval/scope.py): the documents a question searches, chosen
+in the request or named in the question, and said in the done event ("scope"). What is searched
+is then widened where a question needs it: each document's own best passages for a question
+about several at once, each document's first passage for a question about its title or authors,
+and the passages either side of the best hits (settings.chunk_window). The added passages are
+context: they do not count towards the confidence.
 """
 
 import re
@@ -44,7 +52,10 @@ from src.memory.conversation import NO_HISTORY, memory
 from src.prompts.prompt_templates import (
     CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context, injection_patterns_in,
 )
+from src.retrieval import scope as scoping
 from src.retrieval.retriever import UserRetriever, retriever, rewrite_question
+from src.retrieval.scope import Scope
+from src.vectordb.vector_store import store
 
 Mode = Literal["default", "hybrid", "agent", "langchain"]
 
@@ -69,6 +80,7 @@ class RAGResponse(BaseModel):
     turn_id: Optional[int] = Field(default=None, description="The saved turn, for feedback; None when none was saved")
     usage: Optional[Dict[str, Any]] = Field(default=None, description="Seconds and tokens, in all and by stage")
     steps: Optional[List[Dict[str, str]]] = Field(default=None, description="Agent mode: each tool call, in order")
+    scope: Optional[Dict[str, Any]] = Field(default=None, description="The documents searched, and how they were picked")
 
 
 # ── What one question did (read by the evaluation harness) ───────────────────
@@ -121,18 +133,77 @@ def is_refusal(answer: str) -> bool:
 
 # ── The two retrieval-and-generation strategies ──────────────────────────────
 
-def retrieve(mode: Mode, user_id: int, query: str) -> List[Dict[str, Any]]:
-    """The user's top chunks for the query, as {"text", "meta", "score"} hits."""
-    tenant = get_tenant_id(user_id)  # their chunks' key in the vector store (S2)
+def _search(mode: Mode, tenant: str, query: str, k: int, document_ids: Optional[List[int]]) -> List[Dict[str, Any]]:
+    """One search of the mode's kind, as {"text", "meta", "score"} hits."""
     if mode == "langchain":
-        docs = UserRetriever(tenant=tenant, k=settings.top_k).invoke(query)
+        docs = UserRetriever(tenant=tenant, k=k, document_ids=document_ids).invoke(query)
         return [{"text": d.page_content, "meta": d.metadata, "score": d.metadata["score"]} for d in docs]
     if mode == "hybrid":
-        return retriever.search_hybrid(tenant, query, k=settings.top_k)
-    return retriever.search(tenant, query, k=settings.top_k)
+        return retriever.search_hybrid(tenant, query, k=k, document_ids=document_ids)
+    return retriever.search(tenant, query, k=k, document_ids=document_ids)
 
 
-def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace) -> Iterator[str]:
+def _key(hit: Dict[str, Any]) -> str:
+    return hit["meta"].get("chunk_id") or hit["text"]
+
+
+def _added(tenant: str, query: str, passages: List[tuple], hits: List[Dict[str, Any]], why: str) -> List[Dict[str, Any]]:
+    """Passages (text, meta) not among the hits yet, as hits marked added, scored against the query."""
+    have = {_key(h) for h in hits}
+    new, seen = [], set()
+    for text, meta in passages:
+        key = meta.get("chunk_id") or text
+        if key not in have and key not in seen:
+            seen.add(key)
+            new.append((text, meta))
+    scores = store.similarities(tenant, query, [m["chunk_id"] for _, m in new if m.get("chunk_id")]) if new else {}
+    return [{"text": text, "meta": meta, "score": scores.get(meta.get("chunk_id"), 0.0), "added": why} for text, meta in new]
+
+
+def _document_of(hit: Dict[str, Any]) -> str:
+    return str(hit["meta"].get("document_id", hit["meta"].get("source")))
+
+
+def _in_reading_order(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Each document's passages together, in the order they come in it; documents in the order of
+    their best passage. A model follows a paper better as it runs (Verba orders its context so)."""
+    best: Dict[str, float] = {}
+    for h in hits:
+        best[_document_of(h)] = max(best.get(_document_of(h), 0.0), h["score"])
+    return sorted(hits, key=lambda h: (-best[_document_of(h)], _document_of(h), h["meta"].get("chunk_index", 0)))
+
+
+def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None) -> List[Dict[str, Any]]:
+    """
+    The user's top chunks for the query, as {"text", "meta", "score"} hits, within the scope.
+    A question about several documents at once gets the best passages of each; one about a
+    document's title or authors also gets each document's first passage; the best two hits come
+    with the passages either side of them. Added passages carry "added" and are context only.
+    """
+    tenant = get_tenant_id(user_id)  # their chunks' key in the vector store (S2)
+    documents = scope.documents if scope else []
+    if scope and scope.each and 1 < len(documents) <= scoping.MAX_EACH:
+        per = max(2, -(-settings.top_k // len(documents)))
+        hits = [hit for doc in documents for hit in _search(mode, tenant, query, per, [doc.id])]
+    else:
+        hits = _search(mode, tenant, query, settings.top_k, scope.ids if scope else None)
+    if not hits:
+        return []
+    if scope and scope.front_matter and len(documents) <= scoping.MAX_EACH:
+        first = store.first_passages(tenant)
+        hits += _added(tenant, query, [first[d.id] for d in documents if d.id in first], hits, "start")
+    if settings.chunk_window:
+        around: List[tuple] = []
+        for hit in sorted((h for h in hits if "added" not in h), key=lambda h: -h["score"])[:2]:
+            meta = hit["meta"]
+            if meta.get("document_id") is not None and meta.get("chunk_index") is not None:
+                around += store.passages_around(tenant, meta["document_id"], meta["chunk_index"], settings.chunk_window)
+        hits += _added(tenant, query, around, hits, "neighbour")
+    return _in_reading_order(hits)
+
+
+def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace,
+              titles: Optional[Dict[int, str]] = None) -> Iterator[str]:
     """
     Stream the answer. settings.answer_from decides what it is written from: "summary" summarizes
     the chunks and answers from the summary (Task 3); "chunks" answers from the numbered chunks
@@ -142,11 +213,12 @@ def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_his
     if settings.answer_from == "chunks":
         with trace.stage("answer") as config:
             yield from (CITED_RAG_PROMPT | llm | StrOutputParser()).stream(
-                {"context": format_context(results, numbered=True), "question": question, "chat_history": chat_history},
+                {"context": format_context(results, numbered=True, titles=titles), "question": question,
+                 "chat_history": chat_history},
                 config=config)
         return
 
-    context = format_context(results)
+    context = format_context(results, titles=titles)
     if mode == "langchain":
         # Task 15: the whole step as one LCEL chain; the summary feeds the answer prompt
         chain = (
@@ -171,13 +243,19 @@ def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_his
 
 
 def _source(r: Dict[str, Any]) -> Dict[str, Any]:
-    snippet = r["text"]
-    return {
-        "source": r["meta"].get("source", "Unknown"),
-        "page": r["meta"].get("page", "?"),
+    snippet, meta = r["text"], r["meta"]
+    source = {
+        "source": meta.get("source", "Unknown"),
+        "page": meta.get("page", "?"),
         "snippet": snippet[:SNIPPET_CHARS] + ("…" if len(snippet) > SNIPPET_CHARS else ""),
         "score": round(r["score"], 3),
     }
+    # Which document, of what kind, and where the passage sits in it: files without pages
+    # (Word, text) are located by passage
+    for name, key in (("document_id", "document_id"), ("kind", "type"), ("passage", "chunk_index"), ("passages", "total_chunks")):
+        if meta.get(key) is not None:
+            source[name] = meta[key]
+    return source
 
 
 def _sources(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -222,24 +300,28 @@ def _report_injection_patterns(user_id: int, results: List[Dict[str, Any]]) -> N
                       source=r["meta"].get("source"), chunk_id=r["meta"].get("chunk_id"), patterns=found)
 
 
-def _refusal(text: str, confidence: float, usage: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+def _refusal(text: str, confidence: float, usage: Dict[str, Any], scope: Optional[Scope] = None) -> Iterator[Dict[str, Any]]:
     yield {"type": "token", "content": text}
-    yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None, "usage": usage}
+    yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None, "usage": usage,
+           "scope": scope.described() if scope else None}
 
 
 # ── The pipeline ──────────────────────────────────────────────────────────────
 
 def events(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
-           save_turn: bool = True, trace: Optional[Trace] = None) -> Iterator[Dict[str, Any]]:
+           save_turn: bool = True, trace: Optional[Trace] = None,
+           document_ids: Optional[List[int]] = None) -> Iterator[Dict[str, Any]]:
     """
     Answer a question as a stream of events (see the module docstring).
     save_turn=False is for the agent's document search, whose turn the agent saves itself.
     trace, when given, is filled in as the question runs (in agent mode, with one "agent" stage).
+    document_ids: the documents the request chose to search in; None leaves it to the question.
     """
     started = time.perf_counter()
     trace = trace or Trace()
     if mode == "agent":
-        yield from _agent_events(user_id, question, session_id, trace, started)
+        scope = scoping.resolve(user_id, question, document_ids)
+        yield from _agent_events(user_id, question, session_id, trace, started, scope)
         return
 
     # Contextualize the question for search if there's history (Task 4)
@@ -251,24 +333,27 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
     trace.search_query = search_query
 
     with trace.stage("retrieve"):
-        results = retrieve(mode, user_id, search_query)
+        scope = scoping.resolve(user_id, question, document_ids, also=search_query if search_query != question else "")
+        results = retrieve(mode, user_id, search_query, scope)
     trace.hits = results
     if not results:
         trace.refused = True
-        yield from _refusal(NO_DOCUMENTS, 0.0, _usage(trace, started))
+        yield from _refusal(NO_DOCUMENTS, 0.0, _usage(trace, started), scope)
         return
 
-    # Task 2: confidence is the average similarity; Task 7: refuse if even the best is too low
-    scores = [r["score"] for r in results]
+    # Task 2: confidence is the average similarity of the passages found (not of those added as
+    # context); Task 7: refuse if even the best is too low
+    scores = [r["score"] for r in results if "added" not in r]
     confidence = round(sum(scores) / len(scores), 3)
     if max(scores) < settings.confidence_threshold:
         trace.refused = True
-        yield from _refusal(NOT_FOUND, confidence, _usage(trace, started))
+        yield from _refusal(NOT_FOUND, confidence, _usage(trace, started), scope)
         return
     _report_injection_patterns(user_id, results)
 
+    titles = {d.id: d.title for d in scope.all_documents if d.title}
     answer_text = ""
-    for chunk in _generate(mode, results, question, history, trace):
+    for chunk in _generate(mode, results, question, history, trace, titles):
         answer_text += chunk
         yield {"type": "token", "content": chunk}
     trace.refused = is_refusal(answer_text)
@@ -279,10 +364,11 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         turn_id = memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode],
                                   sources=sources)
     yield {"type": "done", "sources": sources, "confidence": confidence, "turn_id": turn_id,
-           "usage": _usage(trace, started)}
+           "usage": _usage(trace, started), "scope": scope.described()}
 
 
-def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, started: float) -> Iterator[Dict[str, Any]]:
+def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, started: float,
+                  scope: Scope) -> Iterator[Dict[str, Any]]:
     """Run the agent, then send its answer word by word (it has no token stream of its own).
     The turn is saved after the last word, as in the other modes: a stream closed before then
     saves none (Sprint 6, decision 11).
@@ -291,7 +377,7 @@ def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, st
     searches: List[Dict[str, Any]] = []
 
     def search_documents(query: str) -> Dict[str, Any]:
-        found = answer(user_id, query, session_id=session_id, save_turn=False)
+        found = answer(user_id, query, session_id=session_id, save_turn=False, document_ids=scope.ids)
         searches.append({"name": "document_search", **{k: found["usage"][k] for k in ("seconds", "input_tokens", "output_tokens")}})
         return found
 
@@ -306,15 +392,17 @@ def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, st
                               mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
            "tool_used": result["tool_used"], "steps": result["steps"], "turn_id": turn_id,
-           "usage": _usage(trace, started, searches)}
+           "usage": _usage(trace, started, searches), "scope": scope.described()}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
-           save_turn: bool = True, trace: Optional[Trace] = None) -> Dict[str, Any]:
-    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "steps", "turn_id", "usage"}."""
+           save_turn: bool = True, trace: Optional[Trace] = None,
+           document_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+    """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "steps",
+    "turn_id", "usage", "scope"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
-    for event in events(user_id, question, session_id, mode, save_turn, trace):
+    for event in events(user_id, question, session_id, mode, save_turn, trace, document_ids):
         if event["type"] == "token":
             tokens.append(event["content"])
         elif event["type"] == "done":
@@ -327,4 +415,5 @@ def answer(user_id: int, question: str, session_id: str = "default", mode: Mode 
         steps=done.get("steps"),
         turn_id=done.get("turn_id"),
         usage=done.get("usage"),
+        scope=done.get("scope"),
     ).model_dump()

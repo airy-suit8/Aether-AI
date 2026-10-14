@@ -3,7 +3,8 @@ retrieval/retriever.py — find the chunks that answer a question.
 
   Retriever      dense (cosine) search, BM25 keyword search, and hybrid search that fuses the
                  two with Reciprocal Rank Fusion; every search is filtered by the user's tenant
-                 id (the key of their chunks in the vector store). Dense and
+                 id (the key of their chunks in the vector store), and by document ids when a
+                 question is about some documents only (retrieval/scope.py). Dense and
                  hybrid hits are scored by cosine similarity, from 0 to 1
   UserRetriever  the same dense search as a LangChain retriever object (BaseRetriever), used by
                  the "langchain" pipeline strategy (Task 14)
@@ -61,10 +62,11 @@ class Retriever:
         # tenant -> (store version, index, chunk texts, chunk metadata), most recently used last
         self._bm25: "OrderedDict[str, Tuple[int, Optional[_Bm25], List[str], List[Dict]]]" = OrderedDict()
 
-    def search(self, tenant: str, query: str, k: Optional[int] = None) -> List[Dict]:
-        """Search by text query, filtered by tenant."""
+    def search(self, tenant: str, query: str, k: Optional[int] = None,
+               document_ids: Optional[List[int]] = None) -> List[Dict]:
+        """Search by text query, filtered by tenant (and by document, when ids are given)."""
         k = k or settings.top_k
-        results = self.store.similarity_search(tenant, query, k=k)
+        results = self.store.similarity_search(tenant, query, k=k, document_ids=document_ids)
         formatted = []
         for doc, score in results:
             formatted.append({
@@ -87,13 +89,18 @@ class Retriever:
         self._bm25.move_to_end(tenant)
         return cached[1:]
 
-    def search_bm25(self, tenant: str, query: str, k: Optional[int] = None) -> List[Dict]:
-        """BM25 keyword search over the tenant's chunks. Scores are BM25 scores, not similarities."""
+    def search_bm25(self, tenant: str, query: str, k: Optional[int] = None,
+                    document_ids: Optional[List[int]] = None) -> List[Dict]:
+        """BM25 keyword search over the tenant's chunks (of the given documents only, when ids are
+        given). Scores are BM25 scores, not similarities."""
         k = k or settings.top_k
         index, docs, metas = self._bm25_index(tenant)
         if index is None:
             return []
         scores = index.get_scores(_tokens(query))
+        if document_ids is not None:
+            wanted = set(document_ids)
+            scores = np.where([meta.get("document_id") in wanted for meta in metas], scores, 0.0)
         top_indices = np.argsort(scores)[::-1][:k]
         # A score of 0 means the chunk shares no word with the query
         return [
@@ -101,7 +108,8 @@ class Retriever:
             for idx in top_indices if scores[idx] > 0
         ]
 
-    def search_hybrid(self, tenant: str, query: str, k: Optional[int] = None, rrf_k: int = 60) -> List[Dict]:
+    def search_hybrid(self, tenant: str, query: str, k: Optional[int] = None, rrf_k: int = 60,
+                      document_ids: Optional[List[int]] = None) -> List[Dict]:
         """
         Dense and BM25 search, merged with Reciprocal Rank Fusion:
         a chunk's fused value is 1 / (rrf_k + its dense rank) + 1 / (rrf_k + its BM25 rank).
@@ -111,8 +119,8 @@ class Retriever:
         every mode (R2).
         """
         k = k or settings.top_k
-        dense_results = self.search(tenant, query, k=k*2)
-        bm25_results = self.search_bm25(tenant, query, k=k*2)
+        dense_results = self.search(tenant, query, k=k*2, document_ids=document_ids)
+        bm25_results = self.search_bm25(tenant, query, k=k*2, document_ids=document_ids)
 
         hits, fused = {}, {}
         for ranked in (dense_results, bm25_results):
@@ -147,11 +155,12 @@ class UserRetriever(BaseRetriever):
 
     tenant: str
     k: int
+    document_ids: Optional[List[int]] = None  # some documents only (retrieval/scope.py)
 
     def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> List[Document]:
         return [
             Document(page_content=hit["text"], metadata={**hit["meta"], "score": hit["score"]})
-            for hit in retriever.search(self.tenant, query, k=self.k)
+            for hit in retriever.search(self.tenant, query, k=self.k, document_ids=self.document_ids)
         ]
 
 

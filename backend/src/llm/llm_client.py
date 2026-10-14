@@ -164,6 +164,8 @@ def get_llm(temperature: Optional[float] = None, model: Optional[str] = None) ->
             temperature=settings.llm_temperature if temperature is None else temperature,
             num_ctx=settings.ollama_num_ctx,
             num_predict=settings.llm_max_output_tokens,
+            reasoning=settings.ollama_think,
+            keep_alive=settings.ollama_keep_alive,
             client_kwargs={"timeout": settings.llm_timeout_seconds},
         )
     return GeminiChat(

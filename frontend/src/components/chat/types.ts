@@ -1,4 +1,4 @@
-import type { AgentStep, FeedbackValue, Source, Usage } from '../../services/api'
+import type { AgentStep, FeedbackValue, Scope, Source, Usage } from '../../services/api'
 
 /** A question as the conversation shows it. */
 export interface QuestionMessage {
@@ -23,6 +23,8 @@ export interface AnswerMessage {
   usage?: Usage | null
   /** An agent answer's tool calls, in order. Sent with a new answer, not kept with a saved one */
   steps?: AgentStep[] | null
+  /** The documents it searched, and why those. Sent with a new answer, not kept with a saved one */
+  scope?: Scope | null
   timestamp?: string
 }
 

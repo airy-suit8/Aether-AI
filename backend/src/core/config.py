@@ -30,8 +30,11 @@ APP_VERSION = "2.0.0"
 JWT_SECRET_PLACEHOLDER = "replace_with_a_long_random_string"
 
 # The models used through Ollama unless AETHER_LLM_MODEL or AETHER_EMBEDDING_MODEL names others.
-# The chat model can call tools (agent mode needs that) and fits in 6 GB of graphics memory.
-OLLAMA_LLM_MODEL = "qwen2.5:7b"
+# The chat model can call tools (agent mode needs that) and fits in 6 GB of graphics memory with
+# the context below. This one since 15 Oct 2026: on the owner's papers it answered 5 of 6
+# questions right, against 3 of 6 for Qwen 2.5 7B, which did not fit the GPU (SPRINT_PLAN.md,
+# "Document scope"). It needs Ollama 0.40 or later.
+OLLAMA_LLM_MODEL = "qwen3.5:4b"
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 
 
@@ -72,6 +75,11 @@ class Settings(BaseSettings):
     # depending on its version) cuts a long prompt from the start, which would drop the
     # instructions; this holds them, five passages and the remembered conversation.
     ollama_num_ctx: int = 8192
+    # A model that can think before it answers (qwen3.5, gemma4) does not, unless this is set:
+    # thinking made an answer several times slower on a laptop. How long Ollama keeps the model
+    # loaded after a question: loading it again takes seconds.
+    ollama_think: bool = False
+    ollama_keep_alive: str = "30m"
     llm_model: str = "gemini-3.5-flash"
     llm_temperature: float = 0.3
     tool_temperature: float = 0.0          # the agent and the evaluation judge
@@ -95,11 +103,15 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     top_k: int = 5
     confidence_threshold: float = 0.3      # minimum best cosine similarity to answer (Task 7)
-    # What the answer is written from. "summary": a model summary of the retrieved chunks (two
-    # model calls). "chunks": the numbered chunks themselves, cited as [1], [2] (one call; the
-    # sources are then the chunks cited). The default changes only when the evaluation shows
-    # which is better (R4, R5).
-    answer_from: Literal["summary", "chunks"] = "summary"
+    # What the answer is written from. "chunks": the numbered chunks themselves, cited as [1],
+    # [2] (one model call; the sources are then the chunks cited). "summary": a model summary of
+    # the retrieved chunks, then the answer from it (two calls). "chunks" is the default since
+    # 15 Oct 2026: on the owner's papers the summary dropped exact details (ORCID ids) and doubled
+    # the time on a local model (R4, R5; SPRINT_PLAN.md, "Document scope").
+    answer_from: Literal["summary", "chunks"] = "chunks"
+    # How many passages either side of the two best hits are read with them, for the context
+    # around a passage (Verba's "chunk window"). 0: none.
+    chunk_window: int = 1
     memory_max_turns: int = 10             # conversation turns remembered per session (Task 4)
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
 

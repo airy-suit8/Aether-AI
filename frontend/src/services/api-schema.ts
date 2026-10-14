@@ -490,6 +490,8 @@ export interface components {
              * @enum {string}
              */
             mode?: "default" | "hybrid" | "agent" | "langchain";
+            /** Document Ids */
+            document_ids?: number[] | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -514,6 +516,7 @@ export interface components {
             /** Turn Id */
             turn_id?: number | null;
             usage?: components["schemas"]["Usage"] | null;
+            scope?: components["schemas"]["Scope"] | null;
         };
         /** DocumentDeleted */
         DocumentDeleted: {
@@ -564,6 +567,10 @@ export interface components {
             uploaded_at: string;
             /** File Hash */
             file_hash?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Kind */
+            kind?: string | null;
         };
         /**
          * DocumentStatus
@@ -623,6 +630,7 @@ export interface components {
             /** Steps */
             steps?: components["schemas"]["AgentStep"][] | null;
             usage?: components["schemas"]["Usage"] | null;
+            scope?: components["schemas"]["Scope"] | null;
         };
         /**
          * ErrorEvent
@@ -679,6 +687,32 @@ export interface components {
         Message: {
             /** Message */
             message: string;
+        };
+        /**
+         * Scope
+         * @description The documents an answer searched, and how they were picked: "all" of them, "chosen" in the
+         *     request, "named" in the question, or the "kind" of file the question named.
+         */
+        Scope: {
+            /**
+             * How
+             * @enum {string}
+             */
+            how: "all" | "chosen" | "named" | "kind";
+            /** Documents */
+            documents: components["schemas"]["ScopeDocument"][];
+        };
+        /**
+         * ScopeDocument
+         * @description A document an answer searched.
+         */
+        ScopeDocument: {
+            /** Document Id */
+            document_id: number;
+            /** Name */
+            name: string;
+            /** Filename */
+            filename: string;
         };
         /** SessionCleared */
         SessionCleared: {
@@ -783,6 +817,14 @@ export interface components {
             score: number;
             /** Number */
             number?: number | null;
+            /** Document Id */
+            document_id?: number | null;
+            /** Kind */
+            kind?: string | null;
+            /** Passage */
+            passage?: number | null;
+            /** Passages */
+            passages?: number | null;
         };
         /** Token */
         Token: {

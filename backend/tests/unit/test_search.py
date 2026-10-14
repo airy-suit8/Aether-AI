@@ -187,7 +187,7 @@ def test_a_chunk_only_the_keyword_search_finds_gets_its_similarity(user, monkeyp
     question = "When are impeller seals on centrifugal pumps replaced?"
     dense_all = {h["meta"]["chunk_id"]: h["score"] for h in retriever.retriever.search(user, question, k=4)}
     fresh = retriever.Retriever(vector_store.store)
-    monkeypatch.setattr(fresh, "search", lambda tenant, query, k: [])  # dense search finds nothing
+    monkeypatch.setattr(fresh, "search", lambda tenant, query, k, document_ids=None: [])  # dense search finds nothing
     hits = fresh.search_hybrid(user, question, k=4)
     assert _sources(hits)[0] == "pumps.txt"
     for hit in hits:
@@ -276,8 +276,8 @@ def fused(monkeypatch):
     monkeypatch.setattr(vector_store.store, "similarities", lambda tenant, query, chunk_ids: {c: 0.33 for c in chunk_ids})
 
     def run(dense, bm25, k=5, rrf_k=60):
-        monkeypatch.setattr(store, "search", lambda tenant, query, k: dense[:k])
-        monkeypatch.setattr(store, "search_bm25", lambda tenant, query, k: bm25[:k])
+        monkeypatch.setattr(store, "search", lambda tenant, query, k, document_ids=None: dense[:k])
+        monkeypatch.setattr(store, "search_bm25", lambda tenant, query, k, document_ids=None: bm25[:k])
         return store.search_hybrid(1, "q", k=k, rrf_k=rrf_k)
 
     return run

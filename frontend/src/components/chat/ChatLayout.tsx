@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useMatch, useNavigate } from 'react-router'
 import Sidebar from './Sidebar'
 import ChatWindow from './ChatWindow'
@@ -90,9 +90,10 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   const [composerText, setComposerText] = useState<{ text: string } | null>(null)
   const isLoading = pending !== null && pending.threadId === sessionId
 
-  // One answer mode at a time, plus whether to stream
+  // One answer mode at a time, plus whether to stream, and which documents to search in (null: all)
   const [mode, setMode] = useState<Mode>('default')
   const [streamingMode, setStreamingMode] = useState(true)
+  const [searchIn, setSearchIn] = useState<number[] | null>(null)
 
   // Documents, and the conversations listed in the rail
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
@@ -130,6 +131,16 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
       console.error('Failed to load documents:', e)
     }
   }, [])
+
+  // "Search in" offers the documents that are ready, and forgets one that is removed
+  const readyDocuments = useMemo(() => documents.filter((d) => d.status === 'ready'), [documents])
+  useEffect(() => {
+    setSearchIn((chosen) => {
+      if (!chosen) return chosen
+      const kept = chosen.filter((id) => readyDocuments.some((d) => d.id === id))
+      return kept.length === chosen.length ? chosen : kept.length ? kept : null
+    })
+  }, [readyDocuments])
 
   // The user's conversations, most recently used first (title and date)
   const refreshThreads = useCallback(async () => {
@@ -255,6 +266,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           question,
           sessionId: thread,
           mode,
+          documentIds: searchIn,
           signal: controller.signal,
           onToken: (token) => {
             fullText += token
@@ -270,12 +282,13 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
             turnId: data.turn_id ?? null,  // what feedback names it by
             usage: data.usage ?? null,
             steps: data.steps ?? null,
+            scope: data.scope ?? null,
           }),
           // A server error event, a dropped connection, a missing done event, or Stop
           onError: failed,
         })
       } else {
-        const result = await sendChat({ question, sessionId: thread, mode, signal: controller.signal })
+        const result = await sendChat({ question, sessionId: thread, mode, documentIds: searchIn, signal: controller.signal })
         answered({
           content: result.answer,
           sources: result.sources || [],
@@ -284,6 +297,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           turnId: result.turn_id ?? null,
           usage: result.usage ?? null,
           steps: result.steps ?? null,
+          scope: result.scope ?? null,
         })
       }
     } catch (err) {
@@ -297,7 +311,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         setStreamingPhase('')
       }
     }
-  }, [sessionId, pending, mode, streamingMode, askedIn, refreshThreads])
+  }, [sessionId, pending, mode, streamingMode, searchIn, askedIn, refreshThreads])
 
   // Stop the reply: close its stream. Only a streamed reply can be stopped (see ChatComposer).
   const handleStop = useCallback(() => {
@@ -547,6 +561,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           isLoading={isLoading}
           mode={mode}
           onMode={setMode}
+          documents={readyDocuments}
+          searchIn={searchIn}
+          onSearchIn={setSearchIn}
           streaming={streamingMode}
           onStreaming={setStreamingMode}
           onUpload={handleUpload}

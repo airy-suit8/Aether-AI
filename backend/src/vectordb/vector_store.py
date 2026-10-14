@@ -140,10 +140,20 @@ class VectorStore:
                 self._query_vectors.popitem(last=False)
         return vector
 
-    def similarity_search(self, tenant: str, query: str, k: int) -> List[Tuple[Document, float]]:
-        """The k chunks of one tenant closest to the query, with cosine similarity scores from 0 to 1."""
+    @staticmethod
+    def _where(tenant: str, document_ids: Optional[List[int]] = None) -> Dict:
+        """A Chroma filter for one tenant's chunks, of some of its documents when ids are given."""
+        if document_ids is None:
+            return {"tenant_id": tenant}
+        return {"$and": [{"tenant_id": tenant}, {"document_id": {"$in": list(document_ids)}}]}
+
+    def similarity_search(self, tenant: str, query: str, k: int,
+                          document_ids: Optional[List[int]] = None) -> List[Tuple[Document, float]]:
+        """The k chunks of one tenant closest to the query, with cosine similarity scores from 0 to 1;
+        only of the documents named by document_ids, when given."""
         vector = self.embed_query(query)
-        found = self.chroma.similarity_search_by_vector_with_relevance_scores(vector, k=k, filter={"tenant_id": tenant})
+        where = self._where(tenant, document_ids)
+        found = self.chroma.similarity_search_by_vector_with_relevance_scores(vector, k=k, filter=where)
         # Chroma returns cosine distance. Rounding can put an exact match just above 1, and an
         # opposite vector is below 0; both are clamped so a score is always a share of 1.
         hits = [(doc, max(0.0, min(1.0, 1.0 - distance))) for doc, distance in found]
@@ -151,13 +161,13 @@ class VectorStore:
         # at all, when the store holds many identical vectors (second audit, N4). Then the
         # tenant's chunks are compared one by one, which misses nothing. A tenant who simply has
         # fewer than k chunks costs one count and no more.
-        if len(hits) < k and len(self.collection.get(where={"tenant_id": tenant}, include=[])["ids"]) > len(hits):
-            return self._exact_search(tenant, vector, k)
+        if len(hits) < k and len(self.collection.get(where=where, include=[])["ids"]) > len(hits):
+            return self._exact_search(where, vector, k)
         return hits
 
-    def _exact_search(self, tenant: str, vector: List[float], k: int) -> List[Tuple[Document, float]]:
-        """The k chunks of one tenant closest to the vector, by comparing it with every one of them."""
-        res = self.collection.get(where={"tenant_id": tenant}, include=["documents", "metadatas", "embeddings"])
+    def _exact_search(self, where: Dict, vector: List[float], k: int) -> List[Tuple[Document, float]]:
+        """The k chunks the filter selects closest to the vector, by comparing it with every one of them."""
+        res = self.collection.get(where=where, include=["documents", "metadatas", "embeddings"])
         if not res["ids"]:
             return []
         chunks = np.asarray(res["embeddings"], dtype=np.float32)
@@ -186,6 +196,25 @@ class VectorStore:
             cosine = float(query_vector @ vector) / norms if norms else 0.0
             scores[meta["chunk_id"]] = max(0.0, min(1.0, cosine))
         return scores
+
+    def first_passages(self, tenant: str) -> Dict[int, Tuple[str, Dict]]:
+        """The first passage of each of a tenant's documents, by document id: where a paper or a
+        letter says what it is and who wrote it. Passages are numbered from 1 (chunk_index)."""
+        res = self.collection.get(where={"$and": [{"tenant_id": tenant}, {"chunk_index": 1}]},
+                                  include=["documents", "metadatas"])
+        return {meta["document_id"]: (text, meta) for text, meta in zip(res["documents"], res["metadatas"])
+                if meta.get("document_id") is not None}
+
+    def passages_around(self, tenant: str, document_id: int, chunk_index: int, window: int) -> List[Tuple[str, Dict]]:
+        """The passages within `window` places of one passage in its document, the passage itself
+        not included, in document order."""
+        indexes = [i for i in range(chunk_index - window, chunk_index + window + 1) if i >= 1 and i != chunk_index]
+        if not indexes:
+            return []
+        res = self.collection.get(where={"$and": [{"tenant_id": tenant}, {"document_id": document_id},
+                                                  {"chunk_index": {"$in": indexes}}]},
+                                  include=["documents", "metadatas"])
+        return sorted(zip(res["documents"], res["metadatas"]), key=lambda tm: tm[1].get("chunk_index", 0))
 
     def get_user_chunks(self, tenant: str) -> Tuple[List[str], List[Dict]]:
         """Every chunk text and its metadata for one tenant."""

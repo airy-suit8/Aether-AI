@@ -84,11 +84,11 @@ Instead of Gemini, the app can use models that run on this computer through [Oll
 1. Install Ollama, then download the two default models:
 
    ```bat
-   ollama pull qwen2.5:7b
+   ollama pull qwen3.5:4b
    ollama pull nomic-embed-text
    ```
 
-   `qwen2.5:7b` (4.7 GB) writes the answers and can use tools, which agent mode needs. `nomic-embed-text` (0.3 GB) turns passages and questions into vectors for the search.
+   `qwen3.5:4b` (3.4 GB; needs a recent Ollama, 0.40 or later) writes the answers and can use tools, which agent mode needs. It can also think before it answers; the app turns that off (`AETHER_OLLAMA_THINK=false`), since thinking made answers several times slower. On an older Ollama, `qwen2.5:7b` (4.7 GB) works too. `nomic-embed-text` (0.3 GB) turns passages and questions into vectors for the search.
 
 2. Add two lines to `backend\.env`:
 
@@ -112,6 +112,15 @@ Instead of Gemini, the app can use models that run on this computer through [Oll
 4. Start the app as usual. Ollama must be running: if it is not, a question is answered with "Ollama is not running", and a model that is not installed is named with the command that installs it.
 
 The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`) was chosen with Gemini's embeddings, and another embedding model scores passages differently, so measure it again for the model you use (see "Measuring answer quality").
+
+## Asking about particular documents
+
+A question searches every document in your library unless you say otherwise. There are two ways:
+
+- **Search in**, beside the answer mode (shown once you have two documents): choose *All documents*, every file of one kind (*Every PDF*, *Every Word file*), or tick the documents to search. Documents are listed by their title, read from their first page, with the file name under it. The choice holds for the questions that follow.
+- **Name it in the question.** By the first words of its title, when the question calls it a document or asks who wrote it ("Who are the authors of Classification of…?", "the Automated Post-Disaster paper"); by an author on its first page ("the paper by Hardik Kumar"); by the number or two words of its file name ("the 13003 pdf", "the Recos letter"); or by its kind ("in the PDF", "the Word files"). A question about a subject is not narrowed because a title shares its words.
+
+Under each answer that did not search everything, a line says what it searched and why, so a wrong guess shows. A question about a document's title, authors, affiliations, e-mail addresses or ORCID ids reads each document's first passage, where a paper names its own authors (not its reference list); one about "both" or "each" document reads each one's best passages. Each source says where it is: the page of a PDF, or "passage 3 of 42" in a file without pages.
 
 ## Run the tests
 
