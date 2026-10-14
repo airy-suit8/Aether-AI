@@ -2,7 +2,7 @@
 
 A multi-user document question-answering assistant (retrieval-augmented generation). You upload documents, ask questions, and get answers with citations to the passages they came from.
 
-- **Backend** (`backend/`): FastAPI, LangChain, Google Gemini (chat and embeddings), ChromaDB (vectors), SQLite (users, documents, conversations), JWT login.
+- **Backend** (`backend/`): FastAPI, LangChain, Google Gemini or models on your own computer through Ollama (chat and embeddings), ChromaDB (vectors), SQLite (users, documents, conversations), JWT login.
 - **Frontend** (`frontend/`): React 19 + Vite, in TypeScript. **This is the real user interface.** There is no other UI; the old page in `backend/static/` has been removed.
 
 Project status and history: [AUDIT_REPORT.md](AUDIT_REPORT.md) lists what was found in the October 2026 audit, [SPRINT_PLAN.md](SPRINT_PLAN.md) is the plan being worked through, and [SDLC_PLAN.md](SDLC_PLAN.md) is an older log kept for history.
@@ -11,7 +11,7 @@ Project status and history: [AUDIT_REPORT.md](AUDIT_REPORT.md) lists what was fo
 
 - **Python 3.12** (from python.org; on Windows the `py` launcher is installed with it)
 - **Node.js 20.19+ or 22.12+** (includes `npm`)
-- A **Google Gemini API key** for real answers (tests do not need one)
+- A **Google Gemini API key** for real answers, or **Ollama** to run the models on your own computer (see "Models on your own computer"; tests need neither)
 
 ## Setup on Windows (once)
 
@@ -76,6 +76,42 @@ cd ..\backend
 ```
 
 Rebuild and restart the backend after changing frontend code. Without a build, `http://localhost:8000/` shows a page explaining these two options.
+
+## Models on your own computer (Ollama)
+
+Instead of Gemini, the app can use models that run on this computer through [Ollama](https://ollama.com): no API key and no usage limits, and with both models local your documents never leave the machine. Answers take longer than with Gemini on most computers; how long depends on the graphics card.
+
+1. Install Ollama, then download the two default models:
+
+   ```bat
+   ollama pull qwen2.5:7b
+   ollama pull nomic-embed-text
+   ```
+
+   `qwen2.5:7b` (4.7 GB) writes the answers and can use tools, which agent mode needs. `nomic-embed-text` (0.3 GB) turns passages and questions into vectors for the search.
+
+2. Add two lines to `backend\.env`:
+
+   ```
+   AETHER_LLM_PROVIDER=ollama
+   AETHER_EMBEDDING_PROVIDER=ollama
+   ```
+
+   `GOOGLE_API_KEY` is then not used and can stay empty. For another model, add `AETHER_LLM_MODEL=` or `AETHER_EMBEDDING_MODEL=` with its name in Ollama, for example `AETHER_LLM_MODEL=gemma3:4b`. A model that cannot use tools still answers in Default, Hybrid and LangChain modes; in agent mode the app says it cannot. Either line can also be used alone: a local chat model with Gemini's embeddings keeps your documents as they are, but still needs the key.
+
+3. If you already have documents, read them again with the new embedding model, once, with the backend stopped:
+
+   ```bat
+   cd backend
+   ..\.venv\Scripts\python -m src.reembed
+   ..\.venv\Scripts\python -m src.reembed --apply
+   ```
+
+   Vectors made by two embedding models cannot be compared, so until this has run the app does not search or add documents, and says why. The first command only reports; `--apply` embeds every stored passage again and keeps its text and where it came from, so nothing has to be uploaded again. If it stops part-way, the store is left as it was. Going back to Gemini needs the same step, and spends Gemini quota on every passage.
+
+4. Start the app as usual. Ollama must be running: if it is not, a question is answered with "Ollama is not running", and a model that is not installed is named with the command that installs it.
+
+The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`) was chosen with Gemini's embeddings, and another embedding model scores passages differently, so measure it again for the model you use (see "Measuring answer quality").
 
 ## Run the tests
 
@@ -170,6 +206,7 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 | `agents/` | `agent.py` and `tools.py`: the tool-calling agent, the calculator and the date-time tool |
 | `evaluation/` | `evaluate.py`: measures the pipeline on labelled questions (see "Measuring answer quality" below); `export_feedback.py`: answers rated "not helpful", as questions to label |
 | `maintenance.py` | Reports chunks and document records that do not match, and removes them when asked (see "Where data is kept") |
+| `reembed.py` | Embeds every stored passage again after the embedding model changes (see "Models on your own computer") |
 
 **Import style.** Code imports by absolute path from `backend/`, for example `from src.core.config import settings`. Run every command from the `backend` folder: `python -m uvicorn main:app`, `python -m pytest` and `python -m src.evaluation.evaluate` all put that folder on Python's path (`pytest.ini` sets `pythonpath = .` for the tests).
 
@@ -179,7 +216,7 @@ cp backend/.env.example backend/.env    # then fill in GOOGLE_API_KEY and JWT_SE
 
 ## Measuring answer quality
 
-`python -m src.evaluation.evaluate` asks a set of labelled questions through the real pipeline and reports how well it retrieved and answered. It ingests the documents into a temporary store, so your own database and vector store are not touched, but it does call Gemini.
+`python -m src.evaluation.evaluate` asks a set of labelled questions through the real pipeline and reports how well it retrieved and answered. It ingests the documents into a temporary store, so your own database and vector store are not touched, but it does call the models (Gemini's, or Ollama's when it is set).
 
 1. Put the documents in `backend\src\evaluation\documents\`.
 2. Write `backend\src\evaluation\dataset.jsonl`, one question per line:

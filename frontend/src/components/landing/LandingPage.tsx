@@ -158,7 +158,7 @@ export default function LandingPage({ theme = 'system', onTheme = () => {} }: La
 
         <footer className="l-foot">
           <span>Aether AI</span>
-          <span>Powered by Google Gemini</span>
+          <span>Runs on Google Gemini, or on your own computer with Ollama</span>
         </footer>
       </div>
 
