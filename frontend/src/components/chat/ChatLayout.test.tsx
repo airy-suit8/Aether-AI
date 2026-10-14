@@ -284,6 +284,41 @@ describe('ChatLayout', () => {
     expect(screen.queryByText('A slow question')).toBeNull()
   })
 
+  it('searches only the documents chosen in Search in, and says under the answer what it searched', async () => {
+    vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([
+      documentRecord({ id: 7, filename: 'zephyr_manual.txt', title: 'Zephyr Turbine Maintenance', kind: 'text' }),
+      documentRecord({ id: 8, filename: 'halcyon.docx', title: 'Halcyon Register', kind: 'docx' }),
+    ]))
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('Every 90 days.')
+      onDone?.(done({
+        sources: [{ ...SOURCE, source: 'halcyon.docx', kind: 'docx', passage: 3, passages: 42 }],
+        scope: { how: 'chosen', documents: [{ document_id: 8, name: 'Halcyon Register', filename: 'halcyon.docx' }] },
+      }))
+    })
+    renderChat()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /search in all documents/i }))
+    await user.click(screen.getByRole('checkbox', { name: /Halcyon Register/ }))
+    expect(screen.getByRole('button', { name: /search in halcyon register/i })).toBeTruthy()
+    await user.keyboard('{Escape}')
+
+    await ask('How often is it inspected?')
+    expect(vi.mocked(api.sendChatStream).mock.calls[0][0].documentIds).toEqual([8])
+    expect(await screen.findByText(/chosen in Search in/)).toBeTruthy()
+    // A Word passage has no page: the card says where it sits among the document's passages
+    expect(screen.getByText('passage 3 of 42')).toBeTruthy()
+  })
+
+  it('offers no Search in with only one document, and asks without a choice', async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone?.(done()))
+    renderChat()
+    expect(await screen.findAllByText('zephyr_manual.txt')).not.toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /search in/i })).toBeNull()
+    await ask('Anything?')
+    expect(vi.mocked(api.sendChatStream).mock.calls[0][0].documentIds).toBeNull()
+  })
+
   it('passes the Hybrid mode to the request', async () => {
     vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone?.(done()))
     renderChat()

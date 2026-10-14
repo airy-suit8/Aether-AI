@@ -2,9 +2,9 @@ import { createContext, memo, useCallback, useContext, useMemo, useRef, useState
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Cite, ClarityRing, SourceCard } from '../../design/prism'
+import { Cite, ClarityRing, SourceCard, placeOf } from '../../design/prism'
 import type { ClarityState } from '../../design/prism'
-import type { AgentStep, FeedbackValue, Source, Usage } from '../../services/api'
+import type { AgentStep, FeedbackValue, Scope, Source, Usage } from '../../services/api'
 import { remarkCitations } from './citations'
 import type { AnswerMessage, ChatMessage } from './types'
 
@@ -29,8 +29,28 @@ interface CitationState {
 const Citations = createContext<CitationState | null>(null)
 const NO_SOURCES: Source[] = []
 
-const describe = (n: number, source: Source) =>
-  `Source ${n}: ${source.source}${source.page != null && source.page !== '?' ? `, page ${source.page}` : ''}`
+const describe = (n: number, source: Source) => {
+  const place = placeOf(source)
+  return `Source ${n}: ${source.source}${place ? `, ${place.replace(/^p\. /, 'page ')}` : ''}`
+}
+
+const WHY: Record<Scope['how'], string> = {
+  all: 'all your documents',
+  chosen: 'chosen in Search in',
+  named: 'named in your question',
+  kind: 'the kind of file you named',
+}
+
+/** Which documents an answer searched, when it was not all of them: so a wrong guess is seen. */
+function ScopeNote({ scope }: { scope: Scope }) {
+  if (scope.how === 'all') return null
+  const names = scope.documents.map((d) => d.name)
+  return (
+    <p className="p-hint x-scope-note">
+      Searched {names.length === 1 ? <b>{names[0]}</b> : <><b>{names.length} documents</b> ({names.join('; ')})</>} · {WHY[scope.how]}
+    </p>
+  )
+}
 
 /** A [n] in the answer, drawn as a Cite chip in the hue of source card n. */
 function CitationMarker({ n }: { n: number }) {
@@ -253,6 +273,7 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
             {clarity && <ClarityRing value={clarity.value} state={clarity.state} />}
             {message.mode && <span className="p-mono">{message.mode} mode</span>}
           </div>
+          {message.scope && <ScopeNote scope={message.scope} />}
           {message.steps?.length ? <AgentSteps steps={message.steps} /> : message.toolUsed && <ToolsUsed toolUsed={message.toolUsed} />}
           <AnswerText content={message.content} cited={numbered ? [...byNumber.keys()].join(',') : ''} />
           {message.turnId != null && onRate && <Rating message={message} onRate={onRate} />}

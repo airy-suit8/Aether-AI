@@ -217,6 +217,16 @@ export interface SourceView {
   page?: number | string | null
   score?: number
   snippet?: string
+  /** pdf, docx, text...: a file without pages is located by passage instead */
+  kind?: string | null
+  passage?: number | null
+  passages?: number | null
+}
+
+/** Where a passage sits: its page in a PDF, else its place among the document's passages. */
+export function placeOf(source: SourceView): string | null {
+  if (source.kind && source.kind !== 'pdf' && source.passage && source.passages) return `passage ${source.passage} of ${source.passages}`
+  return source.page != null && source.page !== '?' ? `p. ${source.page}` : null
 }
 
 /**
@@ -256,7 +266,7 @@ export function SourceCard({ n, source, active = false, open = false, onActivate
         <span className="p-source__name" title={source.source}>{source.source}</span>
       </span>
       <span className="p-source__meta p-mono">
-        {source.page != null && source.page !== '?' && <span>p. {source.page}</span>}
+        {placeOf(source) && <span>{placeOf(source)}</span>}
         <span className="p-source__bar" aria-hidden="true"><i /></span>
         <span title="Similarity to your question">{score.toFixed(2)}</span>
       </span>

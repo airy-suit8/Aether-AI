@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { Aperture, Lens, Switch } from '../../design/prism'
-import type { Mode } from '../../services/api'
+import type { DocumentRecord, Mode } from '../../services/api'
+import ScopePicker from './ScopePicker'
 import type { Failure } from './types'
 
 const MODES: { value: Mode; label: string }[] = [
@@ -25,14 +26,19 @@ interface ChatComposerProps {
   streaming: boolean
   onStreaming: (streaming: boolean) => void
   onUpload: (file: File) => void
+  documents?: DocumentRecord[]
+  searchIn?: number[] | null
+  onSearchIn?: (ids: number[] | null) => void
 }
 
 /**
- * ChatComposer — the dock: one answer mode, whether to stream, and the Aperture to ask through.
+ * ChatComposer — the dock: one answer mode, whether to stream, which documents to search in, and
+ * the Aperture to ask through.
  * A reply that failed or was stopped is reported above it, in words, with a Retry action.
  */
 export default function ChatComposer({
   onSend, onStop, onRetry, failure, restore, isLoading, mode, onMode, streaming, onStreaming, onUpload,
+  documents = [], searchIn = null, onSearchIn = () => {},
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -58,6 +64,7 @@ export default function ChatComposer({
           onChange={onStreaming}
           title={streaming ? 'Show the answer as it is written; it can be stopped' : 'Wait for the whole answer; it cannot be stopped'}
         />
+        {documents.length > 1 && <ScopePicker documents={documents} value={searchIn} onChange={onSearchIn} />}
       </div>
       <Aperture
         busy={isLoading}

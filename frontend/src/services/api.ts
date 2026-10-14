@@ -24,6 +24,8 @@ export type Usage = Schemas['Usage']
 export type AgentStep = Schemas['AgentStep']
 export type StreamEvent = Schemas['TokenEvent'] | Schemas['DoneEvent'] | Schemas['ErrorEvent']
 export type Mode = NonNullable<Schemas['ChatRequest']['mode']>
+/** The documents an answer searched, and how they were picked (all, chosen, named, kind). */
+export type Scope = Schemas['Scope']
 export type FeedbackValue = Schemas['FeedbackRequest']['feedback']
 
 // ── Types read from the schema ──────────────────────────────────────────────
@@ -274,11 +276,13 @@ interface ChatOptions {
   question: string
   sessionId?: string
   mode?: Mode
+  /** Search only these documents ("Search in"); absent: every document, unless the question names some */
+  documentIds?: number[] | null
   signal?: AbortSignal
 }
 
-function chatBody({ question, sessionId = 'default', mode = 'default' }: ChatOptions): Schemas['ChatRequest'] {
-  return { question, session_id: sessionId, mode }
+function chatBody({ question, sessionId = 'default', mode = 'default', documentIds }: ChatOptions): Schemas['ChatRequest'] {
+  return documentIds?.length ? { question, session_id: sessionId, mode, document_ids: documentIds } : { question, session_id: sessionId, mode }
 }
 
 /** Ask a question and wait for the whole answer. */
