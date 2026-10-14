@@ -39,6 +39,11 @@ def from_chunks(monkeypatch):
 
 
 @pytest.fixture
+def from_summary(monkeypatch):
+    monkeypatch.setattr(settings, "answer_from", "summary")
+
+
+@pytest.fixture
 def two_documents(client, make_user):
     _, headers = make_user("cite")
     upload_text(client, headers, text=DOC_TEXT)
@@ -78,10 +83,20 @@ def test_a_refusal_is_recognised_by_how_it_starts(answer, refused):
     assert rag.is_refusal(answer) is refused
 
 
-# ── By default the answer comes from a summary, and every retrieved page is listed ─
+# ── By default the answer is written from the numbered chunks ────────────────
 
 @pytest.mark.parametrize("modes", MODES, ids=MODE_IDS)
-def test_by_default_the_answer_is_written_from_a_summary(two_documents, client, fake_llm, modes):
+def test_by_default_the_answer_is_written_from_the_numbered_chunks(two_documents, client, fake_llm, modes):
+    body = ask(client, two_documents, QUESTION, **modes).json()
+    assert not any("Focused Summary:" in p for p in fake_llm.prompts)
+    assert any('<document number="1" source=' in p for p in fake_llm.prompts)
+    assert [s["number"] for s in body["sources"]] == [1]
+
+
+# ── Written from a summary, every retrieved page is listed ────────────────────
+
+@pytest.mark.parametrize("modes", MODES, ids=MODE_IDS)
+def test_an_answer_from_a_summary_lists_every_page_retrieved(two_documents, client, fake_llm, from_summary, modes):
     r = ask(client, two_documents, QUESTION, **modes)
     assert sorted(s["source"] for s in r.json()["sources"]) == ["halcyon.txt", "zephyr_manual.txt"]
     assert all("number" not in s for s in r.json()["sources"])
@@ -102,7 +117,7 @@ def test_an_answer_from_chunks_lists_only_the_chunk_it_cites(two_documents, clie
     # Two chunks were retrieved; only the one cited is a source, and it carries its number
     assert [s["number"] for s in body["sources"]] == [1]
     assert f'<document number="1" source="{body["sources"][0]["source"]}"' in fake_llm.prompts[0]
-    assert set(body["sources"][0]) == {"number", "source", "page", "snippet", "score"}
+    assert set(body["sources"][0]) == {"number", "source", "page", "snippet", "score", "document_id", "kind", "passage", "passages"}
 
 
 def test_citations_of_numbers_that_were_not_offered_are_ignored(two_documents, client, fake_llm, from_chunks):

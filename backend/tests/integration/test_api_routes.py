@@ -90,7 +90,7 @@ def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
 
     r = ask(client, headers, QUESTION)
     assert r.status_code == 200
-    assert set(r.json()) == {"answer", "sources", "confidence", "session_id", "tool_used", "steps", "turn_id", "usage"}
+    assert set(r.json()) == {"answer", "sources", "confidence", "session_id", "tool_used", "steps", "turn_id", "usage", "scope"}
     assert r.json()["session_id"] == "s1"
     turn_id = r.json()["turn_id"]
 
@@ -108,7 +108,7 @@ def test_upload_chat_stream_feedback_clear_list_delete(client, make_user):
     detailed = client.get("/api/v1/documents/detailed", headers=headers).json()
     assert detailed["count"] == 1
     assert set(detailed["documents"][0]) == {"id", "filename", "file_hash", "pages", "chunks", "size_bytes", "uploaded_at",
-                                             "status", "error"}
+                                             "status", "error", "title", "kind"}
 
     r = client.delete("/api/v1/documents", headers=headers)
     assert r.json() == {"message": "Cleared 1 chunks from the vector store.", "status": "cleared", "deleted": 1}

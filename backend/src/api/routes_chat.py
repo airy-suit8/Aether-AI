@@ -20,6 +20,7 @@ from src.db.database import (
     update_conversation_feedback,
 )
 from src.llm.llm_client import MODEL_BUSY, is_unavailable, setup_problem
+from src.retrieval.scope import ScopeError, check_chosen
 from src.memory.conversation import clear_session
 from src.pipeline import rag
 
@@ -28,6 +29,14 @@ router = APIRouter()
 # Route handlers are plain `def` on purpose: they call blocking code (Gemini, Chroma,
 # SQLite, bcrypt), and FastAPI runs `def` handlers in a thread pool, so one slow
 # request does not stall every other request.
+
+def _check_scope(user_id: int, chat_request: ChatRequest) -> None:
+    """400 when the request chose documents to search in and none of them can be searched."""
+    try:
+        check_chosen(user_id, chat_request.document_ids)
+    except ScopeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("/api/v1/chat", response_model=ChatResponse, tags=["Chat"])
 @limiter.limit(settings.rate_limit_chat)
@@ -41,9 +50,11 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
 
     mode = chat_request.mode
     start_time = time.time()
+    _check_scope(user_id, chat_request)
 
     try:
-        result = rag.answer(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode)
+        result = rag.answer(user_id, chat_request.question, session_id=chat_request.session_id, mode=mode,
+                            document_ids=chat_request.document_ids)
     except Exception as e:
         if is_unavailable(e):  # over quota or unavailable, after the retries (B10)
             log_event(error_logger, "chat_model_unavailable", level=logging.WARNING, user_id=user_id, mode=mode)
@@ -69,6 +80,7 @@ def chat(request: Request, chat_request: ChatRequest, user_id: int = Depends(get
         steps=result.get("steps"),
         turn_id=result.get("turn_id"),
         usage=result.get("usage"),
+        scope=result.get("scope"),
     )
 
 
@@ -115,15 +127,17 @@ def chat_stream(request: Request, chat_request: ChatRequest, user_id: int = Depe
 
     mode = chat_request.mode
     session = chat_request.session_id
+    _check_scope(user_id, chat_request)  # before the stream starts: once it has, it cannot answer 400
     log_event(request_logger, "stream_request", user_id=user_id, mode=mode, session=session,
-              question_chars=len(chat_request.question))
+              question_chars=len(chat_request.question), chosen=len(chat_request.document_ids or []))
     ref = reference(request)
 
     # A plain generator: Starlette runs it in a worker thread, so a slow model
     # call does not block the event loop and tokens are sent as they arrive.
     def generate_stream():
         try:
-            for event in rag.events(user_id, chat_request.question, session_id=session, mode=mode):
+            for event in rag.events(user_id, chat_request.question, session_id=session, mode=mode,
+                                    document_ids=chat_request.document_ids):
                 if event["type"] == "done":
                     log_event(request_logger, "stream_ok", user_id=user_id, mode=mode, session=session,
                               confidence=event.get("confidence"), sources=len(event["sources"]), usage=event.get("usage"))

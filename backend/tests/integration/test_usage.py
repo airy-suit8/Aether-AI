@@ -36,7 +36,8 @@ def _log_lines():
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-def test_an_answer_reports_each_stage_with_the_tokens_the_model_reported(client, make_user, fake_llm):
+def test_an_answer_reports_each_stage_with_the_tokens_the_model_reported(client, make_user, fake_llm, monkeypatch):
+    monkeypatch.setattr(settings, "answer_from", "summary")  # the path with the most stages
     _, headers = make_user("usage")
     upload_text(client, headers)
     fake_llm.prompts.clear()
@@ -52,7 +53,8 @@ def test_an_answer_reports_each_stage_with_the_tokens_the_model_reported(client,
     assert usage["input_tokens"] == _words(fake_llm.prompts)  # every word of both prompts, once
 
 
-def test_a_follow_up_adds_the_rewrite_and_a_stream_ends_with_the_same_usage(client, make_user):
+def test_a_follow_up_adds_the_rewrite_and_a_stream_ends_with_the_same_usage(client, make_user, monkeypatch):
+    monkeypatch.setattr(settings, "answer_from", "summary")
     _, headers = make_user("usagestream")
     upload_text(client, headers)
     assert ask(client, headers, "How often is the Zephyr turbine blade inspection?", session_id="u1").status_code == 200
@@ -62,6 +64,14 @@ def test_a_follow_up_adds_the_rewrite_and_a_stream_ends_with_the_same_usage(clie
     usage = events[-1]["usage"]
     _assert_totals(usage)
     assert _names(usage) == ["rewrite", "retrieve", "summarize", "answer"]
+
+
+def test_an_answer_from_the_chunks_has_one_model_stage(client, make_user):
+    _, headers = make_user("usagechunks")  # the default: no summary step
+    upload_text(client, headers)
+    usage = ask(client, headers, "How often is the Zephyr turbine blade inspection?").json()["usage"]
+    _assert_totals(usage)
+    assert _names(usage) == ["retrieve", "answer"]
 
 
 def test_a_refusal_reports_its_search_and_no_tokens(client, make_user):

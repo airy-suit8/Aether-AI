@@ -48,6 +48,7 @@ def run(dataset, **kwargs):
 # ── The whole run, through the real pipeline ──────────────────────────────────
 
 def test_run_asks_the_real_pipeline_and_scores_it(dataset, judge_model, fake_llm, monkeypatch):
+    monkeypatch.setattr(settings, "answer_from", "summary")  # the pipeline with its summary step
     # Seam checklist: "Evaluation: the harness imports and calls the real pipeline"
     models_asked = []
 

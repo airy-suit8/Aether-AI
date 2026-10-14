@@ -1147,6 +1147,22 @@
             ],
             "title": "Mode",
             "default": "default"
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array",
+                "maxItems": 100,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
           }
         },
         "additionalProperties": false,
@@ -1226,6 +1242,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Scope"
               },
               {
                 "type": "null"
@@ -1361,6 +1387,28 @@
               }
             ],
             "title": "File Hash"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
           }
         },
         "type": "object",
@@ -1530,6 +1578,16 @@
                 "type": "null"
               }
             ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Scope"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1650,6 +1708,58 @@
         ],
         "title": "Message",
         "description": "A reply that only says what happened."
+      },
+      "Scope": {
+        "properties": {
+          "how": {
+            "type": "string",
+            "enum": [
+              "all",
+              "chosen",
+              "named",
+              "kind"
+            ],
+            "title": "How"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeDocument"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "how",
+          "documents"
+        ],
+        "title": "Scope",
+        "description": "The documents an answer searched, and how they were picked: \"all\" of them, \"chosen\" in the\nrequest, \"named\" in the question, or the \"kind\" of file the question named."
+      },
+      "ScopeDocument": {
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "title": "Document Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "name",
+          "filename"
+        ],
+        "title": "ScopeDocument",
+        "description": "A document an answer searched."
       },
       "SessionCleared": {
         "properties": {
@@ -1914,6 +2024,50 @@
               }
             ],
             "title": "Number"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "passage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passage"
+          },
+          "passages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passages"
           }
         },
         "type": "object",

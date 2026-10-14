@@ -13,7 +13,8 @@ from src.api.schemas import StreamEvent
 from src.core.config import settings
 
 EVENTS = TypeAdapter(StreamEvent)
-SOURCE_KEYS = {"source", "page", "snippet", "score"}
+# A passage the app stored also says which document it is, of what kind, and where it sits
+SOURCE_KEYS = {"source", "page", "snippet", "score", "document_id", "kind", "passage", "passages"}
 QUESTION = "How often is the Zephyr turbine blade inspection?"
 
 
@@ -32,7 +33,7 @@ def test_every_streamed_event_matches_its_model(client, reader, mode):
     for event in events:
         EVENTS.validate_python(event)
     done = events[-1]
-    assert done["sources"] and all(set(s) == SOURCE_KEYS for s in done["sources"])
+    assert done["sources"] and all(set(s) - {"number"} == SOURCE_KEYS for s in done["sources"])
     assert ("tool_used" in done) == (mode == "agent")
 
 
@@ -44,6 +45,7 @@ def test_an_error_event_matches_its_model(client, reader, fake_llm):
 
 
 def test_cited_sources_keep_their_number_and_others_have_none(client, reader, monkeypatch):
+    monkeypatch.setattr(settings, "answer_from", "summary")  # an answer from a summary cites nothing
     plain = ask(client, reader, QUESTION, session_id="models-plain").json()
     assert all(set(s) == SOURCE_KEYS for s in plain["sources"])
 
@@ -65,7 +67,7 @@ def test_document_replies_keep_their_fields(client, reader):
     detailed = client.get("/api/v1/documents/detailed", headers=reader).json()
     assert detailed["count"] == 1
     assert set(detailed["documents"][0]) == {
-        "id", "filename", "file_hash", "pages", "chunks", "size_bytes", "uploaded_at", "status", "error"}
+        "id", "filename", "file_hash", "pages", "chunks", "size_bytes", "uploaded_at", "status", "error", "title", "kind"}
     assert len(detailed["documents"][0]["file_hash"]) == 64
 
     assert client.get("/api/v1/documents", headers=reader).json() == {"documents": ["zephyr_manual.txt"], "count": 1}
