@@ -6,6 +6,7 @@ error event from /chat/stream, a failed upload's status. The errors are raised b
 """
 
 import httpx
+import openai
 import pytest
 from ollama import ResponseError
 
@@ -98,3 +99,20 @@ def test_an_error_that_is_neither_busy_nor_setup_stays_a_general_error(client, u
         "POST", "https://generativelanguage.googleapis.com/v1beta/models/m:streamGenerateContent"))]
     r = ask(client, user_with_a_document, QUESTION)
     assert r.status_code == 500 and r.json()["detail"].startswith("Something went wrong on the server.")
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_a_key_an_openai_compatible_service_refuses_is_a_503_that_says_so(client, user_with_a_document, setup_llm,
+                                                                         monkeypatch, mode):
+    monkeypatch.setattr(llm_client.settings, "openai_url", "https://api.groq.com/openai/v1")
+    refused = openai.AuthenticationError("Invalid API Key", body=None, response=httpx.Response(
+        401, request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")))
+    setup_llm.errors = [refused]
+    r = ask(client, user_with_a_document, QUESTION, session_id="refused", mode=mode)
+    assert r.status_code == 503
+    assert r.json()["detail"] == ("The AI service at https://api.groq.com/openai/v1 refused the key. "
+                                  "Set OPENAI_API_KEY in backend/.env to a key it accepts.")
+    assert setup_llm.calls == 1
+    setup_llm.errors = [refused]  # the stream meets it too
+    status, events = ask_stream(client, user_with_a_document, QUESTION, session_id="refused-stream", mode=mode)
+    assert events[-1]["type"] == "error" and "refused the key" in events[-1]["message"]

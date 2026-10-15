@@ -17,6 +17,7 @@ interface SchemaObject {
 
 interface OperationObject {
   security?: unknown[]
+  parameters?: { name: string; in: string }[]
   requestBody?: { content: Record<string, { schema: SchemaObject }> }
 }
 
@@ -57,7 +58,7 @@ async function capture(fn: () => Promise<unknown>): Promise<Captured> {
       headers: (init.headers ?? {}) as Record<string, string>, body: init.body,
     }
     return asResponse({
-      ok: true, status: 200, json: async () => ({ access_token: 't', documents: [] }),
+      ok: true, status: 200, json: async () => ({ access_token: 't', documents: [] }), arrayBuffer: async () => new ArrayBuffer(0),
       body: { getReader: () => ({ read: async () => ({ done: true }) }) },
     })
   })
@@ -86,6 +87,8 @@ const CALLS: Record<string, () => Promise<unknown>> = {
   getDocuments: () => api.getDocuments(),
   getDocumentsDetailed: () => api.getDocumentsDetailed(),
   getDocument: () => api.getDocument(7),
+  getPassage: () => api.getPassage(7, 62, 2),
+  getDocumentFile: () => api.getDocumentFile(7),
   deleteDocument: () => api.deleteDocument(7),
   deleteAllDocuments: () => api.deleteAllDocuments(),
   clearSession: () => api.clearSession('s1'),
@@ -113,8 +116,12 @@ describe('API client contract with the backend schema', () => {
     const request = await capture(CALLS[name])
     expect(request.url.startsWith('/api/v1/')).toBe(true)
 
-    const operation = operationFor(request.url, request.method)
-    expect(operation, `${request.method.toUpperCase()} ${request.url} is not in the backend schema`).toBeDefined()
+    const [path, query = ''] = request.url.split('?')
+    const operation = operationFor(path, request.method)
+    expect(operation, `${request.method.toUpperCase()} ${path} is not in the backend schema`).toBeDefined()
+    // Every query parameter it sends is one the route declares
+    const declared = (operation?.parameters ?? []).filter((p) => p.in === 'query').map((p) => p.name)
+    for (const name of new URLSearchParams(query).keys()) expect(declared).toContain(name)
 
     // A protected route gets the token; a public one does not need it
     const isProtected = (operation?.security || []).length > 0

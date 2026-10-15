@@ -5,11 +5,12 @@ import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import ShareDialog from './ShareDialog'
+import SourceViewer from './SourceViewer'
 import {
   ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages, renameSession, deleteSession, logoutEverywhere,
 } from '../../services/api'
-import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
+import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Source, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
@@ -33,7 +34,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const MODE_OF_STORED: Record<string, string> = { original: 'default' }
 
 /** A saved turn as the two messages the conversation shows: the question and its answer. */
-function turnToMessages(turn: Turn): ChatMessage[] {
+function turnToMessages(turn: Turn, groundedAt: number): ChatMessage[] {
   return [
     { id: `q${turn.turn_id}`, role: 'user', content: turn.question, timestamp: turn.created_at },
     {
@@ -42,6 +43,7 @@ function turnToMessages(turn: Turn): ChatMessage[] {
       content: turn.answer,
       sources: turn.sources || [],
       confidence: turn.confidence || 0,
+      groundedAt,
       toolUsed: turn.tool_used || null,
       mode: MODE_OF_STORED[turn.mode] || turn.mode,
       turnId: turn.turn_id,
@@ -104,6 +106,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  const [viewing, setViewing] = useState<{ source: Source; n: number } | null>(null)  // a source shown in its document
 
   const streamRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -189,15 +192,18 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     let cancelled = false
     loadingRef.current = threadId
     getSessionMessages(threadId)
-      .then(({ turns }) => {
+      .then(({ turns, grounded_at }) => {
         // Not if the user has asked in it meanwhile: their question is already on screen
         if (cancelled || loadingRef.current !== threadId) return
-        setMessages(turns.flatMap(turnToMessages))
+        setMessages(turns.flatMap((turn) => turnToMessages(turn, grounded_at)))
       })
       .catch((e) => console.error('Failed to load the conversation:', e))
       .finally(() => {
+        // Only the load still wanted clears the mark: a cancelled one (React runs this effect twice
+        // in development) must not, or the load after it would think it was not wanted
+        if (cancelled) return
         if (loadingRef.current === threadId) loadingRef.current = null
-        if (!cancelled) setThreadLoading(false)
+        setThreadLoading(false)
       })
     return () => { cancelled = true }
   }, [threadId])
@@ -278,6 +284,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
             content: fullText,
             sources: data.sources || [],
             confidence: data.confidence || 0,
+            groundedAt: data.grounded_at ?? null,
             toolUsed: data.tool_used || null,
             turnId: data.turn_id ?? null,  // what feedback names it by
             usage: data.usage ?? null,
@@ -293,6 +300,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           content: result.answer,
           sources: result.sources || [],
           confidence: result.confidence || 0,
+          groundedAt: result.grounded_at ?? null,
           toolUsed: result.tool_used || null,
           turnId: result.turn_id ?? null,
           usage: result.usage ?? null,
@@ -349,6 +357,11 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     let accepted: Awaited<ReturnType<typeof uploadDocument>> | null = null
     try {
       accepted = await uploadDocument(file)
+      if (accepted.status === 'ready') {
+        // A PDF already in the library, sent again only so its pages can be shown: nothing to read
+        addToast(accepted.message, 'success')
+        return
+      }
       setUploadProgress({ filename: file.name, status: 'reading' })
       refreshDocuments()  // it shows in the library as being read
       let doc = await getDocument(accepted.document_id)
@@ -468,6 +481,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   // Sharing: only a conversation the server has a turn of, and the sheet closes with its thread
   const canShare = sessionId !== null && messages.some((m) => m.role === 'assistant' && m.turnId != null)
   const closeShare = useCallback(() => setShareOpen(false), [])
+  const openSource = useCallback((source: Source, n: number) => setViewing({ source, n }), [])
+  const closeSource = useCallback(() => setViewing(null), [])
+  useEffect(() => setViewing(null), [sessionId])
   useEffect(() => setShareOpen(false), [sessionId])
 
   const goHome = useCallback(() => navigate('/'), [navigate])
@@ -550,6 +566,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           hasDocuments={documents.length > 0}
           onSuggest={handleSend}
           onRate={handleRate}
+          onOpenSource={openSource}
         />
 
         <ChatComposer
@@ -571,6 +588,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
       </main>
 
       {shareOpen && sessionId && <ShareDialog sessionId={sessionId} onClose={closeShare} addToast={addToast} />}
+      {viewing && <SourceViewer source={viewing.source} n={viewing.n} onClose={closeSource} />}
 
       {settingsOpen && (
         <SettingsModal

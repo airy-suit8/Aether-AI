@@ -1,4 +1,4 @@
-import { createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,14 +8,14 @@ import type { AgentStep, FeedbackValue, Scope, Source, Usage } from '../../servi
 import { remarkCitations } from './citations'
 import type { AnswerMessage, ChatMessage } from './types'
 
-// Similarity at or above this reads as grounded. From the first real run: relevant passages
-// scored 0.67 to 0.80 and an unrelated question 0.50. To be calibrated on a dataset in Sprint 4.
+// Similarity at or above this reads as grounded, when the server sends no line of its own with the
+// answer: each embedding model has its own (backend core/config.py, GROUNDED_LINES)
 const GROUNDED_AT = 0.6
 
 function clarityOf(message: AnswerMessage): { state: ClarityState; value: number } | null {
   if (!message.sources?.length) return message.toolUsed ? null : { state: 'refused', value: 0 }
   const value = Math.max(0, Math.min(1, message.confidence || 0))
-  return { state: value >= GROUNDED_AT ? 'grounded' : 'uncertain', value }
+  return { state: value >= (message.groundedAt ?? GROUNDED_AT) ? 'grounded' : 'uncertain', value }
 }
 
 /** Which source card is lit or pinned open, shared by an answer's citation chips and its cards. */
@@ -208,6 +208,8 @@ interface MessageBubbleProps {
   isStreaming?: boolean
   streamingPhase?: string
   onRate?: (message: AnswerMessage, value: FeedbackValue) => void
+  /** Show a source in its document (the page of a PDF, or the passage among its neighbours) */
+  onOpenSource?: (source: Source, n: number) => void
 }
 
 /**
@@ -222,8 +224,11 @@ interface MessageBubbleProps {
  * numbered by it and each [n] in the answer is a Cite chip tied to card n: hovering or focusing
  * either lights both, and a chip pins its card open. Otherwise the cards are numbered in order
  * and the answer is shown as written.
+ *
+ * A card pinned open offers to show its passage in the document (onOpenSource), when the source
+ * says which document and passage it is: answers saved before 15 Oct 2026 do not.
  */
-function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate }: MessageBubbleProps) {
+function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate, onOpenSource }: MessageBubbleProps) {
   const [active, setActive] = useState<number | null>(null)
   const [open, setOpen] = useState<number | null>(null)
   const cardRefs = useRef<Record<number, HTMLButtonElement | null>>({})
@@ -285,9 +290,10 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
             <p className="p-eyebrow">Sources</p>
             {sources.map((source, index) => {
               const n = numberOf(source, index)
+              const openable = onOpenSource && open === n && source.document_id != null && source.passage != null
               return (
+                <Fragment key={n}>
                 <SourceCard
-                  key={n}
                   n={n}
                   source={source}
                   order={index}
@@ -298,6 +304,12 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
                   onToggle={() => setOpen(open === n ? null : n)}
                   innerRef={(el) => { cardRefs.current[n] = el }}
                 />
+                {openable && (
+                  <button type="button" className="p-btn p-btn--tonal x-margin__open" onClick={() => onOpenSource(source, n)}>
+                    {source.kind === 'pdf' && placeOf(source) ? `Show on ${placeOf(source)}` : 'Show in the document'}
+                  </button>
+                )}
+                </Fragment>
               )
             })}
           </aside>

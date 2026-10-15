@@ -49,7 +49,7 @@ describe('rendering while an answer streams', () => {
   beforeEach(() => {
     vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([]))
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [] }))
   })
 
   it('does not re-render or re-parse an earlier answer', async () => {

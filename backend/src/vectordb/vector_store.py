@@ -208,7 +208,13 @@ class VectorStore:
     def passages_around(self, tenant: str, document_id: int, chunk_index: int, window: int) -> List[Tuple[str, Dict]]:
         """The passages within `window` places of one passage in its document, the passage itself
         not included, in document order."""
-        indexes = [i for i in range(chunk_index - window, chunk_index + window + 1) if i >= 1 and i != chunk_index]
+        return self.passages_at(tenant, document_id,
+                                [i for i in range(chunk_index - window, chunk_index + window + 1) if i != chunk_index])
+
+    def passages_at(self, tenant: str, document_id: int, indexes: List[int]) -> List[Tuple[str, Dict]]:
+        """Some passages of one of a tenant's documents, by their numbers (from 1), in document order;
+        a number it does not have is left out."""
+        indexes = [i for i in indexes if i >= 1]
         if not indexes:
             return []
         res = self.collection.get(where={"$and": [{"tenant_id": tenant}, {"document_id": document_id},

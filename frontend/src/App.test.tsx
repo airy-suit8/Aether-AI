@@ -45,7 +45,7 @@ describe('App after a page reload', () => {
     vi.mocked(api.getMe).mockReset()
     vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([]))
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_7' })] })
-    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_7', turns: [turn({
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_7', grounded_at: 0.6, turns: [turn({
       turn_id: 1, question: 'What did we discuss?', answer: 'The turbine schedule.', sources: [],
       confidence: 0.7, mode: 'hybrid', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
     })] })
@@ -65,6 +65,7 @@ describe('App after a page reload', () => {
     vi.mocked(api.refreshSession).mockResolvedValue(null)
     vi.mocked(api.getSharedConversation).mockResolvedValue({
       title: 'Blade inspections',
+      grounded_at: 0.6,
       turns: [{ question: 'How often?', answer: 'Every 90 days.', confidence: 0.8, mode: 'original', sources: [], tool_used: null, created_at: '2026-10-13T10:00:00' }],
     })
     renderApp('/shared/kQ3vX9pLm2Zr7TtYb5NwEa8HcJd4UfGs')
@@ -105,7 +106,7 @@ describe('App pages', () => {
     vi.mocked(api.refreshSession).mockResolvedValue(null)
     vi.mocked(api.getDocumentsDetailed).mockResolvedValue(documentList([]))
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [] }))
   })
 
   it('/login is the start page with the sign-in sheet open; closing it goes back to /', async () => {

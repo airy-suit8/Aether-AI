@@ -47,8 +47,9 @@ def test_a_shared_conversation_can_be_read_by_anyone_with_the_link(client, owner
     turn = body["turns"][0]
     assert turn["question"] == QUESTION and turn["answer"]
     assert turn["sources"] and turn["sources"][0]["source"] == "zephyr_manual.txt"
-    # What it does not show: whose it is, the turn's id, the owner's rating
-    assert set(body) == {"title", "turns"}
+    # What it does not show: whose it is, the turn's id, the owner's rating. grounded_at is the
+    # server's line for its embedding model, the same for every conversation
+    assert set(body) == {"title", "turns", "grounded_at"}
     assert set(turn) == {"question", "answer", "confidence", "mode", "sources", "tool_used", "created_at"}
 
 

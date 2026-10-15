@@ -52,6 +52,8 @@ Double-click `start.bat` (or run it from Command Prompt). It opens two windows, 
 
 To stop, close the two windows titled "Aether AI backend" and "Aether AI frontend".
 
+Before it starts them, `start.bat` installs the packages again when their lists have changed since the last install: `frontend\package-lock.json` (with `npm ci`) and `backend\requirements.txt` (with pip, into the project's `.venv` only). So after a `git pull` or a merge that adds a package, running it is enough; close the two windows first, since a running server keeps its files in use. `start.bat --packages-only` installs what changed and starts nothing.
+
 To start the two parts by hand instead, use two Command Prompt windows:
 
 ```bat
@@ -111,7 +113,30 @@ Instead of Gemini, the app can use models that run on this computer through [Oll
 
 4. Start the app as usual. Ollama must be running: if it is not, a question is answered with "Ollama is not running", and a model that is not installed is named with the command that installs it.
 
-The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`) was chosen with Gemini's embeddings, and another embedding model scores passages differently, so measure it again for the model you use (see "Measuring answer quality").
+Each embedding model spreads its similarity scores differently, so the line at which an answer reads as *Grounded* is set for each one: 0.5 for `nomic-embed-text` (measured on real papers: questions about them averaged 0.40 to 0.78, unrelated questions 0.38 to 0.48) and 0.6 for Gemini's. `AETHER_GROUNDED_AT` sets your own. The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`, 0.3) is not raised for `nomic-embed-text`: short questions about the documents scored as low as unrelated ones, so a higher line refused real questions. For another embedding model, measure both (see "Measuring answer quality").
+
+## Any OpenAI-compatible service
+
+The models can also come from any service that speaks OpenAI's API: OpenAI itself, Groq, OpenRouter, LM Studio on this computer, or Ollama's own `/v1` address. In `backend\.env`:
+
+```
+AETHER_LLM_PROVIDER=openai
+AETHER_OPENAI_URL=https://api.groq.com/openai/v1
+OPENAI_API_KEY=<the service's key; leave it out for LM Studio or Ollama>
+AETHER_LLM_MODEL=<a model id the service lists>
+```
+
+| Service | `AETHER_OPENAI_URL` | Key |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` (the default) | needed |
+| Groq | `https://api.groq.com/openai/v1` | needed |
+| OpenRouter | `https://openrouter.ai/api/v1` | needed |
+| LM Studio | `http://localhost:1234/v1` | none |
+| Ollama | `http://127.0.0.1:11434/v1` | none |
+
+There is no default model: every service names its own, so set `AETHER_LLM_MODEL` (and `AETHER_EMBEDDING_MODEL` with `AETHER_EMBEDDING_PROVIDER=openai`). Not every service makes embeddings; one that does not can answer while Gemini or Ollama keeps the search (leave `AETHER_EMBEDDING_PROVIDER` as it is). Changing the embedding model needs `python -m src.reembed --apply`, as above. For a model that thinks before it answers, such as `qwen3.5:4b` through Ollama's or LM Studio's address, add `AETHER_OPENAI_REASONING_EFFORT=none`: a three-word answer took 6 tokens with it and 2,973 without. OpenAI's other models refuse that setting.
+
+If the service cannot be reached, refuses the key, or does not have the model, the answer says which, and what to set. Tried here: Ollama's `/v1` address, for answers in every mode (agent mode's tools too) and for embeddings. The other addresses are the services' own; they were not tried.
 
 ## Asking about particular documents
 
@@ -121,6 +146,20 @@ A question searches every document in your library unless you say otherwise. The
 - **Name it in the question.** By the first words of its title, when the question calls it a document or asks who wrote it ("Who are the authors of Classification of…?", "the Automated Post-Disaster paper"); by an author on its first page ("the paper by Hardik Kumar"); by the number or two words of its file name ("the 13003 pdf", "the Recos letter"); or by its kind ("in the PDF", "the Word files"). A question about a subject is not narrowed because a title shares its words.
 
 Under each answer that did not search everything, a line says what it searched and why, so a wrong guess shows. A question about a document's title, authors, affiliations, e-mail addresses or ORCID ids reads each document's first passage, where a paper names its own authors (not its reference list); one about "both" or "each" document reads each one's best passages. Each source says where it is: the page of a PDF, or "passage 3 of 42" in a file without pages.
+
+## Scanned PDFs
+
+A PDF page with no text in it (a scan, a photo of a page) is read by OCR on this computer's processor, with the models that come with RapidOCR: nothing is downloaded and nothing leaves the machine. It takes about 1 to 2 seconds a page, so a scanned paper is ready within a minute; a file with more than 100 such pages (`AETHER_OCR_MAX_PAGES`) is refused, since it would take minutes. Pages that have text are read as before. `AETHER_OCR=false` turns it off, and a scan is then refused as it was before. OCR reads the words, not the layout: tables and two-column pages come out line by line, and a scanned page cannot have its passage marked in the page viewer, since the page holds no text to mark.
+
+## Seeing a source in its document
+
+Click a source card under an answer to pin it open, then **Show on p. 20** (a PDF) or **Show in the document** (any other file). A PDF opens on the cited page, drawn in the browser, with the passage marked on it; *Open the whole PDF* opens it in the browser's own viewer at that page. A Word, text or spreadsheet passage is shown with the passages either side of it.
+
+PDFs are kept as uploaded, in `data/files/`, so their pages can be shown; a document's file goes when the document does. PDFs added before 15 Oct 2026 were not kept: upload the same file again and it is kept for its document, without being read twice. Answers saved before that date do not say which passage they cite, so their cards have no button.
+
+## Reranking
+
+Each search finds 20 passages; then a small model on this computer, `Xenova/ms-marco-MiniLM-L-6-v2` (88 MB), reads the question with each passage and keeps the five that answer it best. A search compares meanings; the reranker judges answers, so a paper's own result is put ahead of a cited study's that uses the same words. It is downloaded from Hugging Face once, the first time the backend starts, into `data/models/`; after that it works offline, on the processor, in about half a second a question. If it cannot be downloaded, answers use the search's own order and `backend/logs/errors.log` says why. `AETHER_RERANK_MODEL=` (empty) turns it off; `AETHER_RERANK_CANDIDATES` changes how many passages it reads.
 
 ## Run the tests
 
@@ -291,6 +330,8 @@ All of these are created on first run and are ignored by git:
 | `backend/.env` | Your API key and JWT secret |
 | `data/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
 | `data/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
+| `data/models/` | The reranking model, downloaded once (`AETHER_MODEL_DIR`) |
+| `data/files/` | Uploaded PDFs, kept to show their pages (`AETHER_FILES_DIR`) |
 | `backend/logs/` | Request, upload and error logs (`AETHER_LOG_DIR`) |
 
 Before Sprint 5 the database and the vector store were kept in `backend/aether.db` and `backend/vector_store/`. If they are still there and nothing is in `data/` yet, the backend keeps using them and says so in `backend/logs/errors.log`. To move them, stop the backend and move both into a `data` folder in the project folder; nothing else needs to change.

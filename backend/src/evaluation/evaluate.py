@@ -284,7 +284,7 @@ def run(dataset_path: Path, documents_dir: Path, label: str, modes: Iterable[str
             "embedding_model": settings.embedding_model, "top_k": settings.top_k,
             "confidence_threshold": settings.confidence_threshold,
             "chunk_size": settings.chunk_size, "chunk_overlap": settings.chunk_overlap,
-            "answer_from": settings.answer_from,
+            "answer_from": settings.answer_from, "rerank_model": settings.rerank_model,
         },
         "modes": {mode: summarise([r for r in records if r["mode"] == mode], settings.top_k) for mode in modes},
         # From dense scores only: the threshold is applied to dense similarity

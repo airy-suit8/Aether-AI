@@ -524,16 +524,16 @@ def delete_document_record(user_id: int, document_id: int):
         conn.close()
 
 
-def check_duplicate_document(user_id: int, file_hash: str) -> Optional[str]:
-    """Check if a document with the same hash has been uploaded before. Returns filename or None.
+def check_duplicate_document(user_id: int, file_hash: str) -> Optional[Dict[str, Any]]:
+    """The user's document with the same hash, as {"id", "filename", "status"}, or None.
     A failed upload does not count: the same file may be tried again."""
     conn = _get_connection()
     row = conn.execute(
-        "SELECT filename FROM documents WHERE user_id = ? AND file_hash = ? AND status != 'failed' LIMIT 1",
+        "SELECT id, filename, status FROM documents WHERE user_id = ? AND file_hash = ? AND status != 'failed' LIMIT 1",
         (user_id, file_hash)
     ).fetchone()
     conn.close()
-    return row["filename"] if row else None
+    return dict(row) if row else None
 
 
 def get_all_documents_detailed(user_id: int) -> List[Dict[str, Any]]:

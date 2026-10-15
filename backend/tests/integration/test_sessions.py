@@ -7,6 +7,7 @@ answer, so a reloaded page can show the conversation again.
 import pytest
 
 from helpers import ask, ask_stream, upload_text
+from src.core.config import settings
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
 
@@ -66,7 +67,8 @@ def test_another_user_s_sessions_are_neither_listed_nor_readable(client, make_us
     upload_text(client, alice)
     ask(client, alice, QUESTION, session_id="shared-name")
     assert client.get("/api/v1/sessions", headers=bob).json() == {"sessions": []}
-    assert client.get("/api/v1/sessions/shared-name/messages", headers=bob).json() == {"session_id": "shared-name", "turns": []}
+    assert client.get("/api/v1/sessions/shared-name/messages", headers=bob).json() == {
+        "session_id": "shared-name", "turns": [], "grounded_at": settings.grounded_line()}
 
 
 @pytest.mark.parametrize("session_id", ["has space", "semi;colon", "x" * 101])

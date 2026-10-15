@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { StrictMode } from 'react'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
@@ -28,6 +29,8 @@ vi.mock('../../services/api', async (importOriginal) => ({
   getSharing: vi.fn(async (id: string) => ({ session_id: id, token: null })),
   shareSession: vi.fn(),
   stopSharing: vi.fn(),
+  getPassage: vi.fn(),
+  getDocumentFile: vi.fn(),
 }))
 
 /** Shows the current path, so a test can read the URL the workspace navigated to. */
@@ -68,7 +71,7 @@ describe('ChatLayout', () => {
     vi.mocked(api.getSessions).mockReset()
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [] })
     vi.mocked(api.getSessionMessages).mockReset()
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [] }))
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [] }))
   })
 
   it('offers Share only for a conversation the server has a turn of', async () => {
@@ -81,6 +84,7 @@ describe('ChatLayout', () => {
   it('opens the share sheet for a saved conversation, and closes it with its thread', async () => {
     vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({
       session_id: id,
+      grounded_at: 0.6,
       turns: id === 'session_1' ? [turn({ turn_id: 4, question: 'How often?', answer: 'Every 90 days.' })] : [],
     }))
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
@@ -101,6 +105,97 @@ describe('ChatLayout', () => {
     await screen.findByRole('dialog', { name: 'Share this conversation' })
     await act(async () => { screen.getAllByRole('button', { name: 'New thread' })[0].click() })
     expect(screen.queryByRole('dialog', { name: 'Share this conversation' })).toBeNull()
+  })
+
+  it('judges an answer by the line the server sends for the embedding model that searched', async () => {
+    // A local embedding model scores lower: the server sends 0.5 for it, 0.6 for Gemini's
+    vi.mocked(api.sendChatStream)
+      .mockImplementationOnce(async ({ onToken, onDone }) => {
+        onToken?.('Every 90 days.')
+        onDone?.(done({ sources: [SOURCE], confidence: 0.55, grounded_at: 0.5 }))
+      })
+      .mockImplementationOnce(async ({ onToken, onDone }) => {
+        onToken?.('Every 90 days.')
+        onDone?.(done({ sources: [SOURCE], confidence: 0.55, grounded_at: 0.6 }))
+      })
+    renderChat()
+    await ask('How often are the blades inspected?')
+    expect(await screen.findByRole('img', { name: 'Confidence: Grounded · 55%' })).toBeTruthy()
+    await ask('And by whom?')
+    expect(await screen.findByRole('img', { name: 'Confidence: Uncertain · 55%' })).toBeTruthy()
+  })
+
+  it('shows a conversation opened by its address when React runs its effects twice (development)', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
+    const reply = {
+      session_id: 'session_1', grounded_at: 0.6,
+      turns: [turn({ turn_id: 3, question: 'How often?', answer: 'Every 90 days.', sources: [SOURCE] })],
+    }
+    // The first load (cancelled by React's second run) answers first, as over a network
+    vi.mocked(api.getSessionMessages)
+      .mockImplementationOnce(async () => reply)
+      .mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve(reply), 30)))
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/chat/session_1']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="*" element={<ChatLayout addToast={vi.fn()} />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </StrictMode>,
+    )
+    expect(await screen.findByText('Every 90 days.')).toBeTruthy()
+  })
+
+  it('judges a saved conversation by the line that comes with it', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
+    vi.mocked(api.getSessionMessages).mockResolvedValue({
+      session_id: 'session_1', grounded_at: 0.5,
+      turns: [turn({ turn_id: 3, question: 'How often?', answer: 'Every 90 days.', confidence: 0.52, sources: [SOURCE] })],
+    })
+    renderChat('/chat/session_1')
+    expect(await screen.findByRole('img', { name: 'Confidence: Grounded · 52%' })).toBeTruthy()
+  })
+
+  it('says so when a PDF already read is sent again only to keep its pages', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({
+      document_id: 7, filename: 'paper.pdf', status: 'ready', replaces: false,
+      message: "Kept the file of 'paper.pdf', to show its pages.",
+    })
+    const { addToast } = renderChat()
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]') as HTMLInputElement
+    await userEvent.setup().upload(input, new File(['%PDF-1.4'], 'paper.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith("Kept the file of 'paper.pdf', to show its pages.", 'success'))
+    expect(api.getDocument).not.toHaveBeenCalled()
+  })
+
+  it('shows a pinned source in its document, when the source says which one', async () => {
+    const paper = { ...SOURCE, source: 'paper.pdf', page: 20, document_id: 7, kind: 'pdf', passage: 62, passages: 74 }
+    vi.mocked(api.getPassage).mockResolvedValue({
+      document_id: 7, filename: 'paper.pdf', kind: 'pdf', passages: 74, original: false,
+      items: [{ passage: 62, page: 20, text: 'XGBoost reached the highest accuracy of 83.7%.' }],
+    })
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('84%.')
+      onDone?.(done({ sources: [{ ...SOURCE, source: 'saved-before.txt' }, paper] }))
+    })
+    renderChat()
+    const user = await ask('What was the best accuracy?')
+    const margin = (await screen.findByText('Sources')).parentElement as HTMLElement
+
+    // A source from before sources named their document has nothing to show
+    await user.click(within(margin).getByText('saved-before.txt'))
+    expect(within(margin).queryByRole('button', { name: /^Show/ })).toBeNull()
+
+    await user.click(within(margin).getByText('paper.pdf'))
+    await user.click(within(margin).getByRole('button', { name: 'Show on p. 20' }))
+    const viewer = await screen.findByRole('dialog', { name: 'paper.pdf' })
+    expect(await within(viewer).findByText('XGBoost reached the highest accuracy of 83.7%.')).toBeTruthy()
+    expect(api.getPassage).toHaveBeenCalledWith(7, 62)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'paper.pdf' })).toBeNull()
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {
@@ -169,7 +264,7 @@ describe('ChatLayout', () => {
 
   it('shows no cost line for an answer read back from the server', async () => {
     vi.mocked(api.getSessionMessages).mockResolvedValue({
-      session_id: 'session_1', turns: [turn({ turn_id: 3, question: 'Earlier?', answer: 'Yes.', sources: [SOURCE] })],
+      session_id: 'session_1', grounded_at: 0.6, turns: [turn({ turn_id: 3, question: 'Earlier?', answer: 'Yes.', sources: [SOURCE] })],
     })
     renderChat()
     expect(await screen.findByText('Yes.')).toBeTruthy()
@@ -419,7 +514,7 @@ describe('ChatLayout', () => {
 
   it('opens the latest conversation at /chat, with its sources, and puts its id in the URL', async () => {
     vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_42', title: 'How often?', turns: 1 })] })
-    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', turns: [turn({
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_42', grounded_at: 0.6, turns: [turn({
       turn_id: 5, question: 'How often are the blades inspected?', answer: 'Every **90 days**.',
       sources: [SOURCE], confidence: 0.81, mode: 'original', tool_used: null, feedback: 0, created_at: '2026-10-12T10:00:00',
     })] })
@@ -508,7 +603,7 @@ describe('ChatLayout', () => {
   })
 
   it('opens settings over the open conversation, and closing it returns to that conversation', async () => {
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [turn({
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [turn({
       turn_id: 3, question: 'Who logs the inspections?', answer: 'The Halcyon register.',
     })] }))
     renderChat('/chat/session_9')
@@ -542,7 +637,7 @@ describe('ChatLayout', () => {
       session({ session_id: 'session_2', title: 'Who logs the inspections?', updated_at: '2026-10-12T11:00:00' }),
       session({ session_id: 'session_1', title: 'How often are the blades inspected?', updated_at: '2026-10-11T09:30:00' }),
     ] })
-    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, turns: [turn({
+    vi.mocked(api.getSessionMessages).mockImplementation(async (id) => ({ session_id: id, grounded_at: 0.6, turns: [turn({
       turn_id: id === 'session_2' ? 2 : 1, question: `The question of ${id}`, answer: `The answer of ${id}`,
     })] }))
     renderChat('/chat/session_1')
@@ -607,7 +702,7 @@ describe('ChatLayout', () => {
   it('shows the rating saved with a turn after a reload, and puts it back if a change fails', async () => {
     vi.mocked(api.sendFeedback).mockReset()
     vi.mocked(api.sendFeedback).mockRejectedValue(new Error('No such answer.'))
-    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_1', turns: [turn({
+    vi.mocked(api.getSessionMessages).mockResolvedValue({ session_id: 'session_1', grounded_at: 0.6, turns: [turn({
       turn_id: 5, question: 'How often?', answer: 'Every 90 days.', sources: [SOURCE], feedback: -1,
     })] })
     const { addToast } = renderChat()

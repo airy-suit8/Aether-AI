@@ -30,7 +30,8 @@ in the request or named in the question, and said in the done event ("scope"). W
 is then widened where a question needs it: each document's own best passages for a question
 about several at once, each document's first passage for a question about its title or authors,
 and the passages either side of the best hits (settings.chunk_window). The added passages are
-context: they do not count towards the confidence.
+context: they do not count towards the confidence. Each search is reranked first, when a reranker
+is set (retrieval/reranker.py): it finds settings.rerank_candidates passages and keeps the best.
 """
 
 import re
@@ -52,6 +53,7 @@ from src.memory.conversation import NO_HISTORY, memory
 from src.prompts.prompt_templates import (
     CITED_RAG_PROMPT, RAG_PROMPT, SUMMARIZE_PROMPT, format_context, injection_patterns_in,
 )
+from src.retrieval import reranker
 from src.retrieval import scope as scoping
 from src.retrieval.retriever import UserRetriever, retriever, rewrite_question
 from src.retrieval.scope import Scope
@@ -81,6 +83,7 @@ class RAGResponse(BaseModel):
     usage: Optional[Dict[str, Any]] = Field(default=None, description="Seconds and tokens, in all and by stage")
     steps: Optional[List[Dict[str, str]]] = Field(default=None, description="Agent mode: each tool call, in order")
     scope: Optional[Dict[str, Any]] = Field(default=None, description="The documents searched, and how they were picked")
+    grounded_at: Optional[float] = Field(default=None, description="The confidence at which an answer reads as grounded")
 
 
 # ── What one question did (read by the evaluation harness) ───────────────────
@@ -133,14 +136,20 @@ def is_refusal(answer: str) -> bool:
 
 # ── The two retrieval-and-generation strategies ──────────────────────────────
 
-def _search(mode: Mode, tenant: str, query: str, k: int, document_ids: Optional[List[int]]) -> List[Dict[str, Any]]:
-    """One search of the mode's kind, as {"text", "meta", "score"} hits."""
+def _search(mode: Mode, tenant: str, query: str, k: int, document_ids: Optional[List[int]],
+            candidates: Optional[int] = None) -> List[Dict[str, Any]]:
+    """One search of the mode's kind, as {"text", "meta", "score"} hits, best first. With a
+    reranker, it finds `candidates` passages (settings.rerank_candidates) and keeps the k the
+    reranker puts first."""
+    pool = max(k, candidates or settings.rerank_candidates) if reranker.enabled() else k
     if mode == "langchain":
-        docs = UserRetriever(tenant=tenant, k=k, document_ids=document_ids).invoke(query)
-        return [{"text": d.page_content, "meta": d.metadata, "score": d.metadata["score"]} for d in docs]
-    if mode == "hybrid":
-        return retriever.search_hybrid(tenant, query, k=k, document_ids=document_ids)
-    return retriever.search(tenant, query, k=k, document_ids=document_ids)
+        docs = UserRetriever(tenant=tenant, k=pool, document_ids=document_ids).invoke(query)
+        hits = [{"text": d.page_content, "meta": d.metadata, "score": d.metadata["score"]} for d in docs]
+    elif mode == "hybrid":
+        hits = retriever.search_hybrid(tenant, query, k=pool, document_ids=document_ids)
+    else:
+        hits = retriever.search(tenant, query, k=pool, document_ids=document_ids)
+    return reranker.rerank(query, hits, k)
 
 
 def _key(hit: Dict[str, Any]) -> str:
@@ -184,7 +193,8 @@ def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None
     documents = scope.documents if scope else []
     if scope and scope.each and 1 < len(documents) <= scoping.MAX_EACH:
         per = max(2, -(-settings.top_k // len(documents)))
-        hits = [hit for doc in documents for hit in _search(mode, tenant, query, per, [doc.id])]
+        candidates = settings.rerank_candidates // len(documents)  # the reranker reads as many in all
+        hits = [hit for doc in documents for hit in _search(mode, tenant, query, per, [doc.id], candidates)]
     else:
         hits = _search(mode, tenant, query, settings.top_k, scope.ids if scope else None)
     if not hits:
@@ -194,7 +204,8 @@ def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None
         hits += _added(tenant, query, [first[d.id] for d in documents if d.id in first], hits, "start")
     if settings.chunk_window:
         around: List[tuple] = []
-        for hit in sorted((h for h in hits if "added" not in h), key=lambda h: -h["score"])[:2]:
+        # The two best: by the reranker's judgement when there is one, else by similarity
+        for hit in sorted((h for h in hits if "added" not in h), key=lambda h: -h.get("relevance", h["score"]))[:2]:
             meta = hit["meta"]
             if meta.get("document_id") is not None and meta.get("chunk_index") is not None:
                 around += store.passages_around(tenant, meta["document_id"], meta["chunk_index"], settings.chunk_window)
@@ -303,7 +314,7 @@ def _report_injection_patterns(user_id: int, results: List[Dict[str, Any]]) -> N
 def _refusal(text: str, confidence: float, usage: Dict[str, Any], scope: Optional[Scope] = None) -> Iterator[Dict[str, Any]]:
     yield {"type": "token", "content": text}
     yield {"type": "done", "sources": [], "confidence": confidence, "turn_id": None, "usage": usage,
-           "scope": scope.described() if scope else None}
+           "scope": scope.described() if scope else None, "grounded_at": settings.grounded_line()}
 
 
 # ── The pipeline ──────────────────────────────────────────────────────────────
@@ -364,7 +375,7 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
         turn_id = memory.add_turn(user_id, session_id, question, answer_text, confidence, mode=STORED_MODE[mode],
                                   sources=sources)
     yield {"type": "done", "sources": sources, "confidence": confidence, "turn_id": turn_id,
-           "usage": _usage(trace, started), "scope": scope.described()}
+           "usage": _usage(trace, started), "scope": scope.described(), "grounded_at": settings.grounded_line()}
 
 
 def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, started: float,
@@ -392,14 +403,15 @@ def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, st
                               mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
            "tool_used": result["tool_used"], "steps": result["steps"], "turn_id": turn_id,
-           "usage": _usage(trace, started, searches), "scope": scope.described()}
+           "usage": _usage(trace, started, searches), "scope": scope.described(),
+           "grounded_at": settings.grounded_line()}
 
 
 def answer(user_id: int, question: str, session_id: str = "default", mode: Mode = "default",
            save_turn: bool = True, trace: Optional[Trace] = None,
            document_ids: Optional[List[int]] = None) -> Dict[str, Any]:
     """Run events() to the end and return {"answer", "sources", "confidence", "tool_used", "steps",
-    "turn_id", "usage", "scope"}."""
+    "turn_id", "usage", "scope", "grounded_at"}."""
     tokens: List[str] = []
     done: Dict[str, Any] = {}
     for event in events(user_id, question, session_id, mode, save_turn, trace, document_ids):
@@ -416,4 +428,5 @@ def answer(user_id: int, question: str, session_id: str = "default", mode: Mode 
         turn_id=done.get("turn_id"),
         usage=done.get("usage"),
         scope=done.get("scope"),
+        grounded_at=done.get("grounded_at"),
     ).model_dump()

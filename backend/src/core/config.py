@@ -4,14 +4,14 @@ core/config.py — the one source of configuration.
 Every tunable (model ids, chunking, retrieval, limits, origins, data paths) is read here and
 nowhere else. Values come from, highest priority first: environment variables, backend/.env,
 then the defaults below. Tunables use the AETHER_ prefix (AETHER_TOP_K=8, AETHER_DB_PATH=...);
-the two secrets keep their usual names, GOOGLE_API_KEY and JWT_SECRET.
+the secrets keep their usual names, GOOGLE_API_KEY, OPENAI_API_KEY and JWT_SECRET.
 
 Reading the settings opens nothing and needs no key: the key is checked when a model is built,
 and the JWT secret when the app is built (main.create_app).
 """
 
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,6 +36,17 @@ JWT_SECRET_PLACEHOLDER = "replace_with_a_long_random_string"
 # "Document scope"). It needs Ollama 0.40 or later.
 OLLAMA_LLM_MODEL = "qwen3.5:4b"
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
+GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
+
+# The average similarity of an answer's passages at which it reads as grounded (the ring under an
+# answer), for each embedding model, since each spreads its scores differently. Gemini: from the
+# first real run (answerable questions 0.67 to 0.80, an unrelated one 0.50), until Sprint 4
+# measures it. Ollama's default embedding model: on the owner's three documents, 15 Oct 2026 (SPRINT_PLAN.md,
+# "Reranking"): 20 full questions averaged 0.61 to 0.78 and 13 short ones ("which dataset",
+# "who are the authors") 0.40 to 0.67, while 6 unrelated ones ("what is the price of gold")
+# averaged 0.38 to 0.48; at 0.5, 28 of the 33 read as grounded and none of the 6.
+GROUNDED_LINES = {f"gemini:{GEMINI_EMBEDDING_MODEL}": 0.6, f"ollama:{OLLAMA_EMBEDDING_MODEL}": 0.5}
+GROUNDED_LINE_UNMEASURED = 0.6
 
 
 class Settings(BaseSettings):
@@ -50,6 +61,8 @@ class Settings(BaseSettings):
 
     # ── Secrets (their usual names, no prefix) ────────────────────────────────
     google_api_key: str = Field(default="", validation_alias="GOOGLE_API_KEY")
+    # The key of an OpenAI-compatible service (llm_provider "openai"); a local server needs none
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
 
     # ── Sign-in (S7) ──────────────────────────────────────────────────────────
@@ -64,13 +77,21 @@ class Settings(BaseSettings):
     invite_code: str = ""
 
     # ── Models ────────────────────────────────────────────────────────────────
-    # Where each model runs: "gemini", Google's API (needs GOOGLE_API_KEY), or "ollama", a model
-    # on this computer served by Ollama (no key, no quota). With "ollama" the model ids below
-    # default to OLLAMA_LLM_MODEL and OLLAMA_EMBEDDING_MODEL. Passages embedded by one embedding
-    # model cannot be searched with another: after changing it, run python -m src.reembed.
-    llm_provider: Literal["gemini", "ollama"] = "gemini"
-    embedding_provider: Literal["gemini", "ollama"] = "gemini"
+    # Where each model runs: "gemini", Google's API (needs GOOGLE_API_KEY); "ollama", a model
+    # on this computer served by Ollama (no key, no quota); or "openai", any service that speaks
+    # OpenAI's API at openai_url: OpenAI itself, Groq, OpenRouter, LM Studio, or Ollama's own
+    # /v1 address. With "ollama" the model ids below default to OLLAMA_LLM_MODEL and
+    # OLLAMA_EMBEDDING_MODEL; with "openai" they must be named (AETHER_LLM_MODEL,
+    # AETHER_EMBEDDING_MODEL), since every service has its own. Passages embedded by one
+    # embedding model cannot be searched with another: after changing it, run python -m src.reembed.
+    llm_provider: Literal["gemini", "ollama", "openai"] = "gemini"
+    embedding_provider: Literal["gemini", "ollama", "openai"] = "gemini"
     ollama_url: str = "http://127.0.0.1:11434"
+    openai_url: str = "https://api.openai.com/v1"
+    # Sent as the request's reasoning_effort when set. "none" stops a model that thinks before it
+    # answers (qwen3.5 through Ollama's or LM Studio's /v1) from thinking: a three-word answer took
+    # 6 tokens with it and 2,973 without. Not sent by default: OpenAI's other models refuse it.
+    openai_reasoning_effort: str = ""
     # The context Ollama gives a chat model, in tokens. Ollama's own default (2048 or 4096,
     # depending on its version) cuts a long prompt from the start, which would drop the
     # instructions; this holds them, five passages and the remembered conversation.
@@ -91,7 +112,7 @@ class Settings(BaseSettings):
     llm_max_attempts: int = 3
     llm_retry_seconds: float = 2.0
     llm_max_output_tokens: int = 8192
-    embedding_model: str = "models/gemini-embedding-001"
+    embedding_model: str = GEMINI_EMBEDDING_MODEL
     embedding_timeout_seconds: float = 60.0
     # The evaluation's judge (AETHER_JUDGE_MODEL). It must differ from llm_model, so it has no
     # default: an answer scored by the model that wrote it is not a measurement.
@@ -99,10 +120,21 @@ class Settings(BaseSettings):
 
     # ── RAG pipeline ──────────────────────────────────────────────────────────
     document_loader: Literal["native", "langchain"] = "native"
+    # A PDF page with no text (a scan, a photo) is read by OCR on the processor (ingestion/ocr.py),
+    # about 1 to 2 s a page, by the native loader. Off: such a PDF is refused, as before 15 Oct 2026.
+    # A file with more such pages than ocr_max_pages is refused: reading it would take minutes.
+    ocr: bool = True
+    ocr_max_pages: int = 100
     chunk_size: int = 1000
     chunk_overlap: int = 150
     top_k: int = 5
-    confidence_threshold: float = 0.3      # minimum best cosine similarity to answer (Task 7)
+    # The best passage's similarity under which a question is refused without asking the model
+    # (Task 7). Not raised for Ollama's default embedding model: short questions about the documents ("orcid ids",
+    # 0.42) scored below unrelated ones ("who is the prime minister of India", 0.52), so a line
+    # that refused those refused real questions too; the model says when the passages do not answer.
+    confidence_threshold: float = 0.3
+    # The line of GROUNDED_LINES for the embedding model, unless set (AETHER_GROUNDED_AT)
+    grounded_at: Optional[float] = None
     # What the answer is written from. "chunks": the numbered chunks themselves, cited as [1],
     # [2] (one model call; the sources are then the chunks cited). "summary": a model summary of
     # the retrieved chunks, then the answer from it (two calls). "chunks" is the default since
@@ -112,7 +144,15 @@ class Settings(BaseSettings):
     # How many passages either side of the two best hits are read with them, for the context
     # around a passage (Verba's "chunk window"). 0: none.
     chunk_window: int = 1
-    memory_max_turns: int = 10             # conversation turns remembered per session (Task 4)
+    # Reranking: a search finds rerank_candidates passages, then a cross-encoder model on this
+    # computer reads the question with each one and keeps the top_k that answer it best. kotaemon
+    # and bRAG rerank the same way, through Cohere's API. "" turns it off. The model (about 90 MB)
+    # is downloaded from Hugging Face the first time, into model_dir, and runs on the processor.
+    # On the owner's papers it brought the passage with a paper's own result into the five read,
+    # where search alone had left it sixth, behind a cited study's (SPRINT_PLAN.md, "Reranking").
+    rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    rerank_candidates: int = 20
+    memory_max_turns: int = 10            # conversation turns remembered per session (Task 4)
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
 
     # ── Server and limits ─────────────────────────────────────────────────────
@@ -139,21 +179,31 @@ class Settings(BaseSettings):
     rate_limit_upload: str = "10/minute"
     rate_limit_chat: str = "30/minute"
 
-    # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR) ──
+    # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR, AETHER_MODEL_DIR, AETHER_FILES_DIR) ──
     db_path: Path = Field(default_factory=lambda: DATA_DIR / "aether.db")
     vector_store_dir: Path = Field(default_factory=lambda: DATA_DIR / "vector_store")
+    model_dir: Path = Field(default_factory=lambda: DATA_DIR / "models")  # models run by the app itself (reranking)
+    files_dir: Path = Field(default_factory=lambda: DATA_DIR / "files")    # uploaded PDFs, kept to show their pages
     log_dir: Path = BACKEND_DIR / "logs"
 
     _path_notes: List[str] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="after")
-    def _ollama_models_unless_named(self) -> "Settings":
-        """With a provider of "ollama", a model id that was not set is Ollama's default, not Gemini's."""
-        if self.llm_provider == "ollama" and "llm_model" not in self.model_fields_set:
-            self.llm_model = OLLAMA_LLM_MODEL
-        if self.embedding_provider == "ollama" and "embedding_model" not in self.model_fields_set:
-            self.embedding_model = OLLAMA_EMBEDDING_MODEL
+    def _provider_models_unless_named(self) -> "Settings":
+        """A model id that was not set is the provider's default, not Gemini's: Ollama's, or none for
+        an OpenAI-compatible service (the model factory then says to name one)."""
+        defaults = {"ollama": (OLLAMA_LLM_MODEL, OLLAMA_EMBEDDING_MODEL), "openai": ("", "")}
+        if self.llm_provider in defaults and "llm_model" not in self.model_fields_set:
+            self.llm_model = defaults[self.llm_provider][0]
+        if self.embedding_provider in defaults and "embedding_model" not in self.model_fields_set:
+            self.embedding_model = defaults[self.embedding_provider][1]
         return self
+
+    def grounded_line(self) -> float:
+        """The average similarity at which an answer reads as grounded, for the embedding model in use."""
+        if self.grounded_at is not None:
+            return self.grounded_at
+        return GROUNDED_LINES.get(self.embedding_label(), GROUNDED_LINE_UNMEASURED)
 
     def embedding_label(self) -> str:
         """The embedding model as the vector store records it: provider and model id."""

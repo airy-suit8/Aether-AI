@@ -16,6 +16,7 @@ Endpoints (all under /api/v1):
                                       a path outside /api/ that matches no file gets its index.html
 """
 
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,12 +37,14 @@ from src.core.config import APP_VERSION, settings
 from src.core.logging import error_logger, log_event, setup_logging, upload_logger
 from src.db.database import init_db
 from src.pipeline.documents import migrate_chunks_to_tenants, recover_interrupted_uploads
+from src.retrieval import reranker
 from src.vectordb.vector_store import store
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Open what the app writes to: the log files and the database tables; re-key old chunks."""
+    """Open what the app writes to: the log files and the database tables; re-key old chunks;
+    start loading the reranking model."""
     setup_logging(settings.log_dir)
     for note in settings.path_notes():
         error_logger.warning(note)
@@ -60,6 +63,8 @@ async def lifespan(app: FastAPI):
         changed = store.embedding_model_changed()
         if changed:
             error_logger.warning(changed)
+    if reranker.enabled():  # load it now, in the background, rather than during the first question
+        threading.Thread(target=reranker.warm, name="rerank-warm", daemon=True).start()
     yield
 
 

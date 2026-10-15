@@ -429,6 +429,120 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/passages/{passage}": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get Passage",
+        "description": "One passage of a document, numbered from 1 as sources give it, with `around` passages either\nside, in order: a source shown in its place. Says whether the document's PDF is kept, to show\nits page. 404 for a document that is not yours, or a passage it does not have.",
+        "operationId": "get_passage_api_v1_documents__document_id__passages__passage__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "passage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Passage"
+            }
+          },
+          {
+            "name": "around",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3,
+              "minimum": 0,
+              "default": 1,
+              "title": "Around"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/file": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Get Document File",
+        "description": "A document's PDF as it was uploaded, to show a source on its page. 404 for a document that\nis not yours, and for one whose file is not kept (not a PDF, or uploaded before 15 Oct 2026).",
+        "operationId": "get_document_file_api_v1_documents__document_id__file_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The PDF as it was uploaded",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/chat": {
       "post": {
         "tags": [
@@ -1257,6 +1371,17 @@
                 "type": "null"
               }
             ]
+          },
+          "grounded_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounded At"
           }
         },
         "type": "object",
@@ -1588,6 +1713,17 @@
                 "type": "null"
               }
             ]
+          },
+          "grounded_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounded At"
           }
         },
         "type": "object",
@@ -1709,6 +1845,85 @@
         "title": "Message",
         "description": "A reply that only says what happened."
       },
+      "Passage": {
+        "properties": {
+          "passage": {
+            "type": "integer",
+            "title": "Passage"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Page"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "passage",
+          "page",
+          "text"
+        ],
+        "title": "Passage",
+        "description": "One passage of a document, numbered from 1 as sources give it."
+      },
+      "PassageView": {
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "title": "Document Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "passages": {
+            "type": "integer",
+            "title": "Passages"
+          },
+          "original": {
+            "type": "boolean",
+            "title": "Original"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Passage"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "filename",
+          "passages",
+          "original",
+          "items"
+        ],
+        "title": "PassageView",
+        "description": "A passage in its place: it and the passages either side, in order (GET .../passages/{passage})."
+      },
       "Scope": {
         "properties": {
           "how": {
@@ -1807,12 +2022,17 @@
             },
             "type": "array",
             "title": "Turns"
+          },
+          "grounded_at": {
+            "type": "number",
+            "title": "Grounded At"
           }
         },
         "type": "object",
         "required": [
           "session_id",
-          "turns"
+          "turns",
+          "grounded_at"
         ],
         "title": "SessionMessages"
       },
@@ -1920,12 +2140,17 @@
             },
             "type": "array",
             "title": "Turns"
+          },
+          "grounded_at": {
+            "type": "number",
+            "title": "Grounded At"
           }
         },
         "type": "object",
         "required": [
           "title",
-          "turns"
+          "turns",
+          "grounded_at"
         ],
         "title": "SharedConversation",
         "description": "A conversation as anyone with its link sees it. It says nothing about whose it is."
@@ -2204,7 +2429,10 @@
           },
           "status": {
             "type": "string",
-            "const": "processing",
+            "enum": [
+              "processing",
+              "ready"
+            ],
             "title": "Status",
             "default": "processing"
           },

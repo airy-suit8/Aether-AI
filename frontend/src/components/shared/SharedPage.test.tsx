@@ -31,6 +31,7 @@ describe('SharedPage', () => {
   it('shows the conversation with its sources, read only', async () => {
     vi.mocked(api.getSharedConversation).mockResolvedValue({
       title: 'Blade inspections',
+      grounded_at: 0.6,
       turns: [{
         question: 'How often are the blades inspected?', answer: 'Every **90 days**.', confidence: 0.83, mode: 'original',
         sources: [SOURCE], tool_used: null, created_at: '2026-10-13T10:00:00',
@@ -55,6 +56,7 @@ describe('SharedPage', () => {
   it('does not print the first question twice when the conversation has no name of its own', async () => {
     vi.mocked(api.getSharedConversation).mockResolvedValue({
       title: 'How often are the blades inspected?',
+      grounded_at: 0.6,
       turns: [{
         question: 'How often are the blades inspected?', answer: 'Every 90 days.', confidence: 0.83, mode: 'original',
         sources: [], tool_used: null, created_at: '2026-10-13T10:00:00',

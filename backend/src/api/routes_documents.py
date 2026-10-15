@@ -1,4 +1,5 @@
-"""api/routes_documents.py — upload a document, list a user's documents, delete them."""
+"""api/routes_documents.py — upload a document, list a user's documents, show one's passages and
+its PDF, delete them."""
 
 import hashlib
 import logging
@@ -8,24 +9,27 @@ import time
 from pathlib import Path
 from typing import AsyncIterator, Tuple
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path as PathParam, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from starlette.formparsers import MultiPartException, MultiPartParser
 
 from src.api.deps import get_current_user, limiter
 from src.api.errors import reference, server_error
 from src.api.schemas import (
-    DocumentDeleted, DocumentList, DocumentNames, DocumentsCleared, DocumentStatus, UploadResponse,
+    DocumentDeleted, DocumentList, DocumentNames, DocumentsCleared, DocumentStatus, PassageView, UploadResponse,
 )
 from src.core.config import settings
 from src.core.logging import error_logger, log_event, upload_logger
-from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document
+from src.db.database import check_duplicate_document, get_all_documents_detailed, get_document, get_tenant_id
 from src.ingestion.loader import SUPPORTED_EXTENSIONS, clean_filename
 from src.llm.llm_client import is_unavailable, setup_problem
 from src.retrieval.scope import documents_of
 from src.pipeline.documents import (
-    DocumentRemoved, accept_document, clear_documents, delete_document, fail_document, finish_document, list_documents,
+    KEPT_KINDS, DocumentRemoved, accept_document, clear_documents, delete_document, fail_document, finish_document,
+    has_original, keep_original, list_documents, original_path,
 )
+from src.vectordb.vector_store import store
 
 router = APIRouter()
 
@@ -38,6 +42,8 @@ router = APIRouter()
 MULTIPART_ALLOWANCE = 64 * 1024
 COPY_CHUNK = 1024 * 1024
 NO_FILE = "The request has no file: send it as the multipart form field \"file\"."
+NO_ORIGINAL = ("This document's file is not kept, so its pages cannot be shown: only PDFs are, and only those "
+               "uploaded since 15 Oct 2026. Upload the same PDF again to keep it; nothing is read twice.")
 
 # The route reads the body itself, so its shape is declared here for the API schema
 UPLOAD_BODY = {"requestBody": {"required": True, "content": {"multipart/form-data": {"schema": {
@@ -128,7 +134,11 @@ async def upload_document(request: Request, background_tasks: BackgroundTasks, u
 
     handed_over = False
     try:
-        accepted = await run_in_threadpool(_accept_upload, user_id, filename, size, file_hash)
+        accepted, original_only = await run_in_threadpool(_accept_upload, user_id, filename, size, file_hash)
+        if original_only:  # a PDF already read, uploaded again to keep its file: nothing to read
+            handed_over = await run_in_threadpool(keep_original, user_id, accepted.document_id, tmp_path, filename)
+            log_event(upload_logger, "original_kept", user_id=user_id, document_id=accepted.document_id)
+            return accepted
         # Runs after the reply is sent; it deletes the temp file when it is done
         background_tasks.add_task(_read_in_background, user_id, accepted.document_id, tmp_path, filename,
                                   size, reference(request))
@@ -139,8 +149,10 @@ async def upload_document(request: Request, background_tasks: BackgroundTasks, u
             os.unlink(tmp_path)
 
 
-def _accept_upload(user_id: int, filename: str, size: int, file_hash: str) -> UploadResponse:
-    """Check the received file against the rules and record it as processing. Runs in the thread pool."""
+def _accept_upload(user_id: int, filename: str, size: int, file_hash: str) -> Tuple[UploadResponse, bool]:
+    """Check the received file against the rules and record it as processing. Runs in the thread pool.
+    Returns the reply, and whether the file is only to be kept as the original of a document already
+    read: a PDF uploaded before originals were kept, uploaded again."""
     ext = Path(filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="type")
@@ -165,11 +177,17 @@ def _accept_upload(user_id: int, filename: str, size: int, file_hash: str) -> Up
     # Check for duplicate uploads via file hash
     existing = check_duplicate_document(user_id, file_hash)
     if existing:
-        log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="duplicate", matches=existing)
+        if ext in KEPT_KINDS and existing["status"] == "ready" and not has_original(user_id, existing["id"]):
+            return UploadResponse(
+                document_id=existing["id"], filename=existing["filename"], status="ready", replaces=False,
+                message=f"Kept the file of '{existing['filename']}', to show its pages.",
+            ), True
+        log_event(upload_logger, "upload_rejected", user_id=user_id, file=filename, reason="duplicate",
+                  matches=existing["filename"])
         # Re-ingesting would store every chunk twice and crowd the top results with copies
         raise HTTPException(
             status_code=409,
-            detail=f"This file is already in your library as '{existing}'.",
+            detail=f"This file is already in your library as '{existing['filename']}'.",
         )
 
     accepted = accept_document(user_id, filename, size, file_hash)
@@ -180,7 +198,7 @@ def _accept_upload(user_id: int, filename: str, size: int, file_hash: str) -> Up
         filename=filename,
         replaces=accepted["replaces"],
         message=f"Reading '{filename}'.",
-    )
+    ), False
 
 
 def _read_in_background(user_id: int, document_id: int, tmp_path: str, filename: str, size: int, ref: str) -> None:
@@ -193,9 +211,15 @@ def _read_in_background(user_id: int, document_id: int, tmp_path: str, filename:
     start_time = time.time()
     try:
         result = finish_document(user_id, document_id, tmp_path, filename)
+        try:  # a PDF, to show its pages; the document is read either way
+            kept = keep_original(user_id, document_id, tmp_path, filename)
+        except OSError:
+            kept = False
+            log_event(error_logger, "original_not_kept", level=logging.WARNING, exc_info=True, user_id=user_id,
+                      document_id=document_id)
         log_event(upload_logger, "upload_ok", user_id=user_id, file=filename, document_id=document_id,
                   pages=result["pages"], chunks=result["chunks"], bytes=size,
-                  seconds=round(time.time() - start_time, 2), replaced=result["replaced"])
+                  seconds=round(time.time() - start_time, 2), replaced=result["replaced"], original_kept=kept)
     except DocumentRemoved:
         log_event(upload_logger, "upload_removed_while_read", user_id=user_id, file=filename, document_id=document_id)
     except ValueError as e:
@@ -258,6 +282,40 @@ def get_one_document(document_id: int, user_id: int = Depends(get_current_user))
     if document is None:
         raise HTTPException(status_code=404, detail="No such document.")
     return document
+
+
+@router.get("/api/v1/documents/{document_id}/passages/{passage}", response_model=PassageView, tags=["Documents"])
+def get_passage(document_id: int, passage: int = PathParam(ge=1), around: int = Query(default=1, ge=0, le=3),
+                user_id: int = Depends(get_current_user)):
+    """One passage of a document, numbered from 1 as sources give it, with `around` passages either
+    side, in order: a source shown in its place. Says whether the document's PDF is kept, to show
+    its page. 404 for a document that is not yours, or a passage it does not have."""
+    document = get_document(user_id, document_id)
+    if document is None or document["status"] != "ready":
+        raise HTTPException(status_code=404, detail="No such document.")
+    items = store.passages_at(get_tenant_id(user_id), document_id, list(range(passage - around, passage + around + 1)))
+    if not any(meta.get("chunk_index") == passage for _, meta in items):
+        raise HTTPException(status_code=404, detail="That document has no such passage.")
+    first = items[0][1]
+    return {
+        "document_id": document_id, "filename": document["filename"], "kind": first.get("type"),
+        "passages": first.get("total_chunks") or document["chunks"], "original": has_original(user_id, document_id),
+        "items": [{"passage": meta["chunk_index"], "page": meta.get("page", "?"), "text": text} for text, meta in items],
+    }
+
+
+@router.get("/api/v1/documents/{document_id}/file", response_class=FileResponse, tags=["Documents"],
+            responses={200: {"content": {"application/pdf": {}}, "description": "The PDF as it was uploaded"}})
+def get_document_file(document_id: int, user_id: int = Depends(get_current_user)):
+    """A document's PDF as it was uploaded, to show a source on its page. 404 for a document that
+    is not yours, and for one whose file is not kept (not a PDF, or uploaded before 15 Oct 2026)."""
+    document = get_document(user_id, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="No such document.")
+    if not has_original(user_id, document_id):
+        raise HTTPException(status_code=404, detail=NO_ORIGINAL)
+    return FileResponse(original_path(user_id, document_id), media_type="application/pdf",
+                        filename=document["filename"], content_disposition_type="inline")
 
 
 @router.delete("/api/v1/documents/{document_id}", response_model=DocumentDeleted, tags=["Documents"])

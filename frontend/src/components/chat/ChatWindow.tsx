@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import MessageBubble from './MessageBubble'
-import type { FeedbackValue } from '../../services/api'
+import type { FeedbackValue, Source } from '../../services/api'
 import type { AnswerMessage, ChatMessage } from './types'
 
 const IDEAS = ['Summarise the main points', 'List the key dates and numbers', 'What is still unclear or missing?']
@@ -20,9 +20,10 @@ interface ChatWindowProps {
   hasDocuments: boolean
   onSuggest: (question: string) => void
   onRate?: (message: AnswerMessage, value: FeedbackValue) => void
+  onOpenSource?: (source: Source, n: number) => void
 }
 
-export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, threadLoading = false, streamRef, onScroll, hasDocuments, onSuggest, onRate }: ChatWindowProps) {
+export default function ChatWindow({ messages, streamingText, streamingPhase, isLoading, threadLoading = false, streamRef, onScroll, hasDocuments, onSuggest, onRate, onOpenSource }: ChatWindowProps) {
   // While a conversation is being loaded there is nothing to show yet, not even the empty state
   const isEmpty = messages.length === 0 && !streamingText && !isLoading && !threadLoading
 
@@ -51,7 +52,7 @@ export default function ChatWindow({ messages, streamingText, streamingPhase, is
         ) : (
           <>
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} onRate={onRate} />
+              <MessageBubble key={msg.id} message={msg} onRate={onRate} onOpenSource={onOpenSource} />
             ))}
 
             {/* The reply in progress */}

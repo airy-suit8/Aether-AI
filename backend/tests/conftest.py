@@ -27,18 +27,26 @@ os.environ["JWT_SECRET"] = "test-secret-used-only-by-the-test-suite"
 # Set but empty: load_dotenv(override=False) then cannot copy a real key from backend/.env
 # into the test process, so nothing here can reach Gemini even on a developer machine.
 os.environ["GOOGLE_API_KEY"] = ""
+os.environ["OPENAI_API_KEY"] = ""  # the same for an OpenAI-compatible service
 # The suite tests the default providers (with fake models): a provider chosen in backend/.env,
 # such as Ollama, is not read here.
 os.environ["AETHER_LLM_PROVIDER"] = "gemini"
 os.environ["AETHER_EMBEDDING_PROVIDER"] = "gemini"
+# No reranking model either: it would be downloaded. The reranker's tests give it a fake one.
+os.environ["AETHER_RERANK_MODEL"] = ""
+os.environ["AETHER_MODEL_DIR"] = os.path.join(_test_dir, "models")
+os.environ["AETHER_FILES_DIR"] = os.path.join(_test_dir, "files")
 
 # Now safe to import
-from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402
+from fakes import FakeOcr, HashingEmbeddings, ScriptedChatModel  # noqa: E402
 from src.embeddings import embedder  # noqa: E402
+from src.ingestion import ocr  # noqa: E402
 from src.llm import llm_client  # noqa: E402
 
 # The vector store opens lazily; give it fake embeddings before anything touches it.
 embedder.get_embeddings = lambda: HashingEmbeddings()
+# OCR reads nothing unless a test gives it pages to read (tests/unit/test_ocr.py)
+ocr._load = lambda: FakeOcr()
 
 from main import app  # noqa: E402
 from src.api.deps import limiter  # noqa: E402

@@ -65,7 +65,7 @@ def test_each_provider_is_chosen_on_its_own_and_a_named_model_is_kept(monkeypatc
 
 def test_an_unknown_provider_is_refused(monkeypatch):
     with pytest.raises(ValueError, match="llm_provider"):
-        settings_of(monkeypatch, llm_provider="openai")
+        settings_of(monkeypatch, llm_provider="anthropic")
 
 
 # ── Factories ─────────────────────────────────────────────────────────────────
