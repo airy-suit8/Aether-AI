@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ChangeEvent } from 'react'
 import { Aperture, Lens, Switch } from '../../design/prism'
 import type { DocumentRecord, Mode } from '../../services/api'
@@ -41,6 +41,23 @@ export default function ChatComposer({
   documents = [], searchIn = null, onSearchIn = () => {},
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
+
+  // Toasts sit at the foot of the page, where the dock is: lift them above it, so a toast (or
+  // several, when requests fail together) never covers the question box
+  useEffect(() => {
+    const dock = dockRef.current
+    if (!dock) return undefined
+    const root = document.documentElement
+    const lift = () => root.style.setProperty('--p-toast-lift', `${dock.offsetHeight}px`)
+    lift()
+    const observer = new ResizeObserver(lift)
+    observer.observe(dock)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--p-toast-lift')
+    }
+  }, [])
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -49,7 +66,7 @@ export default function ChatComposer({
   }
 
   return (
-    <div className="x-dock">
+    <div className="x-dock" ref={dockRef}>
       {failure && (
         <div className="x-retry" role="alert" data-tone={failure.stopped ? undefined : 'bad'}>
           <p><b>{failure.stopped ? 'Stopped.' : 'Failed.'}</b> {failure.message}</p>

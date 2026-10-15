@@ -488,6 +488,15 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Why:** a general name like `PYTHON` is set by other tools for their own purposes.
 - **Evidence:** the scratch test with `PYTHON` set to a folder and stray variables set; then `start.bat --packages-only` on the owner's computer, which used the `.venv`.
 
+### D-070 Toasts sit above the dock, not over the question box
+- **Date:** 2026-10-15 · `toasts-above-dock`
+- **Context:** the owner could not see the question box on the chat page. Toasts were fixed 20 px from the bottom of the window, where the question box is, for 4 s each; one covered the box, and two or three, when several requests failed together (as when the servers were stopped), covered the whole dock. No other way of hiding it was found at any window size from 1280x600 to a phone.
+- **Options:** 1) toasts at the top of the page 2) toasts above the dock, still at the foot 3) shorter toasts
+- **Chosen:** 2: the composer measures the dock and sets `--p-toast-lift`; `.p-toasts` adds it to its 20 px.
+- **Why:** it keeps DESIGN.md's rule (short signals at the foot of the page) and the question box always clear; 3 would only shorten the time it is covered.
+- **Trade-off:** a toast covers the last lines of the conversation for its 4 s.
+- **Evidence:** the browser journey checks that the upload's toast ends above the question box; looked at in a browser at 1366x768.
+
 ---
 
 ## Template
