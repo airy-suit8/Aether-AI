@@ -145,6 +145,10 @@ A question searches every document in your library unless you say otherwise. The
 
 Under each answer that did not search everything, a line says what it searched and why, so a wrong guess shows. A question about a document's title, authors, affiliations, e-mail addresses or ORCID ids reads each document's first passage, where a paper names its own authors (not its reference list); one about "both" or "each" document reads each one's best passages. Each source says where it is: the page of a PDF, or "passage 3 of 42" in a file without pages.
 
+## Scanned PDFs
+
+A PDF page with no text in it (a scan, a photo of a page) is read by OCR on this computer's processor, with the models that come with RapidOCR: nothing is downloaded and nothing leaves the machine. It takes about 1 to 2 seconds a page, so a scanned paper is ready within a minute; a file with more than 100 such pages (`AETHER_OCR_MAX_PAGES`) is refused, since it would take minutes. Pages that have text are read as before. `AETHER_OCR=false` turns it off, and a scan is then refused as it was before. OCR reads the words, not the layout: tables and two-column pages come out line by line, and a scanned page cannot have its passage marked in the page viewer, since the page holds no text to mark.
+
 ## Seeing a source in its document
 
 Click a source card under an answer to pin it open, then **Show on p. 20** (a PDF) or **Show in the document** (any other file). A PDF opens on the cited page, drawn in the browser, with the passage marked on it; *Open the whole PDF* opens it in the browser's own viewer at that page. A Word, text or spreadsheet passage is shown with the passages either side of it.
