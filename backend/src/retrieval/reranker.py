@@ -9,14 +9,18 @@ where the search alone had ranked a cited study's result above it (SPRINT_PLAN.m
 The model is settings.rerank_model, run on the processor by fastembed (ONNX; no PyTorch, no GPU).
 It is loaded once: at startup (warm(), in the background) or by the first question. When it cannot
 be loaded (no network the first time it is downloaded, say), questions are answered in the search's
-own order and the log says why, once.
+own order and the log says why, once. The default model's files are pinned (core/config.py,
+RERANK_PINS): its repository's commit is downloaded, and each file must match its sha256, or the
+model is not used.
 """
 
+import hashlib
 import logging
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.core.config import settings
+from src.core.config import RERANK_PINS, settings
 from src.core.logging import error_logger, log_event
 
 _lock = threading.Lock()
@@ -29,10 +33,31 @@ def enabled() -> bool:
     return bool(settings.rerank_model) and _failed != settings.rerank_model
 
 
+class ModelFilesChanged(ValueError):
+    """A pinned model's file is not the one that was measured."""
+
+
+def _pinned_files(model: str, revision: str, checksums: Dict[str, str]) -> Path:
+    """The folder holding the model's files at one commit, each checked against its sha256.
+    Downloaded once into settings.model_dir; read from there after that."""
+    from huggingface_hub import snapshot_download
+    folder = Path(snapshot_download(repo_id=model, revision=revision, cache_dir=str(settings.model_dir),
+                                    allow_patterns=list(checksums)))
+    for name, expected in checksums.items():
+        if hashlib.sha256((folder / name).read_bytes()).hexdigest() != expected:
+            raise ModelFilesChanged(f"{name} of {model} at {revision[:12]} is not the file that was pinned")
+    return folder
+
+
 def _load(model: str):
-    """The cross-encoder. fastembed is imported here: importing it takes seconds."""
+    """The cross-encoder: from its pinned files when it has a pin. fastembed is imported here:
+    importing it takes seconds."""
     from fastembed.rerank.cross_encoder import TextCrossEncoder
-    return TextCrossEncoder(model_name=model, cache_dir=str(settings.model_dir))
+    pin = RERANK_PINS.get(model)
+    if pin is None:
+        return TextCrossEncoder(model_name=model, cache_dir=str(settings.model_dir))
+    return TextCrossEncoder(model_name=model, cache_dir=str(settings.model_dir),
+                            specific_model_path=str(_pinned_files(model, *pin)))
 
 
 def _encoder():

@@ -506,6 +506,15 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Trade-off:** it does not cover the OpenAI-compatible provider pointed at Ollama's `/v1` address; start Ollama by hand for that.
 - **Evidence:** `tests/unit/test_ollama_ready.py`; start.bat's block tested in a scratch copy (Ollama answering, started, not coming up, the checker failing); the real Ollama checked (answering, and a closed port: exit 3).
 
+### D-072 The reranking model's files are pinned to a commit and their checksums
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Context:** fastembed downloaded `Xenova/ms-marco-MiniLM-L-6-v2` by name, so the repository's latest files on Hugging Face were used: a change there, by its owner or by someone who took the account over, would have changed the reranker without notice (THREAT.md, section 5).
+- **Options:** 1) leave it 2) pin the commit only 3) pin the commit and check each file's sha256 4) ship the model inside the project
+- **Chosen:** 3: commit `a09144355adeed5f58c8ed011d209bf8ee5a1fec`, the one measured on 15 Oct 2026 (D-054), and the sha256 of its five files (`core/config.py`, `RERANK_PINS`). `huggingface_hub.snapshot_download` fetches that commit into `data/models` once; each file is checked before fastembed loads it from that folder; a file that differs stops the model from being used (the search's order answers, D-055).
+- **Why:** a commit id names exact files, and the checksums catch a changed file even in the local copy. 4 would put 88 MB into the repository.
+- **Trade-off:** a new version of the model is only used once its pin is changed here, with the measurement redone; a model named in `AETHER_RERANK_MODEL` that is not pinned is still fetched by name.
+- **Evidence:** `tests/unit/test_reranker.py` (the pin, the fetch at its commit, a changed file refused, an unpinned model); loaded for real from the pinned files, and offline (`HF_HUB_OFFLINE=1`).
+
 ---
 
 ## Template

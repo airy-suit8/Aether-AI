@@ -94,14 +94,13 @@ process. Turning OCR off (`AETHER_OCR=false`) keeps pdfium from reading uploads 
 | Documents and questions leave the machine | With Ollama for both models, nothing does (D-046). With Gemini or an OpenAI-compatible cloud service **[new]**, the passages and the question are sent to it | README, "Models on your own computer" |
 | A key leaks | Keys live only in `backend/.env`, which git ignores; the test suite blanks both keys; no log line reads them | `.gitignore`; `tests/conftest.py` |
 | A user points the app at an address of their choosing (SSRF) | No user input chooses an address: `AETHER_OPENAI_URL` and `AETHER_OLLAMA_URL` are the owner's settings **[new]** | `core/config.py` |
-| A swapped reranking model **[new]** | It is loaded by onnxruntime as data, not code, and a failure leaves the search's order (D-055) | `retrieval/reranker.py` |
+| A swapped reranking model | Pinned: one commit of its repository, and each of its five files checked against its sha256 before it is loaded; a file that differs is refused and the search's own order answers (D-072, D-055). It runs in onnxruntime as data, not code | `tests/unit/test_reranker.py::test_a_file_that_is_not_the_one_pinned_is_refused_and_the_search_order_used` |
 | A vulnerable package | Versions pinned; `pip-audit` (15 Oct 2026: only chromadb 1.5.9, in its HTTP server, which this app never runs) and `npm audit` (0) | `backend/requirements.txt`, `frontend/package-lock.json` |
 
 **Gaps:**
 - **Which documents may go to a cloud model, on which tier,** is not yet agreed with the mentor (S11).
-- **The reranking model is downloaded by name, not by a fixed version.** fastembed takes the
-  Hugging Face repository's latest files the first time. A pinned revision with a checksum would
-  close this.
+- **A reranking model named in `AETHER_RERANK_MODEL` that is not pinned** is still fetched by
+  name, as fastembed finds it. The default model is pinned (D-072).
 
 ## 6. Someone with the computer, or on the network path
 

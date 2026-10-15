@@ -8,14 +8,17 @@ The reranker (retrieval/reranker.py), with a fake cross-encoder in place of the 
   - startup loads the model in the background when one is set.
 """
 
+import hashlib
+import re
 import threading
 
+import huggingface_hub
 import pytest
 from fastapi.testclient import TestClient
 
 from fakes import FakeCrossEncoder
 from main import create_app
-from src.core.config import settings
+from src.core.config import RERANK_PINS, Settings, settings
 from src.retrieval import reranker
 
 HITS = [
@@ -110,3 +113,53 @@ def test_startup_loads_nothing_without_a_model(monkeypatch):
     monkeypatch.setattr(reranker, "warm", lambda: pytest.fail("nothing to load"))
     with TestClient(create_app()):
         pass
+
+
+# ── The default model's files are pinned (D-072) ──────────────────────────────
+
+def _files(folder, contents):
+    for name, data in contents.items():
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_bytes(data)
+    return {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}
+
+
+def test_the_default_model_is_pinned_to_a_commit_and_the_checksums_of_its_files():
+    revision, checksums = RERANK_PINS[Settings.model_fields["rerank_model"].default]
+    assert re.fullmatch(r"[0-9a-f]{40}", revision)
+    assert {"onnx/model.onnx", "tokenizer.json"} <= set(checksums)
+    assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in checksums.values())
+
+
+def test_pinned_files_are_fetched_at_their_commit_and_checked(tmp_path, monkeypatch):
+    checksums = _files(tmp_path, {"config.json": b"{}", "onnx/model.onnx": b"the weights measured"})
+    calls = []
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: calls.append(kwargs) or str(tmp_path))
+    assert reranker._pinned_files("org/model", "a" * 40, checksums) == tmp_path
+    assert calls[0]["repo_id"] == "org/model" and calls[0]["revision"] == "a" * 40
+    assert sorted(calls[0]["allow_patterns"]) == sorted(checksums) and calls[0]["cache_dir"] == str(settings.model_dir)
+
+
+def test_a_file_that_is_not_the_one_pinned_is_refused_and_the_search_order_used(tmp_path, monkeypatch, caplog):
+    measured = _files(tmp_path / "measured", {"onnx/model.onnx": b"the weights measured"})
+    _files(tmp_path, {"onnx/model.onnx": b"other weights"})
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: str(tmp_path))
+    with pytest.raises(reranker.ModelFilesChanged, match="onnx/model.onnx of org/model"):
+        reranker._pinned_files("org/model", "b" * 40, measured)
+
+    monkeypatch.setitem(RERANK_PINS, "org/model", ("b" * 40, measured))
+    monkeypatch.setattr(settings, "rerank_model", "org/model")
+    monkeypatch.setattr(reranker, "_loaded", None)
+    monkeypatch.setattr(reranker, "_failed", None)
+    with caplog.at_level("WARNING", logger="aether.errors"):
+        assert reranker.rerank("accuracy", HITS, 2) == HITS[:2]
+    assert "rerank_model_unavailable" in [r.getMessage() for r in caplog.records]
+
+
+def test_a_model_with_no_pin_is_loaded_as_fastembed_finds_it(monkeypatch):
+    import fastembed.rerank.cross_encoder as cross_encoder
+    made = []
+    monkeypatch.setattr(cross_encoder, "TextCrossEncoder", lambda **kwargs: made.append(kwargs) or "encoder")
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: pytest.fail("no pin, no pinned download"))
+    assert reranker._load("org/unpinned") == "encoder"
+    assert made == [{"model_name": "org/unpinned", "cache_dir": str(settings.model_dir)}]
