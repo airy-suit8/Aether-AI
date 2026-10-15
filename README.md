@@ -111,7 +111,7 @@ Instead of Gemini, the app can use models that run on this computer through [Oll
 
 4. Start the app as usual. Ollama must be running: if it is not, a question is answered with "Ollama is not running", and a model that is not installed is named with the command that installs it.
 
-The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`) was chosen with Gemini's embeddings, and another embedding model scores passages differently, so measure it again for the model you use (see "Measuring answer quality").
+Each embedding model spreads its similarity scores differently, so the line at which an answer reads as *Grounded* is set for each one: 0.5 for `nomic-embed-text` (measured on real papers: questions about them averaged 0.40 to 0.78, unrelated questions 0.38 to 0.48) and 0.6 for Gemini's. `AETHER_GROUNDED_AT` sets your own. The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`, 0.3) is not raised for `nomic-embed-text`: short questions about the documents scored as low as unrelated ones, so a higher line refused real questions. For another embedding model, measure both (see "Measuring answer quality").
 
 ## Asking about particular documents
 
@@ -121,6 +121,10 @@ A question searches every document in your library unless you say otherwise. The
 - **Name it in the question.** By the first words of its title, when the question calls it a document or asks who wrote it ("Who are the authors of Classification of…?", "the Automated Post-Disaster paper"); by an author on its first page ("the paper by Hardik Kumar"); by the number or two words of its file name ("the 13003 pdf", "the Recos letter"); or by its kind ("in the PDF", "the Word files"). A question about a subject is not narrowed because a title shares its words.
 
 Under each answer that did not search everything, a line says what it searched and why, so a wrong guess shows. A question about a document's title, authors, affiliations, e-mail addresses or ORCID ids reads each document's first passage, where a paper names its own authors (not its reference list); one about "both" or "each" document reads each one's best passages. Each source says where it is: the page of a PDF, or "passage 3 of 42" in a file without pages.
+
+## Reranking
+
+Each search finds 20 passages; then a small model on this computer, `Xenova/ms-marco-MiniLM-L-6-v2` (88 MB), reads the question with each passage and keeps the five that answer it best. A search compares meanings; the reranker judges answers, so a paper's own result is put ahead of a cited study's that uses the same words. It is downloaded from Hugging Face once, the first time the backend starts, into `data/models/`; after that it works offline, on the processor, in about half a second a question. If it cannot be downloaded, answers use the search's own order and `backend/logs/errors.log` says why. `AETHER_RERANK_MODEL=` (empty) turns it off; `AETHER_RERANK_CANDIDATES` changes how many passages it reads.
 
 ## Run the tests
 
@@ -291,6 +295,7 @@ All of these are created on first run and are ignored by git:
 | `backend/.env` | Your API key and JWT secret |
 | `data/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
 | `data/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
+| `data/models/` | The reranking model, downloaded once (`AETHER_MODEL_DIR`) |
 | `backend/logs/` | Request, upload and error logs (`AETHER_LOG_DIR`) |
 
 Before Sprint 5 the database and the vector store were kept in `backend/aether.db` and `backend/vector_store/`. If they are still there and nothing is in `data/` yet, the backend keeps using them and says so in `backend/logs/errors.log`. To move them, stop the backend and move both into a `data` folder in the project folder; nothing else needs to change.
