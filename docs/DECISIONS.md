@@ -481,6 +481,13 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Trade-off:** the first start after this change reinstalls once; `npm ci` fails while a server holds its files, and says to close the window.
 - **Evidence:** tested in a scratch copy with stand-in npm and python: first run, nothing changed, each list changed, npm failing then succeeding, no `.venv`.
 
+### D-069 start.bat ignores a PYTHON variable already set on the computer
+- **Date:** 2026-10-15 · `start-bat-python`
+- **Context:** D-068's start.bat used `PYTHON` when it was already set. On the owner's computer it is set, to a folder (`...\Python312\Scripts`), so the backend's packages were never installed and the backend would have been started with a folder instead of Python. Found by running it on the owner's setup after the merge, before the owner did.
+- **Chosen:** its own name, `AETHER_PYTHON`, for another interpreter; otherwise the project's `.venv`, as before D-068. The names it uses start empty whatever the environment holds.
+- **Why:** a general name like `PYTHON` is set by other tools for their own purposes.
+- **Evidence:** the scratch test with `PYTHON` set to a folder and stray variables set; then `start.bat --packages-only` on the owner's computer, which used the `.venv`.
+
 ---
 
 ## Template

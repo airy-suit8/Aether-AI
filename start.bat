@@ -11,15 +11,22 @@ REM   start.bat --packages-only  install what changed, start nothing
 cd /d "%~dp0"
 
 REM Use the project virtual environment if it exists, otherwise whatever "python" is on PATH.
-REM PYTHON, when set, names another interpreter.
-if not defined PYTHON (
-    if exist "%~dp0.venv\Scripts\python.exe" (
-        set "PYTHON=%~dp0.venv\Scripts\python.exe"
-        set "OWN_VENV=1"
-    ) else (
-        echo No .venv found in the project folder; using "python" from PATH.
-        set "PYTHON=python"
-    )
+REM AETHER_PYTHON, when set, names another interpreter, and the backend's packages are installed
+REM into it. A PYTHON variable already set on the computer is not used: on the owner's it names a
+REM folder, not a program. The names below start empty, whatever the environment holds.
+set "PY_EXE="
+set "OWN_VENV="
+set "FRONTEND_INSTALL="
+set "BACKEND_INSTALL="
+if defined AETHER_PYTHON (
+    set "PY_EXE=%AETHER_PYTHON%"
+    set "OWN_VENV=1"
+) else if exist "%~dp0.venv\Scripts\python.exe" (
+    set "PY_EXE=%~dp0.venv\Scripts\python.exe"
+    set "OWN_VENV=1"
+) else (
+    echo No .venv found in the project folder; using "python" from PATH.
+    set "PY_EXE=python"
 )
 
 if not exist "%~dp0backend\.env" (
@@ -60,7 +67,7 @@ if defined OWN_VENV (
 )
 if defined BACKEND_INSTALL (
     echo Installing backend packages ^(first run, or backend\requirements.txt changed^)...
-    call "%PYTHON%" -m pip install -r "%~dp0backend\requirements.txt"
+    call "%PY_EXE%" -m pip install -r "%~dp0backend\requirements.txt"
     if errorlevel 1 (
         echo pip install failed. Close the "Aether AI backend" window if it is open, then run start.bat again.
         pause
@@ -75,7 +82,7 @@ if /i "%~1"=="--packages-only" (
 )
 
 echo Starting backend on http://localhost:8000 ...
-start "Aether AI backend" /D "%~dp0backend" cmd /k ""%PYTHON%" -m uvicorn main:app --port 8000"
+start "Aether AI backend" /D "%~dp0backend" cmd /k ""%PY_EXE%" -m uvicorn main:app --port 8000"
 
 echo Starting frontend on http://localhost:5173 ...
 start "Aether AI frontend" /D "%~dp0frontend" cmd /k "npm run dev"
