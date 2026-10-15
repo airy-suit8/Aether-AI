@@ -199,8 +199,11 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
       })
       .catch((e) => console.error('Failed to load the conversation:', e))
       .finally(() => {
+        // Only the load still wanted clears the mark: a cancelled one (React runs this effect twice
+        // in development) must not, or the load after it would think it was not wanted
+        if (cancelled) return
         if (loadingRef.current === threadId) loadingRef.current = null
-        if (!cancelled) setThreadLoading(false)
+        setThreadLoading(false)
       })
     return () => { cancelled = true }
   }, [threadId])

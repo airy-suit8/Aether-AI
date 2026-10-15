@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { StrictMode } from 'react'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
@@ -122,6 +123,30 @@ describe('ChatLayout', () => {
     expect(await screen.findByRole('img', { name: 'Confidence: Grounded · 55%' })).toBeTruthy()
     await ask('And by whom?')
     expect(await screen.findByRole('img', { name: 'Confidence: Uncertain · 55%' })).toBeTruthy()
+  })
+
+  it('shows a conversation opened by its address when React runs its effects twice (development)', async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({ sessions: [session({ session_id: 'session_1', title: 'How often?' })] })
+    const reply = {
+      session_id: 'session_1', grounded_at: 0.6,
+      turns: [turn({ turn_id: 3, question: 'How often?', answer: 'Every 90 days.', sources: [SOURCE] })],
+    }
+    // The first load (cancelled by React's second run) answers first, as over a network
+    vi.mocked(api.getSessionMessages)
+      .mockImplementationOnce(async () => reply)
+      .mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve(reply), 30)))
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/chat/session_1']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="*" element={<ChatLayout addToast={vi.fn()} />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </StrictMode>,
+    )
+    expect(await screen.findByText('Every 90 days.')).toBeTruthy()
   })
 
   it('judges a saved conversation by the line that comes with it', async () => {
