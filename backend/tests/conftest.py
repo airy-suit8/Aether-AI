@@ -27,6 +27,7 @@ os.environ["JWT_SECRET"] = "test-secret-used-only-by-the-test-suite"
 # Set but empty: load_dotenv(override=False) then cannot copy a real key from backend/.env
 # into the test process, so nothing here can reach Gemini even on a developer machine.
 os.environ["GOOGLE_API_KEY"] = ""
+os.environ["OPENAI_API_KEY"] = ""  # the same for an OpenAI-compatible service
 # The suite tests the default providers (with fake models): a provider chosen in backend/.env,
 # such as Ollama, is not read here.
 os.environ["AETHER_LLM_PROVIDER"] = "gemini"

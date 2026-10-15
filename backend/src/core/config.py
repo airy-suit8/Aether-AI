@@ -4,7 +4,7 @@ core/config.py — the one source of configuration.
 Every tunable (model ids, chunking, retrieval, limits, origins, data paths) is read here and
 nowhere else. Values come from, highest priority first: environment variables, backend/.env,
 then the defaults below. Tunables use the AETHER_ prefix (AETHER_TOP_K=8, AETHER_DB_PATH=...);
-the two secrets keep their usual names, GOOGLE_API_KEY and JWT_SECRET.
+the secrets keep their usual names, GOOGLE_API_KEY, OPENAI_API_KEY and JWT_SECRET.
 
 Reading the settings opens nothing and needs no key: the key is checked when a model is built,
 and the JWT secret when the app is built (main.create_app).
@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     # ── Secrets (their usual names, no prefix) ────────────────────────────────
     google_api_key: str = Field(default="", validation_alias="GOOGLE_API_KEY")
+    # The key of an OpenAI-compatible service (llm_provider "openai"); a local server needs none
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     jwt_secret: str = Field(default="", validation_alias="JWT_SECRET")
 
     # ── Sign-in (S7) ──────────────────────────────────────────────────────────
@@ -75,13 +77,21 @@ class Settings(BaseSettings):
     invite_code: str = ""
 
     # ── Models ────────────────────────────────────────────────────────────────
-    # Where each model runs: "gemini", Google's API (needs GOOGLE_API_KEY), or "ollama", a model
-    # on this computer served by Ollama (no key, no quota). With "ollama" the model ids below
-    # default to OLLAMA_LLM_MODEL and OLLAMA_EMBEDDING_MODEL. Passages embedded by one embedding
-    # model cannot be searched with another: after changing it, run python -m src.reembed.
-    llm_provider: Literal["gemini", "ollama"] = "gemini"
-    embedding_provider: Literal["gemini", "ollama"] = "gemini"
+    # Where each model runs: "gemini", Google's API (needs GOOGLE_API_KEY); "ollama", a model
+    # on this computer served by Ollama (no key, no quota); or "openai", any service that speaks
+    # OpenAI's API at openai_url: OpenAI itself, Groq, OpenRouter, LM Studio, or Ollama's own
+    # /v1 address. With "ollama" the model ids below default to OLLAMA_LLM_MODEL and
+    # OLLAMA_EMBEDDING_MODEL; with "openai" they must be named (AETHER_LLM_MODEL,
+    # AETHER_EMBEDDING_MODEL), since every service has its own. Passages embedded by one
+    # embedding model cannot be searched with another: after changing it, run python -m src.reembed.
+    llm_provider: Literal["gemini", "ollama", "openai"] = "gemini"
+    embedding_provider: Literal["gemini", "ollama", "openai"] = "gemini"
     ollama_url: str = "http://127.0.0.1:11434"
+    openai_url: str = "https://api.openai.com/v1"
+    # Sent as the request's reasoning_effort when set. "none" stops a model that thinks before it
+    # answers (qwen3.5 through Ollama's or LM Studio's /v1) from thinking: a three-word answer took
+    # 6 tokens with it and 2,973 without. Not sent by default: OpenAI's other models refuse it.
+    openai_reasoning_effort: str = ""
     # The context Ollama gives a chat model, in tokens. Ollama's own default (2048 or 4096,
     # depending on its version) cuts a long prompt from the start, which would drop the
     # instructions; this holds them, five passages and the remembered conversation.
@@ -174,12 +184,14 @@ class Settings(BaseSettings):
     _path_notes: List[str] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="after")
-    def _ollama_models_unless_named(self) -> "Settings":
-        """With a provider of "ollama", a model id that was not set is Ollama's default, not Gemini's."""
-        if self.llm_provider == "ollama" and "llm_model" not in self.model_fields_set:
-            self.llm_model = OLLAMA_LLM_MODEL
-        if self.embedding_provider == "ollama" and "embedding_model" not in self.model_fields_set:
-            self.embedding_model = OLLAMA_EMBEDDING_MODEL
+    def _provider_models_unless_named(self) -> "Settings":
+        """A model id that was not set is the provider's default, not Gemini's: Ollama's, or none for
+        an OpenAI-compatible service (the model factory then says to name one)."""
+        defaults = {"ollama": (OLLAMA_LLM_MODEL, OLLAMA_EMBEDDING_MODEL), "openai": ("", "")}
+        if self.llm_provider in defaults and "llm_model" not in self.model_fields_set:
+            self.llm_model = defaults[self.llm_provider][0]
+        if self.embedding_provider in defaults and "embedding_model" not in self.model_fields_set:
+            self.embedding_model = defaults[self.embedding_provider][1]
         return self
 
     def grounded_line(self) -> float:

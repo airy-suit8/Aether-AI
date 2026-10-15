@@ -3,13 +3,15 @@ llm/llm_client.py — the one factory for the chat model, and what to do when it
 
 Every caller (the pipeline, the agent, the date-time tool, the evaluation) calls
 llm_client.get_llm() through the module, so the tests replace this one function with a
-fake (tests/conftest.py) and nothing reaches Google or Ollama.
+fake (tests/conftest.py) and nothing reaches Google, Ollama or an OpenAI-compatible service.
 
-The model is Gemini, or a model on this computer through Ollama (settings.llm_provider). A call
+The model is Gemini, a model on this computer through Ollama, or one on any service that speaks
+OpenAI's API (settings.llm_provider). A call
 that fails because the model is over its quota or unavailable is tried again after a pause
 (B10, RetryWhenUnavailable); is_unavailable() tells the routes to answer with MODEL_BUSY instead
 of a general server error, and setup_problem() names what the owner must fix (Ollama not
-running, a model not installed) instead of a general server error.
+running, a model not installed, a key an OpenAI-compatible service refuses) instead of a general
+server error.
 """
 
 import logging
@@ -18,15 +20,17 @@ import time
 from typing import Iterator, Optional
 
 import httpx
+import openai
 from google.genai import errors as genai_errors
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from ollama import ResponseError as OllamaResponseError
 
 from src.core.config import OLLAMA_LLM_MODEL, settings
 from src.core.logging import error_logger, log_event
-from src.embeddings.embedder import ModelSetupError, require_api_key
+from src.embeddings.embedder import NO_KEY, ModelSetupError, require_api_key, require_model
 
 # Quota (429) and availability (500, 502, 503, 504): worth another try after a pause. Anything else
 # (a bad request, a wrong key, a model that does not exist) would fail the same way again.
@@ -40,6 +44,29 @@ MODEL_BUSY = "The AI service is busy or over its usage limit right now. Please t
 
 OLLAMA_NOT_RUNNING = "The AI model runs on this computer through Ollama, and Ollama is not running. Start Ollama, then try again."
 OLLAMA_FAILED = "Ollama could not run the AI model. The server's error log says why."
+
+
+def _openai_problem(cause: openai.APIError) -> Optional[str]:
+    """What the owner must fix for an OpenAI-compatible service, or None."""
+    where = f"The AI service at {settings.openai_url}"
+    if isinstance(cause, openai.APIConnectionError) and not isinstance(cause, openai.APITimeoutError):
+        return (f"{where} could not be reached. Check that it is running (LM Studio, Ollama) or that "
+                "AETHER_OPENAI_URL in backend/.env is its address.")
+    if isinstance(cause, (openai.AuthenticationError, openai.PermissionDeniedError)):
+        return f"{where} refused the key. Set OPENAI_API_KEY in backend/.env to a key it accepts."
+    if isinstance(cause, openai.NotFoundError):
+        models = [m for p, m in ((settings.llm_provider, settings.llm_model),
+                                 (settings.embedding_provider, settings.embedding_model)) if p == "openai"]
+        named = [m for m in models if m and m in str(cause)] or models  # the one its error names
+        return (f"{where} has no model {' or '.join(named) or 'of that name'}. Set AETHER_LLM_MODEL or "
+                "AETHER_EMBEDDING_MODEL in backend/.env to a model id it lists.")
+    if isinstance(cause, openai.BadRequestError) and settings.openai_reasoning_effort and "reasoning" in str(cause).lower():
+        return (f"{settings.llm_model} at {settings.openai_url} does not take AETHER_OPENAI_REASONING_EFFORT. "
+                "Remove it from backend/.env.")
+    if isinstance(cause, openai.BadRequestError) and "tool" in str(cause).lower():
+        return (f"Agent mode needs a model that can use tools, and {settings.llm_model} at {settings.openai_url} "
+                "cannot. Ask in Default or Hybrid mode, or set AETHER_LLM_MODEL to one that can.")
+    return None
 
 
 def _causes(exc: Optional[BaseException]) -> Iterator[BaseException]:
@@ -57,6 +84,8 @@ def unavailable_code(exc: BaseException) -> Optional[int]:
         if isinstance(cause, genai_errors.APIError) and cause.code in RETRY_CODES:
             return cause.code
         if isinstance(cause, OllamaResponseError) and cause.status_code in OLLAMA_RETRY_CODES:
+            return cause.status_code
+        if isinstance(cause, openai.APIStatusError) and cause.status_code in RETRY_CODES:
             return cause.status_code
     return None
 
@@ -80,6 +109,8 @@ def setup_problem(exc: BaseException) -> Optional[str]:
     for cause in _causes(exc):
         if isinstance(cause, ModelSetupError):
             return str(cause)
+        if isinstance(cause, openai.APIError):
+            return _openai_problem(cause)
         # The Ollama client turns a refused connection into this, with its own message; except when
         # streaming, where httpx's own error comes through. Ollama's paths start with /api/, and
         # Google's never do, so Gemini out of reach is not taken for Ollama.
@@ -149,6 +180,11 @@ class OllamaChat(RetryWhenUnavailable, ChatOllama):
     """A chat model on this computer, served by Ollama, with the app's retries."""
 
 
+class OpenAICompatibleChat(RetryWhenUnavailable, ChatOpenAI):
+    """A chat model on a service that speaks OpenAI's API, with the app's retries in place of the
+    OpenAI client's."""
+
+
 def get_llm(temperature: Optional[float] = None, model: Optional[str] = None) -> BaseChatModel:
     """The chat model, with a request timeout, a cap on output tokens and the app's retries.
 
@@ -157,6 +193,18 @@ def get_llm(temperature: Optional[float] = None, model: Optional[str] = None) ->
     settings.judge_model, so that answers are not scored by the model that wrote them.
     Building either model makes no request.
     """
+    if settings.llm_provider == "openai":
+        return OpenAICompatibleChat(
+            model=require_model("chat", model or settings.llm_model),
+            openai_api_base=settings.openai_url,
+            openai_api_key=settings.openai_api_key or NO_KEY,
+            temperature=settings.llm_temperature if temperature is None else temperature,
+            request_timeout=settings.llm_timeout_seconds,
+            max_tokens=settings.llm_max_output_tokens,
+            max_retries=0,       # the app's retries (RetryWhenUnavailable), not the client's
+            stream_usage=True,   # the tokens of a streamed answer, for its cost line
+            reasoning_effort=settings.openai_reasoning_effort or None,
+        )
     if settings.llm_provider == "ollama":
         return OllamaChat(
             model=model or settings.llm_model,
