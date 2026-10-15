@@ -28,6 +28,10 @@ chromadb==1.5.9
 
 # Document parsing (.xls needs xlrd, .xlsx needs openpyxl, LangChain's Docx2txtLoader needs docx2txt)
 pypdf==6.20.0
+# OCR for PDF pages that are pictures of text: pypdfium2 draws a page, RapidOCR reads it with the
+# PP-OCRv6 models in its package (RapidOCR 1.x's models ran English words together)
+pypdfium2==5.14.0
+rapidocr==3.10.0
 python-docx==1.2.0
 docx2txt==0.9
 pandas==2.2.3

@@ -8,6 +8,9 @@ Two loaders sit behind one interface, load_document(), chosen by settings.docume
 
 Both give metadata {"source", "page", "type"} with pages numbered from 1. A file that cannot
 be read raises DocumentError, whose message is safe to show the person who uploaded it.
+
+The native PDF parser reads a page with no text (a scan, a photo) by OCR (ingestion/ocr.py, when
+settings.ocr is on), and marks it {"ocr": True}.
 """
 
 import codecs
@@ -29,6 +32,7 @@ from langchain_core.documents import Document
 from pypdf import PdfReader
 
 from src.core.config import settings
+from src.ingestion import ocr
 
 SUPPORTED_EXTENSIONS = (".pdf", ".txt", ".md", ".markdown", ".docx", ".csv", ".xlsx", ".xls")
 
@@ -65,20 +69,36 @@ def clean_filename(name: str) -> str:
 # ── Native parsers ────────────────────────────────────────────────────────────
 
 def _parse_pdf(file_path: str, filename: str) -> List[Document]:
-    """Extract text page-by-page using pypdf (pure Python)."""
-    docs = []
+    """Extract text page-by-page using pypdf (pure Python); a page with none, a picture of text,
+    is read by OCR."""
     reader = PdfReader(file_path)
-    for page_num, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        if text:
-            docs.append(Document(
-                page_content=text,
-                metadata={"source": filename, "page": page_num, "type": "pdf"},
-            ))
+    texts = {number: (page.extract_text() or "").strip() for number, page in enumerate(reader.pages, start=1)}
+    pictures = [number for number, text in texts.items() if not text]
+    by_ocr = set()
+    if pictures and settings.ocr:
+        if len(pictures) > settings.ocr_max_pages:
+            raise DocumentError(
+                f"'{filename}' has {len(pictures)} pages that are pictures of text, and at most "
+                f"{settings.ocr_max_pages} are read by OCR in one file. Split it into smaller files and upload those.")
+        try:
+            found = ocr.read_pages(file_path, pictures)
+        except Exception as e:
+            raise DocumentError(f"'{filename}' has pages that are pictures of text, and OCR could not read them "
+                                "on this server. Upload a text version.") from e
+        for number, text in found.items():
+            if text.strip():
+                texts[number] = text.strip()
+                by_ocr.add(number)
+    docs = [
+        Document(page_content=text,
+                 metadata={"source": filename, "page": number, "type": "pdf", **({"ocr": True} if number in by_ocr else {})})
+        for number, text in texts.items() if text
+    ]
     if not docs and len(reader.pages):
         raise DocumentError(
-            f"'{filename}' has no text to read: its pages look like scans or photos. "
-            "Aether AI cannot read images yet; run the file through OCR, or upload a text version."
+            f"'{filename}' has no text to read: its pages look like scans or photos, and "
+            + ("OCR found no words on them either. Upload a clearer scan, or a text version." if settings.ocr else
+               "reading pictures of text (OCR) is turned off on this server. Upload a text version.")
         )
     return docs
 

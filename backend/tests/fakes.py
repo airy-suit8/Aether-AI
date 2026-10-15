@@ -3,6 +3,7 @@ tests/fakes.py — Offline stand-ins for Gemini, so tests need no API key and ma
 
 HashingEmbeddings  — bag-of-words vectors: texts that share words get a high cosine similarity,
                      so retrieval behaves meaningfully (unlike random fake embeddings).
+FakeOcr            — stands in for the OCR engine: the lines it is given for each page, in turn.
 FakeCrossEncoder   — stands in for the reranking model: scores a passage by the question's words
                      it has, and much higher when it has a word the test prefers.
 ScriptedChatModel  — answers each pipeline prompt (rewrite, summarize, answer, agent) from the
@@ -10,6 +11,7 @@ ScriptedChatModel  — answers each pipeline prompt (rewrite, summarize, answer,
 """
 
 import json
+from types import SimpleNamespace
 import re
 import time
 import zlib
@@ -41,6 +43,19 @@ class HashingEmbeddings(Embeddings):
 
     def embed_query(self, text: str) -> List[float]:
         return self._embed(text)
+
+
+class FakeOcr:
+    """The OCR engine, offline: for each picture it is shown, the next page of lines it was given
+    (none once they run out). Records the shape of each picture."""
+
+    def __init__(self, pages: tuple = ()):
+        self.pages = [list(lines) for lines in pages]
+        self.pictures: List[tuple] = []
+
+    def __call__(self, picture: Any) -> Any:
+        self.pictures.append(picture.shape)
+        return SimpleNamespace(txts=tuple(self.pages.pop(0)) if self.pages else ())
 
 
 class FakeCrossEncoder:

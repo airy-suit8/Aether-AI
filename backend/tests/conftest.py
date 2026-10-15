@@ -38,12 +38,15 @@ os.environ["AETHER_MODEL_DIR"] = os.path.join(_test_dir, "models")
 os.environ["AETHER_FILES_DIR"] = os.path.join(_test_dir, "files")
 
 # Now safe to import
-from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402
+from fakes import FakeOcr, HashingEmbeddings, ScriptedChatModel  # noqa: E402
 from src.embeddings import embedder  # noqa: E402
+from src.ingestion import ocr  # noqa: E402
 from src.llm import llm_client  # noqa: E402
 
 # The vector store opens lazily; give it fake embeddings before anything touches it.
 embedder.get_embeddings = lambda: HashingEmbeddings()
+# OCR reads nothing unless a test gives it pages to read (tests/unit/test_ocr.py)
+ocr._load = lambda: FakeOcr()
 
 from main import app  # noqa: E402
 from src.api.deps import limiter  # noqa: E402

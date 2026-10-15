@@ -120,6 +120,11 @@ class Settings(BaseSettings):
 
     # ── RAG pipeline ──────────────────────────────────────────────────────────
     document_loader: Literal["native", "langchain"] = "native"
+    # A PDF page with no text (a scan, a photo) is read by OCR on the processor (ingestion/ocr.py),
+    # about 1 to 2 s a page, by the native loader. Off: such a PDF is refused, as before 15 Oct 2026.
+    # A file with more such pages than ocr_max_pages is refused: reading it would take minutes.
+    ocr: bool = True
+    ocr_max_pages: int = 100
     chunk_size: int = 1000
     chunk_overlap: int = 150
     top_k: int = 5
