@@ -122,6 +122,12 @@ A question searches every document in your library unless you say otherwise. The
 
 Under each answer that did not search everything, a line says what it searched and why, so a wrong guess shows. A question about a document's title, authors, affiliations, e-mail addresses or ORCID ids reads each document's first passage, where a paper names its own authors (not its reference list); one about "both" or "each" document reads each one's best passages. Each source says where it is: the page of a PDF, or "passage 3 of 42" in a file without pages.
 
+## Seeing a source in its document
+
+Click a source card under an answer to pin it open, then **Show on p. 20** (a PDF) or **Show in the document** (any other file). A PDF opens on the cited page, drawn in the browser, with the passage marked on it; *Open the whole PDF* opens it in the browser's own viewer at that page. A Word, text or spreadsheet passage is shown with the passages either side of it.
+
+PDFs are kept as uploaded, in `data/files/`, so their pages can be shown; a document's file goes when the document does. PDFs added before 15 Oct 2026 were not kept: upload the same file again and it is kept for its document, without being read twice. Answers saved before that date do not say which passage they cite, so their cards have no button.
+
 ## Reranking
 
 Each search finds 20 passages; then a small model on this computer, `Xenova/ms-marco-MiniLM-L-6-v2` (88 MB), reads the question with each passage and keeps the five that answer it best. A search compares meanings; the reranker judges answers, so a paper's own result is put ahead of a cited study's that uses the same words. It is downloaded from Hugging Face once, the first time the backend starts, into `data/models/`; after that it works offline, on the processor, in about half a second a question. If it cannot be downloaded, answers use the search's own order and `backend/logs/errors.log` says why. `AETHER_RERANK_MODEL=` (empty) turns it off; `AETHER_RERANK_CANDIDATES` changes how many passages it reads.
@@ -296,6 +302,7 @@ All of these are created on first run and are ignored by git:
 | `data/aether.db` | Users, uploaded-document records, conversations (`AETHER_DB_PATH` moves it) |
 | `data/vector_store/` | Document chunks and their embeddings (`AETHER_VECTOR_STORE_DIR`) |
 | `data/models/` | The reranking model, downloaded once (`AETHER_MODEL_DIR`) |
+| `data/files/` | Uploaded PDFs, kept to show their pages (`AETHER_FILES_DIR`) |
 | `backend/logs/` | Request, upload and error logs (`AETHER_LOG_DIR`) |
 
 Before Sprint 5 the database and the vector store were kept in `backend/aether.db` and `backend/vector_store/`. If they are still there and nothing is in `data/` yet, the backend keeps using them and says so in `backend/logs/errors.log`. To move them, stop the backend and move both into a `data` folder in the project folder; nothing else needs to change.
