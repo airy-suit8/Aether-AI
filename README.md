@@ -113,6 +113,29 @@ Instead of Gemini, the app can use models that run on this computer through [Oll
 
 Each embedding model spreads its similarity scores differently, so the line at which an answer reads as *Grounded* is set for each one: 0.5 for `nomic-embed-text` (measured on real papers: questions about them averaged 0.40 to 0.78, unrelated questions 0.38 to 0.48) and 0.6 for Gemini's. `AETHER_GROUNDED_AT` sets your own. The refusal threshold (`AETHER_CONFIDENCE_THRESHOLD`, 0.3) is not raised for `nomic-embed-text`: short questions about the documents scored as low as unrelated ones, so a higher line refused real questions. For another embedding model, measure both (see "Measuring answer quality").
 
+## Any OpenAI-compatible service
+
+The models can also come from any service that speaks OpenAI's API: OpenAI itself, Groq, OpenRouter, LM Studio on this computer, or Ollama's own `/v1` address. In `backend\.env`:
+
+```
+AETHER_LLM_PROVIDER=openai
+AETHER_OPENAI_URL=https://api.groq.com/openai/v1
+OPENAI_API_KEY=<the service's key; leave it out for LM Studio or Ollama>
+AETHER_LLM_MODEL=<a model id the service lists>
+```
+
+| Service | `AETHER_OPENAI_URL` | Key |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` (the default) | needed |
+| Groq | `https://api.groq.com/openai/v1` | needed |
+| OpenRouter | `https://openrouter.ai/api/v1` | needed |
+| LM Studio | `http://localhost:1234/v1` | none |
+| Ollama | `http://127.0.0.1:11434/v1` | none |
+
+There is no default model: every service names its own, so set `AETHER_LLM_MODEL` (and `AETHER_EMBEDDING_MODEL` with `AETHER_EMBEDDING_PROVIDER=openai`). Not every service makes embeddings; one that does not can answer while Gemini or Ollama keeps the search (leave `AETHER_EMBEDDING_PROVIDER` as it is). Changing the embedding model needs `python -m src.reembed --apply`, as above. For a model that thinks before it answers, such as `qwen3.5:4b` through Ollama's or LM Studio's address, add `AETHER_OPENAI_REASONING_EFFORT=none`: a three-word answer took 6 tokens with it and 2,973 without. OpenAI's other models refuse that setting.
+
+If the service cannot be reached, refuses the key, or does not have the model, the answer says which, and what to set. Tried here: Ollama's `/v1` address, for answers in every mode (agent mode's tools too) and for embeddings. The other addresses are the services' own; they were not tried.
+
 ## Asking about particular documents
 
 A question searches every document in your library unless you say otherwise. There are two ways:
