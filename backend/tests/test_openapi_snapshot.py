@@ -42,4 +42,5 @@ def test_snapshot_lists_every_api_route():
         ("/api/v1/chat/stream", "post"), ("/api/v1/session/clear", "post"),
         ("/api/v1/documents", "get"), ("/api/v1/documents", "delete"), ("/api/v1/documents/detailed", "get"),
         ("/api/v1/documents/{document_id}", "delete"), ("/api/v1/documents/{document_id}", "get"),
+        ("/api/v1/documents/{document_id}/passages/{passage}", "get"), ("/api/v1/documents/{document_id}/file", "get"),
     }

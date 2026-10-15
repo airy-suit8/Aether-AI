@@ -622,6 +622,36 @@
 .x-share > p { margin: 0; font-size: var(--p-text-sm); line-height: 1.6; color: var(--p-ink-2); }
 .x-share__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 
+/* A source in its document (SourceViewer): the cited page with its passage marked in the source's
+   hue, or the passage among its neighbours. The page is white, as printed, in both themes. */
+.x-margin__open { justify-self: start; margin: -2px 0 4px; }
+.x-viewer { display: grid; gap: 14px; }
+.x-viewer__where { margin: -10px 0 0; font-size: var(--p-text-xs); color: var(--p-ink-3); }
+.x-viewer__page { position: relative; overflow: hidden; border-radius: var(--p-r-2); background: #fff; box-shadow: 0 0 0 1px var(--p-edge); }
+.x-viewer__page canvas { display: block; width: 100%; height: auto; }
+.x-viewer__mark {
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--hue) 30%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--hue) 60%, transparent);
+  pointer-events: none;
+}
+.x-viewer__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }
+.x-viewer__foot .p-hint { margin: 0; }
+.x-viewer__passages { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.x-viewer__passages li { display: grid; gap: 4px; }
+.x-viewer__n { font-size: var(--p-text-xs); color: var(--p-ink-3); }
+.x-viewer__passages p,
+.x-viewer__passages mark { margin: 0; font-size: var(--p-text-sm); line-height: 1.6; color: var(--p-ink-2); white-space: pre-wrap; }
+.x-viewer__passages mark {
+  display: block;
+  padding: 8px 12px;
+  border-radius: var(--p-r-2);
+  color: var(--p-ink);
+  background: color-mix(in oklab, var(--hue) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--hue);
+}
+
 .h-page a.x-brand,
 .h-page a.p-btn { text-decoration: none; }
 .h-page .l-top .x-brand { cursor: pointer; color: inherit; }

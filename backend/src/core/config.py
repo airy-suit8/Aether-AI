@@ -164,10 +164,11 @@ class Settings(BaseSettings):
     rate_limit_upload: str = "10/minute"
     rate_limit_chat: str = "30/minute"
 
-    # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR, AETHER_MODEL_DIR) ──
+    # ── Data paths (AETHER_DB_PATH, AETHER_VECTOR_STORE_DIR, AETHER_LOG_DIR, AETHER_MODEL_DIR, AETHER_FILES_DIR) ──
     db_path: Path = Field(default_factory=lambda: DATA_DIR / "aether.db")
     vector_store_dir: Path = Field(default_factory=lambda: DATA_DIR / "vector_store")
     model_dir: Path = Field(default_factory=lambda: DATA_DIR / "models")  # models run by the app itself (reranking)
+    files_dir: Path = Field(default_factory=lambda: DATA_DIR / "files")    # uploaded PDFs, kept to show their pages
     log_dir: Path = BACKEND_DIR / "logs"
 
     _path_notes: List[str] = PrivateAttr(default_factory=list)

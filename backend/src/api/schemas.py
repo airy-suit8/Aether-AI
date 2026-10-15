@@ -157,7 +157,8 @@ class UploadResponse(BaseModel):
     it is ready, or why it failed (R12)."""
     document_id: int
     filename: str
-    status: Literal["processing"] = "processing"
+    # "ready": a PDF already read, uploaded again only to keep its file (nothing to read)
+    status: Literal["processing", "ready"] = "processing"
     replaces: bool = False  # an earlier file of the same name is replaced once this one is read
     message: str
 
@@ -181,6 +182,23 @@ class DocumentRecord(DocumentStatus):
     # Health Risks using Boosting Technique"); null while it is read, or when it has none
     title: Optional[str] = None
     kind: Optional[str] = None  # pdf, docx, text, csv, xlsx or xls; null while it is read
+
+
+class Passage(BaseModel):
+    """One passage of a document, numbered from 1 as sources give it."""
+    passage: int
+    page: Union[int, str]
+    text: str
+
+
+class PassageView(BaseModel):
+    """A passage in its place: it and the passages either side, in order (GET .../passages/{passage})."""
+    document_id: int
+    filename: str
+    kind: Optional[str] = None   # as in DocumentRecord
+    passages: int                # how many the document has
+    original: bool               # whether its PDF is kept, to show the page (GET .../file)
+    items: list[Passage]
 
 
 class DocumentList(BaseModel):

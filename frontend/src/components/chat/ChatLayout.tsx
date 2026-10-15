@@ -5,11 +5,12 @@ import ChatWindow from './ChatWindow'
 import ChatComposer from './ChatComposer'
 import SettingsModal from '../modals/SettingsModal'
 import ShareDialog from './ShareDialog'
+import SourceViewer from './SourceViewer'
 import {
   ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages, renameSession, deleteSession, logoutEverywhere,
 } from '../../services/api'
-import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Turn } from '../../services/api'
+import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Source, Turn } from '../../services/api'
 import { useSignOut } from '../../services/useSignOut'
 import { AmbientField, Lens } from '../../design/prism'
 import type { Theme } from '../../design/prism'
@@ -105,6 +106,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   const [sidebarOpen, setSidebarOpen] = useState(isWide)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  const [viewing, setViewing] = useState<{ source: Source; n: number } | null>(null)  // a source shown in its document
 
   const streamRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -352,6 +354,11 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     let accepted: Awaited<ReturnType<typeof uploadDocument>> | null = null
     try {
       accepted = await uploadDocument(file)
+      if (accepted.status === 'ready') {
+        // A PDF already in the library, sent again only so its pages can be shown: nothing to read
+        addToast(accepted.message, 'success')
+        return
+      }
       setUploadProgress({ filename: file.name, status: 'reading' })
       refreshDocuments()  // it shows in the library as being read
       let doc = await getDocument(accepted.document_id)
@@ -471,6 +478,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   // Sharing: only a conversation the server has a turn of, and the sheet closes with its thread
   const canShare = sessionId !== null && messages.some((m) => m.role === 'assistant' && m.turnId != null)
   const closeShare = useCallback(() => setShareOpen(false), [])
+  const openSource = useCallback((source: Source, n: number) => setViewing({ source, n }), [])
+  const closeSource = useCallback(() => setViewing(null), [])
+  useEffect(() => setViewing(null), [sessionId])
   useEffect(() => setShareOpen(false), [sessionId])
 
   const goHome = useCallback(() => navigate('/'), [navigate])
@@ -553,6 +563,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           hasDocuments={documents.length > 0}
           onSuggest={handleSend}
           onRate={handleRate}
+          onOpenSource={openSource}
         />
 
         <ChatComposer
@@ -574,6 +585,7 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
       </main>
 
       {shareOpen && sessionId && <ShareDialog sessionId={sessionId} onClose={closeShare} addToast={addToast} />}
+      {viewing && <SourceViewer source={viewing.source} n={viewing.n} onClose={closeSource} />}
 
       {settingsOpen && (
         <SettingsModal

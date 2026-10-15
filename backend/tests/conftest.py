@@ -34,6 +34,7 @@ os.environ["AETHER_EMBEDDING_PROVIDER"] = "gemini"
 # No reranking model either: it would be downloaded. The reranker's tests give it a fake one.
 os.environ["AETHER_RERANK_MODEL"] = ""
 os.environ["AETHER_MODEL_DIR"] = os.path.join(_test_dir, "models")
+os.environ["AETHER_FILES_DIR"] = os.path.join(_test_dir, "files")
 
 # Now safe to import
 from fakes import HashingEmbeddings, ScriptedChatModel  # noqa: E402

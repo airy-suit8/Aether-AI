@@ -237,6 +237,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/passages/{passage}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Passage
+         * @description One passage of a document, numbered from 1 as sources give it, with `around` passages either
+         *     side, in order: a source shown in its place. Says whether the document's PDF is kept, to show
+         *     its page. 404 for a document that is not yours, or a passage it does not have.
+         */
+        get: operations["get_passage_api_v1_documents__document_id__passages__passage__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document File
+         * @description A document's PDF as it was uploaded, to show a source on its page. 404 for a document that
+         *     is not yours, and for one whose file is not kept (not a PDF, or uploaded before 15 Oct 2026).
+         */
+        get: operations["get_document_file_api_v1_documents__document_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat": {
         parameters: {
             query?: never;
@@ -693,6 +736,36 @@ export interface components {
             message: string;
         };
         /**
+         * Passage
+         * @description One passage of a document, numbered from 1 as sources give it.
+         */
+        Passage: {
+            /** Passage */
+            passage: number;
+            /** Page */
+            page: number | string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * PassageView
+         * @description A passage in its place: it and the passages either side, in order (GET .../passages/{passage}).
+         */
+        PassageView: {
+            /** Document Id */
+            document_id: number;
+            /** Filename */
+            filename: string;
+            /** Kind */
+            kind?: string | null;
+            /** Passages */
+            passages: number;
+            /** Original */
+            original: boolean;
+            /** Items */
+            items: components["schemas"]["Passage"][];
+        };
+        /**
          * Scope
          * @description The documents an answer searched, and how they were picked: "all" of them, "chosen" in the
          *     request, "named" in the question, or the "kind" of file the question named.
@@ -893,9 +966,9 @@ export interface components {
             /**
              * Status
              * @default processing
-             * @constant
+             * @enum {string}
              */
-            status?: "processing";
+            status?: "processing" | "ready";
             /**
              * Replaces
              * @default false
@@ -1271,6 +1344,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentDeleted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_passage_api_v1_documents__document_id__passages__passage__get: {
+        parameters: {
+            query?: {
+                around?: number;
+            };
+            header?: never;
+            path: {
+                document_id: number;
+                passage: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PassageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_file_api_v1_documents__document_id__file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The PDF as it was uploaded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
                 };
             };
             /** @description Validation Error */

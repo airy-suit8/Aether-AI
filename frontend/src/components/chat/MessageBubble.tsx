@@ -1,4 +1,4 @@
-import { createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, memo, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -208,6 +208,8 @@ interface MessageBubbleProps {
   isStreaming?: boolean
   streamingPhase?: string
   onRate?: (message: AnswerMessage, value: FeedbackValue) => void
+  /** Show a source in its document (the page of a PDF, or the passage among its neighbours) */
+  onOpenSource?: (source: Source, n: number) => void
 }
 
 /**
@@ -222,8 +224,11 @@ interface MessageBubbleProps {
  * numbered by it and each [n] in the answer is a Cite chip tied to card n: hovering or focusing
  * either lights both, and a chip pins its card open. Otherwise the cards are numbered in order
  * and the answer is shown as written.
+ *
+ * A card pinned open offers to show its passage in the document (onOpenSource), when the source
+ * says which document and passage it is: answers saved before 15 Oct 2026 do not.
  */
-function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate }: MessageBubbleProps) {
+function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRate, onOpenSource }: MessageBubbleProps) {
   const [active, setActive] = useState<number | null>(null)
   const [open, setOpen] = useState<number | null>(null)
   const cardRefs = useRef<Record<number, HTMLButtonElement | null>>({})
@@ -285,9 +290,10 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
             <p className="p-eyebrow">Sources</p>
             {sources.map((source, index) => {
               const n = numberOf(source, index)
+              const openable = onOpenSource && open === n && source.document_id != null && source.passage != null
               return (
+                <Fragment key={n}>
                 <SourceCard
-                  key={n}
                   n={n}
                   source={source}
                   order={index}
@@ -298,6 +304,12 @@ function MessageBubble({ message, isStreaming = false, streamingPhase = '', onRa
                   onToggle={() => setOpen(open === n ? null : n)}
                   innerRef={(el) => { cardRefs.current[n] = el }}
                 />
+                {openable && (
+                  <button type="button" className="p-btn p-btn--tonal x-margin__open" onClick={() => onOpenSource(source, n)}>
+                    {source.kind === 'pdf' && placeOf(source) ? `Show on ${placeOf(source)}` : 'Show in the document'}
+                  </button>
+                )}
+                </Fragment>
               )
             })}
           </aside>

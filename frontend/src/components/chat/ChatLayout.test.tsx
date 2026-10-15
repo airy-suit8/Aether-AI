@@ -28,6 +28,8 @@ vi.mock('../../services/api', async (importOriginal) => ({
   getSharing: vi.fn(async (id: string) => ({ session_id: id, token: null })),
   shareSession: vi.fn(),
   stopSharing: vi.fn(),
+  getPassage: vi.fn(),
+  getDocumentFile: vi.fn(),
 }))
 
 /** Shows the current path, so a test can read the URL the workspace navigated to. */
@@ -130,6 +132,45 @@ describe('ChatLayout', () => {
     })
     renderChat('/chat/session_1')
     expect(await screen.findByRole('img', { name: 'Confidence: Grounded · 52%' })).toBeTruthy()
+  })
+
+  it('says so when a PDF already read is sent again only to keep its pages', async () => {
+    vi.mocked(api.uploadDocument).mockResolvedValue({
+      document_id: 7, filename: 'paper.pdf', status: 'ready', replaces: false,
+      message: "Kept the file of 'paper.pdf', to show its pages.",
+    })
+    const { addToast } = renderChat()
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]') as HTMLInputElement
+    await userEvent.setup().upload(input, new File(['%PDF-1.4'], 'paper.pdf', { type: 'application/pdf' }))
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith("Kept the file of 'paper.pdf', to show its pages.", 'success'))
+    expect(api.getDocument).not.toHaveBeenCalled()
+  })
+
+  it('shows a pinned source in its document, when the source says which one', async () => {
+    const paper = { ...SOURCE, source: 'paper.pdf', page: 20, document_id: 7, kind: 'pdf', passage: 62, passages: 74 }
+    vi.mocked(api.getPassage).mockResolvedValue({
+      document_id: 7, filename: 'paper.pdf', kind: 'pdf', passages: 74, original: false,
+      items: [{ passage: 62, page: 20, text: 'XGBoost reached the highest accuracy of 83.7%.' }],
+    })
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onToken, onDone }) => {
+      onToken?.('84%.')
+      onDone?.(done({ sources: [{ ...SOURCE, source: 'saved-before.txt' }, paper] }))
+    })
+    renderChat()
+    const user = await ask('What was the best accuracy?')
+    const margin = (await screen.findByText('Sources')).parentElement as HTMLElement
+
+    // A source from before sources named their document has nothing to show
+    await user.click(within(margin).getByText('saved-before.txt'))
+    expect(within(margin).queryByRole('button', { name: /^Show/ })).toBeNull()
+
+    await user.click(within(margin).getByText('paper.pdf'))
+    await user.click(within(margin).getByRole('button', { name: 'Show on p. 20' }))
+    const viewer = await screen.findByRole('dialog', { name: 'paper.pdf' })
+    expect(await within(viewer).findByText('XGBoost reached the highest accuracy of 83.7%.')).toBeTruthy()
+    expect(api.getPassage).toHaveBeenCalledWith(7, 62)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'paper.pdf' })).toBeNull()
   })
 
   it('sends a question and shows the streamed answer with its source card', async () => {

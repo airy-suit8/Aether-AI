@@ -5,8 +5,14 @@ Ingestion is load (ingestion/) -> chunk (chunking/) -> embed and store (vectordb
 is its SQLite record plus its chunks in the vector store, tied together by the record's id,
 which every chunk carries as document_id (R7). The chunks are filed under the owner's tenant id
 (S2); migrate_chunks_to_tenants() re-keys chunks stored before there were tenant ids.
+
+A PDF is also kept as it was uploaded (its "original", in settings.files_dir under the owner's
+tenant id), so a source can be shown on its page; it goes with its document. PDFs uploaded before
+15 Oct 2026 were not kept: the same file uploaded again is kept for its document (keep_original).
 """
 
+import shutil
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.chunking.chunker import split_documents
@@ -20,6 +26,9 @@ from src.vectordb.vector_store import store
 
 # A document whose reading a restart cut short
 INTERRUPTED = "The server stopped before this file was read. Upload it again."
+
+# The kinds of file kept as uploaded: the page viewer shows PDFs
+KEPT_KINDS = (".pdf",)
 
 
 class DocumentRemoved(Exception):
@@ -74,6 +83,26 @@ def finish_document(user_id: int, document_id: int, file_path: str, filename: st
     return {**result, "replaced": bool(earlier)}
 
 
+def original_path(user_id: int, document_id: int) -> Path:
+    """Where a document's original file is kept: under its owner's tenant id, by the document's id."""
+    return settings.files_dir / get_tenant_id(user_id) / f"{document_id}.pdf"
+
+
+def has_original(user_id: int, document_id: int) -> bool:
+    return original_path(user_id, document_id).is_file()
+
+
+def keep_original(user_id: int, document_id: int, file_path: str, filename: str) -> bool:
+    """Keep an uploaded file of a kind the viewer shows as its document's original, moving it from
+    file_path. Returns whether it was kept."""
+    if Path(filename).suffix.lower() not in KEPT_KINDS:
+        return False
+    target = original_path(user_id, document_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(file_path, target)
+    return True
+
+
 def fail_document(user_id: int, document_id: int, error: str) -> None:
     """Mark an upload "failed" with a message for its owner, then remove any chunks it got as far as storing."""
     set_document_status(user_id, document_id, "failed", error=error)
@@ -107,6 +136,7 @@ def delete_document(user_id: int, document_id: int) -> Optional[Dict[str, Any]]:
     # Errors propagate, and the record stays, so the list still matches the vector store
     deleted = store.delete_document_chunks(get_tenant_id(user_id), document_id, document["filename"])
     delete_document_record(user_id, document_id)
+    original_path(user_id, document_id).unlink(missing_ok=True)
     return {"filename": document["filename"], "deleted": deleted}
 
 
@@ -116,6 +146,7 @@ def clear_documents(user_id: int) -> Dict[str, Any]:
     deleted = store.delete_user_chunks(get_tenant_id(user_id))
     # Clear from SQLite metadata only once the vectors are gone
     clear_user_documents(user_id)
+    shutil.rmtree(settings.files_dir / get_tenant_id(user_id), ignore_errors=True)
     return {"status": "cleared", "deleted": deleted}
 
 

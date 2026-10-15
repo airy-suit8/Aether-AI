@@ -26,6 +26,7 @@ export type StreamEvent = Schemas['TokenEvent'] | Schemas['DoneEvent'] | Schemas
 export type Mode = NonNullable<Schemas['ChatRequest']['mode']>
 /** The documents an answer searched, and how they were picked (all, chosen, named, kind). */
 export type Scope = Schemas['Scope']
+export type PassageView = Schemas['PassageView']
 export type FeedbackValue = Schemas['FeedbackRequest']['feedback']
 
 // ── Types read from the schema ──────────────────────────────────────────────
@@ -78,6 +79,8 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 
 interface Options<P extends ApiPath, M extends MethodOf<P>> {
   params?: PathParams<P, M>
+  /** Added to the URL as ?name=value */
+  query?: Record<string, string | number>
   json?: Body<P, M, 'application/json'>
   form?: URLSearchParams | FormData
   signal?: AbortSignal
@@ -148,7 +151,7 @@ async function failure(res: Response, open: boolean): Promise<ApiError> {
 
 /** Send a request; resolve to the Response when it succeeded, or throw an ApiError. */
 async function send<P extends ApiPath, M extends MethodOf<P>>(method: M, path: P, options: Options<P, M> = {}): Promise<Response> {
-  const { params, json, form, signal, open = false } = options
+  const { params, query, json, form, signal, open = false } = options
   const init: RequestInit = { method: method.toUpperCase(), signal }
   if (json !== undefined) {
     init.headers = { 'Content-Type': 'application/json' }
@@ -159,7 +162,7 @@ async function send<P extends ApiPath, M extends MethodOf<P>>(method: M, path: P
   } else if (form) {
     init.body = form  // the browser sets the multipart boundary
   }
-  const url = urlOf(path, params ?? undefined)
+  const url = urlOf(path, params ?? undefined) + (query ? `?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}` : '')
   const attempt = () => fetch(url, open ? init : { ...init, headers: withToken(init.headers) })
 
   const held = currentToken
@@ -258,6 +261,22 @@ export function getDocumentsDetailed() {
  */
 export function getDocument(documentId: number) {
   return request('get', '/api/v1/documents/{document_id}', { params: { document_id: documentId } })
+}
+
+/**
+ * A passage of a document (numbered from 1, as a source gives it) with `around` passages either
+ * side, in order; and whether the document's PDF is kept, to show its page.
+ */
+export function getPassage(documentId: number, passage: number, around = 1) {
+  return request('get', '/api/v1/documents/{document_id}/passages/{passage}', {
+    params: { document_id: documentId, passage }, query: { around },
+  })
+}
+
+/** A document's PDF as it was uploaded, to show a source on its page. */
+export async function getDocumentFile(documentId: number, signal?: AbortSignal): Promise<ArrayBuffer> {
+  const res = await send('get', '/api/v1/documents/{document_id}/file', { params: { document_id: documentId }, signal })
+  return res.arrayBuffer()
 }
 
 /** Delete one document, by the id the detailed list gives it. */
