@@ -6,6 +6,32 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-15, evening
+
+**Done**
+- Merged into `main` at the owner's request, without the quiz (their choice): the five branches (`2d3953d`); then two fixes, each on its own branch: `start.bat` ignores a `PYTHON` variable already set on the computer (`5c43db9`, D-069), and toasts sit above the dock so they never cover the question box (`949d0fb`, D-070). All pushed.
+- `start.bat --packages-only` run on the owner's computer: `npm ci` (291 packages, pdf.js among them, 0 vulnerabilities) and the backend's packages into `.venv`; both copies kept for the next comparison.
+- The owner's app restarted from `main`: backend on 8000, frontend on 5173 (started by hand, outside `start.bat`).
+- Worktrees removed and their merged local branches deleted; the branches remain on GitHub.
+
+**In progress**
+- Nothing. The quiz was not taken; the questions were asked, and the rule stands for the next merge.
+
+**Broken or risky**
+- The owner said they could not see the question box. It was not reproduced at any window size; toasts covering it is the one cause found, and fixed. If it still happens, a screenshot and the window size are needed.
+- `.wt/openai` is left behind: a process holds it. Delete `.wt` when nothing uses it.
+- Node 24.11 is below what jsdom and three test-only packages ask for (24.15): `npm ci` warns; the app is not affected.
+- Unchanged from the entry below: the "best accuracy" answer; the PDF to upload again; the reranking model not pinned; no per-user OCR quota; Ollama not starting by itself.
+
+**Next**
+- Owner: refresh the page and check the question box; upload `13003-64313-1-PB.pdf` again; from now on start the app with `start.bat` (stop the servers started by hand first).
+- Owner: the Sprint 4 test set; the data question (S11); the Sprint 9 decisions.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-15
 
 **Done**
