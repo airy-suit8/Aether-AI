@@ -472,6 +472,15 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Chosen:** each feature on its own branch, each built on the one before (`rerank`, then `pdf-viewer`, `openai-compatible`, `ocr`), all pushed; the owner merges `ocr`, which holds all four, after the quiz.
 - **Why:** each can be read and reverted alone; one merge brings all four.
 
+### D-068 start.bat installs packages again when their lists change
+- **Date:** 2026-10-15 · `decisions-flow`
+- **Context:** it ran `npm ci` only when `node_modules` was missing, and never pip. After the merge, the owner's existing `node_modules` would lack pdf.js and the chat page would fail to load; on another machine the new Python packages (fastembed, langchain-openai, pypdfium2, rapidocr) would be missing. Found while checking the viewer under the built app.
+- **Options:** 1) tell the owner to run `npm ci` and pip by hand after each pull 2) install on every start (slow) 3) install when `package-lock.json` or `requirements.txt` differs from a copy kept from the last install
+- **Chosen:** 3, comparing byte for byte (`fc /b`); pip only into the project's `.venv`, never the Python on PATH; `--packages-only` to install without starting.
+- **Why:** a step the owner has to remember is a step that gets missed, and the failure (a blank page, an import error) does not say what to do.
+- **Trade-off:** the first start after this change reinstalls once; `npm ci` fails while a server holds its files, and says to close the window.
+- **Evidence:** tested in a scratch copy with stand-in npm and python: first run, nothing changed, each list changed, npm failing then succeeding, no `.venv`.
+
 ---
 
 ## Template
