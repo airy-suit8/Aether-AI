@@ -37,7 +37,7 @@ class DocumentRemoved(Exception):
 
 def ingest_document(user_id: int, file_path: str, filename: str, document_id: Optional[int] = None) -> Dict[str, Any]:
     """Parse → chunk → embed → store. Returns summary stats. Chunks are tagged with document_id when one is given."""
-    raw_docs = load_document(file_path, filename)
+    raw_docs = load_document(file_path, filename, owner=str(user_id))  # a scan counts against their OCR limit
     if not raw_docs:
         raise ValueError("No text could be extracted from the document.")
 

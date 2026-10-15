@@ -22,7 +22,7 @@ import unicodedata
 import zipfile
 from datetime import datetime, time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from docx import Document as DocxDoc
@@ -68,9 +68,9 @@ def clean_filename(name: str) -> str:
 
 # ── Native parsers ────────────────────────────────────────────────────────────
 
-def _parse_pdf(file_path: str, filename: str) -> List[Document]:
+def _parse_pdf(file_path: str, filename: str, owner: Optional[str] = None) -> List[Document]:
     """Extract text page-by-page using pypdf (pure Python); a page with none, a picture of text,
-    is read by OCR."""
+    is read by OCR, counted against the owner's hourly limit when an owner is given."""
     reader = PdfReader(file_path)
     texts = {number: (page.extract_text() or "").strip() for number, page in enumerate(reader.pages, start=1)}
     pictures = [number for number, text in texts.items() if not text]
@@ -81,7 +81,11 @@ def _parse_pdf(file_path: str, filename: str) -> List[Document]:
                 f"'{filename}' has {len(pictures)} pages that are pictures of text, and at most "
                 f"{settings.ocr_max_pages} are read by OCR in one file. Split it into smaller files and upload those.")
         try:
-            found = ocr.read_pages(file_path, pictures)
+            found = ocr.read_pages(file_path, pictures, owner)
+        except ocr.OcrLimitReached as limit:
+            raise DocumentError(
+                f"'{filename}' has {limit.asked} pages that are pictures of text, and you have had {limit.used} "
+                f"read by OCR in the last hour, of {limit.limit} an hour. Upload it again later.") from None
         except Exception as e:
             raise DocumentError(f"'{filename}' has pages that are pictures of text, and OCR could not read them "
                                 "on this server. Upload a text version.") from e
@@ -230,11 +234,11 @@ def _unsupported(ext: str) -> DocumentError:
     return DocumentError(f"Unsupported file type '{ext}'. Allowed: pdf, docx, txt, md, csv, xlsx, xls")
 
 
-def load_document_native(file_path: str, filename: str) -> List[Document]:
-    """Dispatch to the correct parser based on file extension."""
+def load_document_native(file_path: str, filename: str, owner: Optional[str] = None) -> List[Document]:
+    """Dispatch to the correct parser based on file extension. owner: whose OCR limit a scan counts against."""
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
-        return _parse_pdf(file_path, filename)
+        return _parse_pdf(file_path, filename, owner)
     elif ext == ".docx":
         return _parse_docx(file_path, filename)
     elif ext in (".txt", ".md", ".markdown"):
@@ -304,9 +308,10 @@ def _check_unpacked_size(file_path: str, filename: str) -> None:
             "one file may hold. Split it into smaller files and upload those.")
 
 
-def load_document(file_path: str, filename: str) -> List[Document]:
+def load_document(file_path: str, filename: str, owner: Optional[str] = None) -> List[Document]:
     """
-    Load a file with the loader settings.document_loader names.
+    Load a file with the loader settings.document_loader names. owner: the uploader, whose hourly
+    OCR limit a scanned PDF counts against (none: no limit, as for the evaluation's files).
 
     Raises DocumentError for a file that cannot be read. A parser's own error often quotes the
     server's temp path (R9), so it is kept as the cause, for the log, and replaced by a message
@@ -316,7 +321,9 @@ def load_document(file_path: str, filename: str) -> List[Document]:
     try:
         if Path(filename).suffix.lower() in ZIP_FORMATS:
             _check_unpacked_size(file_path, filename)
-        return load(file_path, filename)
+        if load is load_document_native:
+            return load_document_native(file_path, filename, owner)
+        return load(file_path, filename)  # LangChain's loaders read no pictures, so no OCR limit applies
     except DocumentError:
         raise
     except Exception as e:

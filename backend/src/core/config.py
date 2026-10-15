@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     # A file with more such pages than ocr_max_pages is refused: reading it would take minutes.
     ocr: bool = True
     ocr_max_pages: int = 100
+    # Pages one user may have read by OCR in any hour (D-073): at 1 to 2 s a page, about five
+    # minutes of the processor. Kept in memory, so a restart clears it.
+    ocr_pages_per_hour: int = 200
     chunk_size: int = 1000
     chunk_overlap: int = 150
     top_k: int = 5

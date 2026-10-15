@@ -117,10 +117,12 @@ api/routes_documents.py  upload_document()                         async; the to
   _read_in_background()  (thread pool, FastAPI background task) (D-032)
     finish_document()                         pipeline/documents.py
       ingest_document()
-        load_document()                       ingestion/loader.py   by extension (native or LangChain loaders)
+        load_document(owner)                  ingestion/loader.py   by extension (native or LangChain loaders)
           _parse_pdf()                        pypdf: text page by page
-            pages with no text → ocr.read_pages()  [new]  ingestion/ocr.py (D-065)
-              pypdfium2 draws each page at 200 dpi → RapidOCR reads it; one page at a time (D-066)
+            pages with no text → ocr.read_pages(owner)  [new]  ingestion/ocr.py (D-065)
+              _reserve(): the pages count against the owner's last hour, or the file is refused (D-073)
+              each page in a turn of its own, in the order asked (_Turns): pypdfium2 draws it at
+              200 dpi → RapidOCR reads it; one page at a time for the whole server (D-066, D-073)
           _parse_docx() / _parse_text() / _parse_tabular()
         split_documents()                     chunking/chunker.py   1000-character passages, 150 overlap;
                                                                      chunk_id, chunk_index (from 1), total_chunks
@@ -133,10 +135,11 @@ api/routes_documents.py  upload_document()                         async; the to
 Page: getDocument() every second until "ready" or "failed", then a toast
 ```
 
-**Where it fails:** a file over 50 MB, too many passages or pages read by OCR (100), a PDF with no
-words even for OCR, the embedding model busy (429/503: "upload it again in a minute") or not
-set up (Ollama not running, model not installed, a model not named for an OpenAI-compatible
-service **[new]**). A restart while a file is read marks it failed at the next start.
+**Where it fails:** a file over 50 MB, too many passages or pages read by OCR (100 in a file, 200
+for a user in an hour), a PDF with no words even for OCR, the embedding model busy (429/503: "upload
+it again in a minute") or not set up (Ollama not running, model not installed, a model not named for
+an OpenAI-compatible service **[new]**). A restart while a file is read marks it failed at the next
+start.
 
 ## 6. Asking a question (the streamed answer)
 

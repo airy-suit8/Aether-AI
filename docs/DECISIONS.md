@@ -515,6 +515,17 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Trade-off:** a new version of the model is only used once its pin is changed here, with the measurement redone; a model named in `AETHER_RERANK_MODEL` that is not pinned is still fetched by name.
 - **Evidence:** `tests/unit/test_reranker.py` (the pin, the fetch at its commit, a changed file refused, an unpinned model); loaded for real from the pinned files, and offline (`HF_HUB_OFFLINE=1`).
 
+### D-073 OCR takes turns a page at a time, and each user may have 200 pages read an hour
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Replaces:** the lock of D-066, which was held for a whole file. Pages are still read one at a time.
+- **Context:** with that lock, one user's 100-page scan (two to three minutes) made every other user's scan wait for all of it, and nothing stopped one account sending such scans all day (THREAT.md, section 2).
+- **Options:** 1) leave it 2) a turn for each page, in the order asked, with no limit 3) 2 and a limit on the pages each user may have read in any hour, counted in memory 4) 3 with the count kept in the database 5) a separate worker process with a queue for each user
+- **Chosen:** 3. `ocr._Turns` hands out turns like tickets (a plain lock can be taken straight back by the thread that just let go), so a second upload's pages are read between the first one's; `ocr._reserve` counts a file's pages against its owner's last hour before any is read and refuses the file if they would pass `AETHER_OCR_PAGES_PER_HOUR` (200). The upload fails with a message that says how many pages were read in the last hour and to upload it again later.
+- **Why:** turns bound how long a short scan waits to about one page of each other scan being read, not their whole length; the limit bounds one account to about 3 to 7 minutes of the processor an hour (1 to 2 s a page). The rate limits are kept in memory already (N9), and 5 is the worker the deferred deployment work would bring.
+- **Trade-off:** a restart clears the count; someone with several accounts has several hours' worth; a file's pages count even when it then fails at a later step; when several scans are read at once, each finishes later than it would alone. Files the evaluation reads have no owner and no limit.
+- **Revisit:** if uploads move to a worker process, or the server is shared by many people (then 4, or a limit per address).
+- **Evidence:** `tests/unit/test_ocr.py::test_a_short_scan_is_read_between_the_pages_of_a_long_one`, `::test_each_user_has_their_own_hour_of_pages`, `::test_pages_count_for_an_hour_only`, `::test_a_file_read_with_no_owner_has_no_limit`, `::test_an_upload_past_its_owner_s_hour_fails_and_another_user_s_does_not`.
+
 ---
 
 ## Template
