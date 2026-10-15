@@ -41,7 +41,7 @@ GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
 # The average similarity of an answer's passages at which it reads as grounded (the ring under an
 # answer), for each embedding model, since each spreads its scores differently. Gemini: from the
 # first real run (answerable questions 0.67 to 0.80, an unrelated one 0.50), until Sprint 4
-# measures it. nomic-embed-text: on the owner's three documents, 15 Oct 2026 (SPRINT_PLAN.md,
+# measures it. Ollama's default embedding model: on the owner's three documents, 15 Oct 2026 (SPRINT_PLAN.md,
 # "Reranking"): 20 full questions averaged 0.61 to 0.78 and 13 short ones ("which dataset",
 # "who are the authors") 0.40 to 0.67, while 6 unrelated ones ("what is the price of gold")
 # averaged 0.38 to 0.48; at 0.5, 28 of the 33 read as grounded and none of the 6.
@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     top_k: int = 5
     # The best passage's similarity under which a question is refused without asking the model
-    # (Task 7). Not raised for nomic-embed-text: short questions about the documents ("orcid ids",
+    # (Task 7). Not raised for Ollama's default embedding model: short questions about the documents ("orcid ids",
     # 0.42) scored below unrelated ones ("who is the prime minister of India", 0.52), so a line
     # that refused those refused real questions too; the model says when the passages do not answer.
     confidence_threshold: float = 0.3
