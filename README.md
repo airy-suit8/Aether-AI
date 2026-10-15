@@ -52,7 +52,7 @@ Double-click `start.bat` (or run it from Command Prompt). It opens two windows, 
 
 To stop, close the two windows titled "Aether AI backend" and "Aether AI frontend".
 
-Before it starts them, `start.bat` installs the packages again when their lists have changed since the last install: `frontend\package-lock.json` (with `npm ci`) and `backend\requirements.txt` (with pip, into the project's `.venv` only). So after a `git pull` or a merge that adds a package, running it is enough; close the two windows first, since a running server keeps its files in use. `start.bat --packages-only` installs what changed and starts nothing.
+Before it starts them, `start.bat` installs the packages again when their lists have changed since the last install: `frontend\package-lock.json` (with `npm ci`) and `backend\requirements.txt` (with pip, into the project's `.venv` only). So after a `git pull` or a merge that adds a package, running it is enough; close the two windows first, since a running server keeps its files in use. `start.bat --packages-only` installs what changed and starts nothing. When the settings use Ollama and it is not running (after the computer restarts, say), `start.bat` starts it and waits for it.
 
 To start the two parts by hand instead, use two Command Prompt windows:
 

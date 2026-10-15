@@ -31,8 +31,9 @@ Paths are `file` → `function`, from the folder `backend/` or `frontend/src/`. 
 
 | Entry point | Started by | What it is |
 |---|---|---|
-| `start.bat` | double-click, or `start.bat --packages-only` | Installs the packages whose lists changed since the last install (`package-lock.json`, `requirements.txt`, compared with a copy kept beside the packages), then opens the two servers below (D-068) |
+| `start.bat` | double-click, or `start.bat --packages-only` | Installs the packages whose lists changed since the last install (`package-lock.json`, `requirements.txt`, compared with a copy kept beside the packages) (D-068); starts Ollama when the settings use it and it does not answer (`python -m src.ollama_ready`, D-071); then opens the two servers below |
 | `main.py` → `create_app()` | `python -m uvicorn main:app` from `backend/` (`start.bat`) | The API, and the built page at `/` |
+| `src/ollama_ready.py` | `python -m src.ollama_ready [--wait 30]`, from start.bat | Exit 3 when the settings use Ollama, on this computer, and it does not answer at `/api/version` (D-071) |
 | `src/reembed.py` | `python -m src.reembed [--apply]` | Re-embeds stored passages after the embedding model changes |
 | `src/maintenance.py` | `python -m src.maintenance [--apply]` | Finds passages and records that disagree |
 | `src/evaluation/evaluate.py` | `python -m src.evaluation.evaluate` | Measures answer quality on a dataset |

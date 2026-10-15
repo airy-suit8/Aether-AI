@@ -497,6 +497,15 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Trade-off:** a toast covers the last lines of the conversation for its 4 s.
 - **Evidence:** the browser journey checks that the upload's toast ends above the question box; looked at in a browser at 1366x768.
 
+### D-071 start.bat starts Ollama when the settings use it and it does not answer
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Context:** after the computer restarted, Ollama was not running, and the app could answer nothing until it was started by hand (15 Oct 2026).
+- **Options:** 1) tell the owner to start it 2) make Ollama start with Windows (a setting of Ollama's, outside this project) 3) start.bat starts it when needed
+- **Chosen:** 3. `python -m src.ollama_ready` reads the settings as the app does (environment, `backend\.env`, defaults) and asks Ollama's `/api/version`; when Ollama is needed, on this computer, and silent, start.bat starts the installed Ollama app (`%LOCALAPPDATA%\Programs\Ollama\ollama app.exe`), else `ollama serve`, and waits up to 30 s.
+- **Why:** the settings decide in one place, so a setup on Gemini never starts Ollama, and one pointing at another computer is reported, not started. Asking the version loads no model.
+- **Trade-off:** it does not cover the OpenAI-compatible provider pointed at Ollama's `/v1` address; start Ollama by hand for that.
+- **Evidence:** `tests/unit/test_ollama_ready.py`; start.bat's block tested in a scratch copy (Ollama answering, started, not coming up, the checker failing); the real Ollama checked (answering, and a closed port: exit 3).
+
 ---
 
 ## Template
