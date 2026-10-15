@@ -526,6 +526,16 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Revisit:** if uploads move to a worker process, or the server is shared by many people (then 4, or a limit per address).
 - **Evidence:** `tests/unit/test_ocr.py::test_a_short_scan_is_read_between_the_pages_of_a_long_one`, `::test_each_user_has_their_own_hour_of_pages`, `::test_pages_count_for_an_hour_only`, `::test_a_file_read_with_no_owner_has_no_limit`, `::test_an_upload_past_its_owner_s_hour_fails_and_another_user_s_does_not`.
 
+### D-074 Each passage's tag names the section of its paper it is in
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Context:** asked for the maternal health paper's best accuracy, qwen3.5:4b gave a cited study's figure (94.9%, 97.03%) as the paper's own (D-054). Those passages are in its introduction and literature study, and the one with 97.03% cites no work, so rule 7 of the prompt (a cited result is that work's) could not catch it.
+- **Options:** 1) leave it 2) store a section with each passage when a file is read 3) find each passage's section when a question is asked, from the headings in the stored passages, and name it in the tag, with a rule in the prompt 4) leave the introduction and literature review out of the search
+- **Chosen:** 3. `retrieval/sections.py`: a line that is only a usual section name (Introduction, Literature study, Results, Discussion, Conclusion and their like), numbered or not, starts a section; a passage that crosses a heading is in both. A document's sections are found from its passages once and kept until the tenant's passages change (`store.version`). `format_context` adds `section="…"`; the prompts say figures in an introduction, background, related work or literature review are other studies' results.
+- **Why:** measured on a copy of the owner's library with qwen3.5:4b, each answer asked alternately with and without (the tags and the rule together), the three accuracy questions 7 times each: a cited figure given as the paper's own **9 of 21 without, 2 of 21 with**; the paper's exact best (83.7% or 84%) 3 of 21 either way; the 18 other questions passed 36 of 36 either way; 828 s against 839 s. 2 needs every file read again to help the files already there; 4 would hide what the literature review says when that is the question.
+- **Trade-off:** headings that are not usual section names start no section; a heading that is not on a line of its own is missed; a document's passages are read once more when it is first asked about after a change. Twice in 21 the model still gave a cited figure. It cannot give 84%: for these questions the search does not find the passage that holds it (the paper's own results reach the model only as passage 69, with 82.73%), which is a retrieval problem, not this one.
+- **Revisit:** when the search is changed to find a paper's results for "best" questions; or if Word documents with heading styles are read with their styles.
+- **Evidence:** `tests/unit/test_sections.py` (the headings of the owner's two papers; crossing a heading; a letter with none; the tags through the API; found once until the passages change); `tests/unit/test_prompts.py::test_the_section_is_named_and_cannot_break_out_of_its_attribute`; the measurement script and its answers were kept outside the repository.
+
 ---
 
 ## Template

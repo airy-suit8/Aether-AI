@@ -175,12 +175,15 @@ pipeline/rag.py  events(user_id, question, session_id, mode, document_ids)
        front-matter question → store.first_passages(): each document's passage 1, marked added "start" (D-051)
        chunk window → store.passages_around() for the two best hits, marked added "neighbour" (D-052)
        _in_reading_order()                       documents by their best hit, passages in document order
+       sections.name_sections()  [new]           retrieval/sections.py: each hit's section of its paper, from its
+                                                    document's headings (store.passages_of), kept per store.version (D-074)
   4. no hits → refusal "No documents have been uploaded yet"
      confidence = mean similarity of the hits found (not of those added)
      best similarity < settings.confidence_threshold (0.3) → refusal, no model call (D-023)
   5. _report_injection_patterns()                prompts: log passages that read like instructions; sent unchanged (D-033)
   6. _generate()                                 answer_from "chunks" (default, D-053):
-       CITED_RAG_PROMPT | get_llm() | parser .stream()   prompts/prompt_templates.py: format_context(numbered, titles)
+       CITED_RAG_PROMPT | get_llm() | parser .stream()   prompts/prompt_templates.py: format_context(numbered, titles);
+                                                    each tag names the passage's section when it has one [new] (D-074)
        → yields {"type": "token"} events as the model writes
      (answer_from "summary": SUMMARIZE_PROMPT, then RAG_PROMPT: two calls)
   7. _answer_sources()                           the passages the answer cites as [n]; none for a refusal
@@ -196,7 +199,8 @@ not set up (`setup_problem()`: Ollama not running, a model not installed, a key 
 out of reach **[new]**): an error event, nothing saved. Closing the stream (Stop) ends the
 generator before step 8: no turn is saved. A question near the documents' subject but not answered
 in them passes the threshold and relies on the model to say so (D-057). A small model can quote a
-cited study's figure as the paper's own (D-054).
+cited study's figure as the paper's own (D-054): section tags made it 2 answers in 21, from 9
+(D-074). Asked for a paper's best figure, the search may not find the passage that holds it.
 
 ## 7. Agent mode
 
