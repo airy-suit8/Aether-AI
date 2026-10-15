@@ -92,7 +92,12 @@ test('the whole journey, with the accessibility gate', async ({ page, browser })
 
   // ── Upload, and wait until it is read ─────────────────────────────────────
   await page.locator('.x-rail input[type="file"]').setInputFiles('e2e/fixtures/zephyr_manual.txt')
-  await expect(page.getByText('Added zephyr_manual.txt: 1 passage from 1 page.')).toBeVisible()
+  const added = page.getByText('Added zephyr_manual.txt: 1 passage from 1 page.')
+  await expect(added).toBeVisible()
+  // A toast (the message is the toast's own text) sits above the dock, never over the question box
+  const toastBox = await added.boundingBox()
+  const questionBox = await page.getByRole('textbox', { name: 'Your question' }).boundingBox()
+  expect(toastBox && questionBox && toastBox.y + toastBox.height <= questionBox.y).toBe(true)
   const library = page.locator('.x-library')
   await expect(library.getByText('zephyr_manual.txt')).toBeVisible()
   await expect(library.getByText('Reading')).toHaveCount(0)
