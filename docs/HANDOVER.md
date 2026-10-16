@@ -6,6 +6,33 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-16, afternoon
+
+**Done**
+- The chat page offers Default and Agent, and every answer is streamed (`65e71d4`, D-075); merged into `main` (`654635a`) at the owner's request, without the quiz. LangChain answers as Default does; Hybrid, measured against Default on the 20 questions with the reranker on, put the answering passage at the same rank on every question (19 of 20 in the five kept, 11 first). The API still takes all four modes and `POST /chat`.
+- **CI was red on every push from `453b724` (15 Oct, the PDF viewer) to `654635a`**, unseen until the owner's failure mails: the Frontend and Browser journey jobs stopped at `npm ci`, because the lock file lacked `@emnapi/core` and `@emnapi/runtime` (npm 11.6.1 here accepts it, CI's npm 11.19.0 does not). So lint, the type check, the frontend tests and the journey did not run in CI for those commits; they had passed here. Fixed by writing the lock with npm 11.19.0 (`5ad78e3`, D-076); CI passed all three jobs on that branch, the first green run since 15 Oct. Merged into `main` with this entry.
+- GitHub CLI 2.102.0 installed for the owner's user at their request (winget, no admin), not logged in.
+- The owner uploaded `13003-64313-1-PB.pdf` again: it is document 6 now, with its PDF kept for the page viewer.
+
+**In progress**
+- Nothing.
+
+**Broken or risky**
+- The quiz was waived for both of today's merges; the rule stands.
+- The owner's Node 24.11 ships npm 11.6.1, older than CI's: a lock file it writes can pass here and fail in CI. Check with `npx -y npm@11.19.0 ci --dry-run` before pushing a dependency change, and read CI's result after every push.
+- GitHub says `ubuntu-latest` moves to Ubuntu 26 from 19 Oct 2026; CI may need a look after that.
+- Unchanged from the entry below: "the best accuracy" is answered with 84% only 3 times in 21 (the search does not find the passage that holds it); OCR's hourly count is kept in memory.
+
+**Next**
+- Owner: `gh auth login` in a new terminal to use the GitHub CLI; consider Node 24.21 or later (npm 11.19, as CI); commit or drop the `SDLC_PLAN.md` edit; delete `.wt` when nothing uses it.
+- Owner: the Sprint 4 test set; the data question (S11); the Sprint 9 decisions.
+- Next fix to consider: find a paper's own results for "best" or "highest" questions.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-16
 
 **Done**
