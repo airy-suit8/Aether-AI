@@ -6,6 +6,40 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-16
+
+**Done**
+- Merged into `main` at the owner's request (`e121ae6`) and pushed: the four follow-ups from `four-follow-ups`.
+  1. `start.bat` starts Ollama when the settings use it and it does not answer, waits up to 30 s, and says so if it still does not (`5ea42c4`, D-071; `src/ollama_ready.py`).
+  2. The reranking model is pinned: one commit of its repository, and the sha256 of each of its five files, checked before it is loaded (`0429bc1`, D-072).
+  3. OCR takes turns a page at a time, so another user's scan is read between a long scan's pages, and each user may have 200 pages read by OCR in any hour (`AETHER_OCR_PAGES_PER_HOUR`) (`654a092`, D-073). Also fixed a form-feed character in `backend/.env.example` (`AETHER_FILES_DIR`).
+  4. Each passage's tag names the section of its paper it is in, with a rule in the prompt (`6982574`, D-074). Measured on a copy of the owner's library with qwen3.5:4b, the three accuracy questions 7 times each with and without: a cited study's figure given as the paper's own 9 of 21 without, 2 of 21 with; the 18 other questions 36 of 36 either way.
+- Checks: 820 backend tests passed, with no keys; ruff clean. The frontend was not changed, so its checks were not run. The Ollama check was tried against the real Ollama (answering: exit 0; a closed port: exit 3) and `start.bat`'s new block in a scratch copy for four cases. The pinned model was loaded for real, and offline.
+- The temporary copies of the owner's database and vector store that the measurements made were deleted from the system's temp folder.
+
+**In progress**
+- Nothing.
+
+**Broken or risky**
+- The quiz was asked: 8 questions. The owner said they passed but gave no answers, so nothing was graded; it is recorded as waived by the owner, as on 15 Oct. The rule stands for the next merge.
+- "The best accuracy of the maternal health paper" is still not answered with 84%: only 3 of 21 answers give 83.7% or 84%. The search does not bring the passages that hold them (62, 65, 68) for that question; of the paper's own results only passage 69 (82.73%) reaches the model. This is a retrieval problem, the next fix (D-074).
+- Not tried on the owner's computer: `start.bat` starting Ollama from stopped, after a restart.
+- OCR's hourly count is kept in memory: a restart clears it, and several accounts have several hours' worth (D-073).
+- Section headings are found only when they are a usual section name on a line of their own (D-074).
+- Commit `6982574`'s message says 25 new section tests; there are 24.
+- `.wt/openai` is still on disk (not a worktree any more); `.wt/four` was used for this work. Delete `.wt` when nothing uses it.
+- Unchanged: Node 24.11 warnings from `npm ci`.
+
+**Next**
+- Owner: start the app with `.\start.bat` (it now starts Ollama itself); upload `13003-64313-1-PB.pdf` again if that is not done yet (D-060).
+- Owner: answer the quiz if it should be graded; the Sprint 4 test set; the data question (S11); the Sprint 9 decisions. `SDLC_PLAN.md` has the owner's own uncommitted edit.
+- Next fix to consider: find a paper's own results for "best" or "highest" questions (the passage with 84% is not found).
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-15, evening
 
 **Done**
