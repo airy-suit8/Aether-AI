@@ -54,15 +54,14 @@ else can reach the server; their defaults keep the owner's own setup working.
 | Keep using a stolen session | The access token lasts 30 minutes; the refresh token is in an httpOnly, `SameSite=Strict` cookie sent only to `/api/v1/auth`, recorded on the server, and revoked by signing out, or everywhere (D-029, D-042) | `test_sign_in.py` |
 | Run up the model bill or slow everyone down | 30 questions a minute, 10 uploads a minute, 120 requests a minute on any other route, per user (D-030) | `test_api_routes.py` |
 | Fill the disk or the memory | Uploads streamed with a 50 MB cap, checked before reading; caps on unpacked size, rows, passages and documents per user (D-031) | `tests/integration/test_upload_limits.py` |
-| Tie up the processor with scans **[new]** | At most 100 pages read by OCR per file, before any is read; uploads limited as above (D-065) | `tests/unit/test_ocr.py::test_a_file_with_too_many_pictures_is_refused_before_any_is_read` |
+| Tie up the processor with scans **[new]** | At most 100 pages read by OCR per file, and 200 per user in any hour, both checked before any page is read; each page is a turn of its own, so another user's scan is read between its pages (D-065, D-073); uploads limited as above | `tests/unit/test_ocr.py::test_a_file_with_too_many_pictures_is_refused_before_any_is_read`, `::test_each_user_has_their_own_hour_of_pages`, `::test_a_short_scan_is_read_between_the_pages_of_a_long_one`, `::test_an_upload_past_its_owner_s_hour_fails_and_another_user_s_does_not` |
 | Make the agent reach the network or the disk | Its only tools are the document search, the calculator and the date tool | `agents/tools.py`; `tests/unit/test_calculator.py` |
 | Have the calculator burn the processor (`9**9**9`) | Powers are capped and refused in under a second | `test_calculator.py` |
 
 **Gaps:**
-- **Scans can still keep the processor busy.** OCR reads one page at a time for the whole server
-  (D-066). A user who sends 10 scans of 100 pages a minute queues about 25 minutes of reading a
-  minute. Questions are still answered meanwhile, but other users' scans wait behind them. There is
-  no per-user OCR quota.
+- **Several accounts still mean several hours' worth of OCR.** Signing up is open, and the hourly
+  count is kept in memory, so it starts again when the server restarts (D-073). Other users' scans
+  take turns with theirs rather than waiting behind them, but each one finishes later.
 - **Rate-limit counts start again** when the server restarts (N9).
 
 ## 3. A malicious document
@@ -94,14 +93,13 @@ process. Turning OCR off (`AETHER_OCR=false`) keeps pdfium from reading uploads 
 | Documents and questions leave the machine | With Ollama for both models, nothing does (D-046). With Gemini or an OpenAI-compatible cloud service **[new]**, the passages and the question are sent to it | README, "Models on your own computer" |
 | A key leaks | Keys live only in `backend/.env`, which git ignores; the test suite blanks both keys; no log line reads them | `.gitignore`; `tests/conftest.py` |
 | A user points the app at an address of their choosing (SSRF) | No user input chooses an address: `AETHER_OPENAI_URL` and `AETHER_OLLAMA_URL` are the owner's settings **[new]** | `core/config.py` |
-| A swapped reranking model **[new]** | It is loaded by onnxruntime as data, not code, and a failure leaves the search's order (D-055) | `retrieval/reranker.py` |
+| A swapped reranking model | Pinned: one commit of its repository, and each of its five files checked against its sha256 before it is loaded; a file that differs is refused and the search's own order answers (D-072, D-055). It runs in onnxruntime as data, not code | `tests/unit/test_reranker.py::test_a_file_that_is_not_the_one_pinned_is_refused_and_the_search_order_used` |
 | A vulnerable package | Versions pinned; `pip-audit` (15 Oct 2026: only chromadb 1.5.9, in its HTTP server, which this app never runs) and `npm audit` (0) | `backend/requirements.txt`, `frontend/package-lock.json` |
 
 **Gaps:**
 - **Which documents may go to a cloud model, on which tier,** is not yet agreed with the mentor (S11).
-- **The reranking model is downloaded by name, not by a fixed version.** fastembed takes the
-  Hugging Face repository's latest files the first time. A pinned revision with a checksum would
-  close this.
+- **A reranking model named in `AETHER_RERANK_MODEL` that is not pinned** is still fetched by
+  name, as fastembed finds it. The default model is pinned (D-072).
 
 ## 6. Someone with the computer, or on the network path
 

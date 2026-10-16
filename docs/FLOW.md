@@ -31,8 +31,9 @@ Paths are `file` → `function`, from the folder `backend/` or `frontend/src/`. 
 
 | Entry point | Started by | What it is |
 |---|---|---|
-| `start.bat` | double-click, or `start.bat --packages-only` | Installs the packages whose lists changed since the last install (`package-lock.json`, `requirements.txt`, compared with a copy kept beside the packages), then opens the two servers below (D-068) |
+| `start.bat` | double-click, or `start.bat --packages-only` | Installs the packages whose lists changed since the last install (`package-lock.json`, `requirements.txt`, compared with a copy kept beside the packages) (D-068); starts Ollama when the settings use it and it does not answer (`python -m src.ollama_ready`, D-071); then opens the two servers below |
 | `main.py` → `create_app()` | `python -m uvicorn main:app` from `backend/` (`start.bat`) | The API, and the built page at `/` |
+| `src/ollama_ready.py` | `python -m src.ollama_ready [--wait 30]`, from start.bat | Exit 3 when the settings use Ollama, on this computer, and it does not answer at `/api/version` (D-071) |
 | `src/reembed.py` | `python -m src.reembed [--apply]` | Re-embeds stored passages after the embedding model changes |
 | `src/maintenance.py` | `python -m src.maintenance [--apply]` | Finds passages and records that disagree |
 | `src/evaluation/evaluate.py` | `python -m src.evaluation.evaluate` | Measures answer quality on a dataset |
@@ -116,10 +117,12 @@ api/routes_documents.py  upload_document()                         async; the to
   _read_in_background()  (thread pool, FastAPI background task) (D-032)
     finish_document()                         pipeline/documents.py
       ingest_document()
-        load_document()                       ingestion/loader.py   by extension (native or LangChain loaders)
+        load_document(owner)                  ingestion/loader.py   by extension (native or LangChain loaders)
           _parse_pdf()                        pypdf: text page by page
-            pages with no text → ocr.read_pages()  [new]  ingestion/ocr.py (D-065)
-              pypdfium2 draws each page at 200 dpi → RapidOCR reads it; one page at a time (D-066)
+            pages with no text → ocr.read_pages(owner)  [new]  ingestion/ocr.py (D-065)
+              _reserve(): the pages count against the owner's last hour, or the file is refused (D-073)
+              each page in a turn of its own, in the order asked (_Turns): pypdfium2 draws it at
+              200 dpi → RapidOCR reads it; one page at a time for the whole server (D-066, D-073)
           _parse_docx() / _parse_text() / _parse_tabular()
         split_documents()                     chunking/chunker.py   1000-character passages, 150 overlap;
                                                                      chunk_id, chunk_index (from 1), total_chunks
@@ -132,10 +135,11 @@ api/routes_documents.py  upload_document()                         async; the to
 Page: getDocument() every second until "ready" or "failed", then a toast
 ```
 
-**Where it fails:** a file over 50 MB, too many passages or pages read by OCR (100), a PDF with no
-words even for OCR, the embedding model busy (429/503: "upload it again in a minute") or not
-set up (Ollama not running, model not installed, a model not named for an OpenAI-compatible
-service **[new]**). A restart while a file is read marks it failed at the next start.
+**Where it fails:** a file over 50 MB, too many passages or pages read by OCR (100 in a file, 200
+for a user in an hour), a PDF with no words even for OCR, the embedding model busy (429/503: "upload
+it again in a minute") or not set up (Ollama not running, model not installed, a model not named for
+an OpenAI-compatible service **[new]**). A restart while a file is read marks it failed at the next
+start.
 
 ## 6. Asking a question (the streamed answer)
 
@@ -171,12 +175,15 @@ pipeline/rag.py  events(user_id, question, session_id, mode, document_ids)
        front-matter question → store.first_passages(): each document's passage 1, marked added "start" (D-051)
        chunk window → store.passages_around() for the two best hits, marked added "neighbour" (D-052)
        _in_reading_order()                       documents by their best hit, passages in document order
+       sections.name_sections()  [new]           retrieval/sections.py: each hit's section of its paper, from its
+                                                    document's headings (store.passages_of), kept per store.version (D-074)
   4. no hits → refusal "No documents have been uploaded yet"
      confidence = mean similarity of the hits found (not of those added)
      best similarity < settings.confidence_threshold (0.3) → refusal, no model call (D-023)
   5. _report_injection_patterns()                prompts: log passages that read like instructions; sent unchanged (D-033)
   6. _generate()                                 answer_from "chunks" (default, D-053):
-       CITED_RAG_PROMPT | get_llm() | parser .stream()   prompts/prompt_templates.py: format_context(numbered, titles)
+       CITED_RAG_PROMPT | get_llm() | parser .stream()   prompts/prompt_templates.py: format_context(numbered, titles);
+                                                    each tag names the passage's section when it has one [new] (D-074)
        → yields {"type": "token"} events as the model writes
      (answer_from "summary": SUMMARIZE_PROMPT, then RAG_PROMPT: two calls)
   7. _answer_sources()                           the passages the answer cites as [n]; none for a refusal
@@ -192,7 +199,8 @@ not set up (`setup_problem()`: Ollama not running, a model not installed, a key 
 out of reach **[new]**): an error event, nothing saved. Closing the stream (Stop) ends the
 generator before step 8: no turn is saved. A question near the documents' subject but not answered
 in them passes the threshold and relies on the model to say so (D-057). A small model can quote a
-cited study's figure as the paper's own (D-054).
+cited study's figure as the paper's own (D-054): section tags made it 2 answers in 21, from 9
+(D-074). Asked for a paper's best figure, the search may not find the passage that holds it.
 
 ## 7. Agent mode
 

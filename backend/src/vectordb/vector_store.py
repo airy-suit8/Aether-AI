@@ -222,6 +222,13 @@ class VectorStore:
                                   include=["documents", "metadatas"])
         return sorted(zip(res["documents"], res["metadatas"]), key=lambda tm: tm[1].get("chunk_index", 0))
 
+    def passages_of(self, tenant: str, document_id: int) -> List[Tuple[str, Dict]]:
+        """Every passage of one of a tenant's documents, in document order (the numbered ones)."""
+        res = self.collection.get(where={"$and": [{"tenant_id": tenant}, {"document_id": document_id}]},
+                                  include=["documents", "metadatas"])
+        return sorted(((text, meta) for text, meta in zip(res["documents"], res["metadatas"]) if meta.get("chunk_index")),
+                      key=lambda tm: tm[1]["chunk_index"])
+
     def get_user_chunks(self, tenant: str) -> Tuple[List[str], List[Dict]]:
         """Every chunk text and its metadata for one tenant."""
         res = self.collection.get(where={"tenant_id": tenant}, include=["documents", "metadatas"])

@@ -73,13 +73,34 @@ if defined BACKEND_INSTALL (
         pause
         exit /b 1
     )
-    copy /y "%~dp0backend\requirements.txt" "%~dp0.venv\.aether-installed-requirements" >nul
+    REM Kept in the project .venv; with AETHER_PYTHON and no .venv, the list is checked again each start
+    if exist "%~dp0.venv\" copy /y "%~dp0backend\requirements.txt" "%~dp0.venv\.aether-installed-requirements" >nul
 )
 
 if /i "%~1"=="--packages-only" (
     echo Packages are up to date.
     exit /b 0
 )
+
+REM Ollama, when the settings use it (backend\.env), must answer before questions can be: after a
+REM restart it is not running unless it starts with Windows, so it is started here. The settings
+REM decide, as the app reads them (backend\src\ollama_ready.py); one on another computer is left alone.
+pushd "%~dp0backend"
+call "%PY_EXE%" -m src.ollama_ready
+if errorlevel 3 (
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" (
+        echo Starting Ollama ...
+        start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
+    ) else (
+        where ollama >nul 2>&1 && (
+            echo Starting Ollama ...
+            start "Ollama" /min ollama serve
+        )
+    )
+    call "%PY_EXE%" -m src.ollama_ready --wait 30
+    if errorlevel 3 echo Ollama did not start. Start it from the Start menu; questions are answered once it runs.
+)
+popd
 
 echo Starting backend on http://localhost:8000 ...
 start "Aether AI backend" /D "%~dp0backend" cmd /k ""%PY_EXE%" -m uvicorn main:app --port 8000"

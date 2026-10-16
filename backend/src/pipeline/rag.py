@@ -55,6 +55,7 @@ from src.prompts.prompt_templates import (
 )
 from src.retrieval import reranker
 from src.retrieval import scope as scoping
+from src.retrieval import sections
 from src.retrieval.retriever import UserRetriever, retriever, rewrite_question
 from src.retrieval.scope import Scope
 from src.vectordb.vector_store import store
@@ -188,6 +189,7 @@ def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None
     A question about several documents at once gets the best passages of each; one about a
     document's title or authors also gets each document's first passage; the best two hits come
     with the passages either side of them. Added passages carry "added" and are context only.
+    Each hit's meta names the section of its paper it is in, when it has one (D-074).
     """
     tenant = get_tenant_id(user_id)  # their chunks' key in the vector store (S2)
     documents = scope.documents if scope else []
@@ -210,7 +212,7 @@ def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None
             if meta.get("document_id") is not None and meta.get("chunk_index") is not None:
                 around += store.passages_around(tenant, meta["document_id"], meta["chunk_index"], settings.chunk_window)
         hits += _added(tenant, query, around, hits, "neighbour")
-    return _in_reading_order(hits)
+    return sections.name_sections(tenant, _in_reading_order(hits))
 
 
 def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace,

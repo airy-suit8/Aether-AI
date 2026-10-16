@@ -52,7 +52,7 @@ Double-click `start.bat` (or run it from Command Prompt). It opens two windows, 
 
 To stop, close the two windows titled "Aether AI backend" and "Aether AI frontend".
 
-Before it starts them, `start.bat` installs the packages again when their lists have changed since the last install: `frontend\package-lock.json` (with `npm ci`) and `backend\requirements.txt` (with pip, into the project's `.venv` only). So after a `git pull` or a merge that adds a package, running it is enough; close the two windows first, since a running server keeps its files in use. `start.bat --packages-only` installs what changed and starts nothing.
+Before it starts them, `start.bat` installs the packages again when their lists have changed since the last install: `frontend\package-lock.json` (with `npm ci`) and `backend\requirements.txt` (with pip, into the project's `.venv` only). So after a `git pull` or a merge that adds a package, running it is enough; close the two windows first, since a running server keeps its files in use. `start.bat --packages-only` installs what changed and starts nothing. When the settings use Ollama and it is not running (after the computer restarts, say), `start.bat` starts it and waits for it.
 
 To start the two parts by hand instead, use two Command Prompt windows:
 
@@ -149,7 +149,7 @@ Under each answer that did not search everything, a line says what it searched a
 
 ## Scanned PDFs
 
-A PDF page with no text in it (a scan, a photo of a page) is read by OCR on this computer's processor, with the models that come with RapidOCR: nothing is downloaded and nothing leaves the machine. It takes about 1 to 2 seconds a page, so a scanned paper is ready within a minute; a file with more than 100 such pages (`AETHER_OCR_MAX_PAGES`) is refused, since it would take minutes. Pages that have text are read as before. `AETHER_OCR=false` turns it off, and a scan is then refused as it was before. OCR reads the words, not the layout: tables and two-column pages come out line by line, and a scanned page cannot have its passage marked in the page viewer, since the page holds no text to mark.
+A PDF page with no text in it (a scan, a photo of a page) is read by OCR on this computer's processor, with the models that come with RapidOCR: nothing is downloaded and nothing leaves the machine. It takes about 1 to 2 seconds a page, so a scanned paper is ready within a minute; a file with more than 100 such pages (`AETHER_OCR_MAX_PAGES`) is refused, since it would take minutes. Pages that have text are read as before. `AETHER_OCR=false` turns it off, and a scan is then refused as it was before. Each user may have 200 pages read by OCR in any hour (`AETHER_OCR_PAGES_PER_HOUR`); a file that would pass that is refused and can be uploaded again later. The count is kept in memory, so a restart clears it. When two people's scans are read at once their pages take turns, so a short scan is not stuck behind a long one. OCR reads the words, not the layout: tables and two-column pages come out line by line, and a scanned page cannot have its passage marked in the page viewer, since the page holds no text to mark.
 
 ## Seeing a source in its document
 

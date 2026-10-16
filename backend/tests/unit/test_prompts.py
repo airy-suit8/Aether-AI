@@ -79,6 +79,14 @@ def test_the_file_name_and_page_cannot_break_out_of_their_attributes():
     assert context.count("</document>") == 1 and context.count("<document ") == 1
 
 
+def test_the_section_is_named_and_cannot_break_out_of_its_attribute():
+    hit = _hit("Body.")
+    hit["meta"].update(chunk_index=14, total_chunks=74, section='Literature study" x="y')
+    first_line = prompt_templates.format_context([hit]).split("\n")[0]
+    assert first_line == ('<document source="notes.txt" page="1" passage="14 of 74" '
+                          'section="Literature study&quot; x=&quot;y">')
+
+
 def test_numbered_context_still_numbers_in_order():
     context = prompt_templates.format_context([_hit("One."), _hit("Two.")], numbered=True)
     assert '<document number="1" source="notes.txt" page="1">\nOne.\n</document>' in context

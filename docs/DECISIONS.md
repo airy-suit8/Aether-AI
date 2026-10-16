@@ -497,6 +497,45 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Trade-off:** a toast covers the last lines of the conversation for its 4 s.
 - **Evidence:** the browser journey checks that the upload's toast ends above the question box; looked at in a browser at 1366x768.
 
+### D-071 start.bat starts Ollama when the settings use it and it does not answer
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Context:** after the computer restarted, Ollama was not running, and the app could answer nothing until it was started by hand (15 Oct 2026).
+- **Options:** 1) tell the owner to start it 2) make Ollama start with Windows (a setting of Ollama's, outside this project) 3) start.bat starts it when needed
+- **Chosen:** 3. `python -m src.ollama_ready` reads the settings as the app does (environment, `backend\.env`, defaults) and asks Ollama's `/api/version`; when Ollama is needed, on this computer, and silent, start.bat starts the installed Ollama app (`%LOCALAPPDATA%\Programs\Ollama\ollama app.exe`), else `ollama serve`, and waits up to 30 s.
+- **Why:** the settings decide in one place, so a setup on Gemini never starts Ollama, and one pointing at another computer is reported, not started. Asking the version loads no model.
+- **Trade-off:** it does not cover the OpenAI-compatible provider pointed at Ollama's `/v1` address; start Ollama by hand for that.
+- **Evidence:** `tests/unit/test_ollama_ready.py`; start.bat's block tested in a scratch copy (Ollama answering, started, not coming up, the checker failing); the real Ollama checked (answering, and a closed port: exit 3).
+
+### D-072 The reranking model's files are pinned to a commit and their checksums
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Context:** fastembed downloaded `Xenova/ms-marco-MiniLM-L-6-v2` by name, so the repository's latest files on Hugging Face were used: a change there, by its owner or by someone who took the account over, would have changed the reranker without notice (THREAT.md, section 5).
+- **Options:** 1) leave it 2) pin the commit only 3) pin the commit and check each file's sha256 4) ship the model inside the project
+- **Chosen:** 3: commit `a09144355adeed5f58c8ed011d209bf8ee5a1fec`, the one measured on 15 Oct 2026 (D-054), and the sha256 of its five files (`core/config.py`, `RERANK_PINS`). `huggingface_hub.snapshot_download` fetches that commit into `data/models` once; each file is checked before fastembed loads it from that folder; a file that differs stops the model from being used (the search's order answers, D-055).
+- **Why:** a commit id names exact files, and the checksums catch a changed file even in the local copy. 4 would put 88 MB into the repository.
+- **Trade-off:** a new version of the model is only used once its pin is changed here, with the measurement redone; a model named in `AETHER_RERANK_MODEL` that is not pinned is still fetched by name.
+- **Evidence:** `tests/unit/test_reranker.py` (the pin, the fetch at its commit, a changed file refused, an unpinned model); loaded for real from the pinned files, and offline (`HF_HUB_OFFLINE=1`).
+
+### D-073 OCR takes turns a page at a time, and each user may have 200 pages read an hour
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Replaces:** the lock of D-066, which was held for a whole file. Pages are still read one at a time.
+- **Context:** with that lock, one user's 100-page scan (two to three minutes) made every other user's scan wait for all of it, and nothing stopped one account sending such scans all day (THREAT.md, section 2).
+- **Options:** 1) leave it 2) a turn for each page, in the order asked, with no limit 3) 2 and a limit on the pages each user may have read in any hour, counted in memory 4) 3 with the count kept in the database 5) a separate worker process with a queue for each user
+- **Chosen:** 3. `ocr._Turns` hands out turns like tickets (a plain lock can be taken straight back by the thread that just let go), so a second upload's pages are read between the first one's; `ocr._reserve` counts a file's pages against its owner's last hour before any is read and refuses the file if they would pass `AETHER_OCR_PAGES_PER_HOUR` (200). The upload fails with a message that says how many pages were read in the last hour and to upload it again later.
+- **Why:** turns bound how long a short scan waits to about one page of each other scan being read, not their whole length; the limit bounds one account to about 3 to 7 minutes of the processor an hour (1 to 2 s a page). The rate limits are kept in memory already (N9), and 5 is the worker the deferred deployment work would bring.
+- **Trade-off:** a restart clears the count; someone with several accounts has several hours' worth; a file's pages count even when it then fails at a later step; when several scans are read at once, each finishes later than it would alone. Files the evaluation reads have no owner and no limit.
+- **Revisit:** if uploads move to a worker process, or the server is shared by many people (then 4, or a limit per address).
+- **Evidence:** `tests/unit/test_ocr.py::test_a_short_scan_is_read_between_the_pages_of_a_long_one`, `::test_each_user_has_their_own_hour_of_pages`, `::test_pages_count_for_an_hour_only`, `::test_a_file_read_with_no_owner_has_no_limit`, `::test_an_upload_past_its_owner_s_hour_fails_and_another_user_s_does_not`.
+
+### D-074 Each passage's tag names the section of its paper it is in
+- **Date:** 2026-10-16 · `four-follow-ups`
+- **Context:** asked for the maternal health paper's best accuracy, qwen3.5:4b gave a cited study's figure (94.9%, 97.03%) as the paper's own (D-054). Those passages are in its introduction and literature study, and the one with 97.03% cites no work, so rule 7 of the prompt (a cited result is that work's) could not catch it.
+- **Options:** 1) leave it 2) store a section with each passage when a file is read 3) find each passage's section when a question is asked, from the headings in the stored passages, and name it in the tag, with a rule in the prompt 4) leave the introduction and literature review out of the search
+- **Chosen:** 3. `retrieval/sections.py`: a line that is only a usual section name (Introduction, Literature study, Results, Discussion, Conclusion and their like), numbered or not, starts a section; a passage that crosses a heading is in both. A document's sections are found from its passages once and kept until the tenant's passages change (`store.version`). `format_context` adds `section="…"`; the prompts say figures in an introduction, background, related work or literature review are other studies' results.
+- **Why:** measured on a copy of the owner's library with qwen3.5:4b, each answer asked alternately with and without (the tags and the rule together), the three accuracy questions 7 times each: a cited figure given as the paper's own **9 of 21 without, 2 of 21 with**; the paper's exact best (83.7% or 84%) 3 of 21 either way; the 18 other questions passed 36 of 36 either way; 828 s against 839 s. 2 needs every file read again to help the files already there; 4 would hide what the literature review says when that is the question.
+- **Trade-off:** headings that are not usual section names start no section; a heading that is not on a line of its own is missed; a document's passages are read once more when it is first asked about after a change. Twice in 21 the model still gave a cited figure. It cannot give 84%: for these questions the search does not find the passage that holds it (the paper's own results reach the model only as passage 69, with 82.73%), which is a retrieval problem, not this one.
+- **Revisit:** when the search is changed to find a paper's results for "best" questions; or if Word documents with heading styles are read with their styles.
+- **Evidence:** `tests/unit/test_sections.py` (the headings of the owner's two papers; crossing a heading; a letter with none; the tags through the API; found once until the passages change); `tests/unit/test_prompts.py::test_the_section_is_named_and_cannot_break_out_of_its_attribute`; the measurement script and its answers were kept outside the repository.
+
 ---
 
 ## Template

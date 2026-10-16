@@ -38,6 +38,20 @@ OLLAMA_LLM_MODEL = "qwen3.5:4b"
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
 
+# The reranking model, and the exact files of it that were measured (D-054), so that a change on
+# Hugging Face cannot swap them: the repository's commit, and each file's sha256 (D-072). A model
+# named in AETHER_RERANK_MODEL that is not pinned here is fetched as fastembed finds it.
+RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+RERANK_PINS = {
+    RERANK_MODEL: ("a09144355adeed5f58c8ed011d209bf8ee5a1fec", {
+        "config.json": "d827779a72d27ae68cf878a6fc2e954542663fe21ca515d9f4783fc96be2d37e",
+        "onnx/model.onnx": "c623d0bcb99f4622beb413eaef00cfbe5db20df9f1dd982da4b4f26022881870",
+        "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+        "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+        "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53",
+    }),
+}
+
 # The average similarity of an answer's passages at which it reads as grounded (the ring under an
 # answer), for each embedding model, since each spreads its scores differently. Gemini: from the
 # first real run (answerable questions 0.67 to 0.80, an unrelated one 0.50), until Sprint 4
@@ -125,6 +139,9 @@ class Settings(BaseSettings):
     # A file with more such pages than ocr_max_pages is refused: reading it would take minutes.
     ocr: bool = True
     ocr_max_pages: int = 100
+    # Pages one user may have read by OCR in any hour (D-073): at 1 to 2 s a page, about five
+    # minutes of the processor. Kept in memory, so a restart clears it.
+    ocr_pages_per_hour: int = 200
     chunk_size: int = 1000
     chunk_overlap: int = 150
     top_k: int = 5
@@ -150,7 +167,7 @@ class Settings(BaseSettings):
     # is downloaded from Hugging Face the first time, into model_dir, and runs on the processor.
     # On the owner's papers it brought the passage with a paper's own result into the five read,
     # where search alone had left it sixth, behind a cited study's (SPRINT_PLAN.md, "Reranking").
-    rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    rerank_model: str = RERANK_MODEL
     rerank_candidates: int = 20
     memory_max_turns: int = 10            # conversation turns remembered per session (Task 4)
     agent_recursion_limit: int = 12        # LangGraph steps per agent question; each tool call takes two
