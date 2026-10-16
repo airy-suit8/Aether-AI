@@ -546,6 +546,16 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Revisit:** if a set of questions shows Hybrid finding passages that Default misses, or if the reranker is turned off.
 - **Evidence:** `ChatLayout.test.tsx` ("offers Default and Agent only, and always streams"); the measurement script and its output were kept outside the repository.
 
+### D-076 The lock file is written by the npm CI uses
+- **Date:** 2026-10-16 · `fix-lockfile`
+- **Context:** CI's Frontend and Browser journey jobs failed on every push from `453b724` (15 Oct, the PDF viewer) to `654635a`, at their first step: `npm ci` refused the lock file ("Missing: @emnapi/core@1.11.3, @emnapi/runtime@1.11.3"). pdf.js brought in `@napi-rs/wasm-runtime`, which asks for those two as peers; npm 11.6.1 on the owner's computer wrote the lock without them and accepts it, npm 11.19.0 on CI (Node 24.21) does not. The work was checked only on the owner's computer, and CI's results were not looked at after pushing.
+- **Options:** 1) write the lock again with npm 11.19.0 2) pin CI to npm 11.6.1 3) leave pdf.js's optional packages out of the install
+- **Chosen:** 1, with `npm install --package-lock-only` run by npm 11.19.0: the two packages are added; no other package's version changed (npm also rewrote some `peer` markers).
+- **Why:** it fixes the file, not the checker; 2 would hide the next such gap; 3 would make the install differ from the lock.
+- **Trade-off:** an `npm install` run with npm 11.6.1 may write the lock without them again; `npm ci` with 11.6.1 still accepts the new one (checked).
+- **Revisit:** when the owner's Node is updated to 24.21 or later (npm 11.19), which would make their own checks match CI's.
+- **Evidence:** with npm 11.19.0, `npm ci --dry-run` failed as CI did before the change and a clean `npm ci` passed after it, then the API-types check, lint, the type check, 138 tests, the build and the browser journey; with npm 11.6.1, `npm ci --dry-run` passed; CI on the branch (see its run).
+
 ---
 
 ## Template
