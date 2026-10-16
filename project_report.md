@@ -317,7 +317,7 @@ question ─► rewrite (only when there is history) ─► search (top 5) ─�
 - **Refusal.** When the best passage's similarity is below the threshold (0.3, `confidence_threshold`), the answer is a fixed refusal with no sources, and no model is asked. The confidence shown is the mean similarity of the passages (`pipeline/rag.py::events`).
 - **Answer.** The model writes the answer from a summary of the passages (the default), or from the numbered passages, citing them as [1], [2], in which case the sources are exactly the passages cited (`tests/integration/test_sources.py`, 21 tests).
 - **Streaming.** The answer arrives word by word as server-sent events: `token` events, then one `done` event with the sources, confidence and the saved turn's id, or one `error` event (`api/schemas.py`, `StreamEvent`). Stop closes the stream: the server stops, saves nothing, and the question goes back into the box (`tests/integration/test_stream_closed.py`; `ChatLayout.test.tsx`).
-- **Four modes**, chosen in the composer: *default*, *hybrid*, *langchain* (the same pipeline built from LangChain's retriever and one LCEL chain, Tasks 14 and 15), and *agent* (4.3). All four answer in the end-to-end test (`tests/integration/test_e2e.py`).
+- **Four modes** in the API: *default*, *hybrid*, *langchain* (the same pipeline built from LangChain's retriever and one LCEL chain, Tasks 14 and 15), and *agent* (4.3). All four answer in the end-to-end test (`tests/integration/test_e2e.py`). The composer offers *default* and *agent*: with the reranker, *hybrid* found the same passages as *default* on 20 questions, and *langchain* answers as *default* does (D-075).
 
 ### 4.3 The agent
 

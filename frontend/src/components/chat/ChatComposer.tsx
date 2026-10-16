@@ -1,15 +1,14 @@
 import { useEffect, useRef } from 'react'
 import type { ChangeEvent } from 'react'
-import { Aperture, Lens, Switch } from '../../design/prism'
+import { Aperture, Lens } from '../../design/prism'
 import type { DocumentRecord, Mode } from '../../services/api'
 import ScopePicker from './ScopePicker'
 import type { Failure } from './types'
 
+// Hybrid and LangChain answer as Default does here (D-075); the API still takes them
 const MODES: { value: Mode; label: string }[] = [
   { value: 'default', label: 'Default' },
-  { value: 'hybrid', label: 'Hybrid' },
   { value: 'agent', label: 'Agent' },
-  { value: 'langchain', label: 'LangChain' },
 ]
 
 const ACCEPT = '.pdf,.txt,.md,.markdown,.docx,.csv,.xlsx,.xls'
@@ -23,8 +22,6 @@ interface ChatComposerProps {
   isLoading: boolean
   mode: Mode
   onMode: (mode: Mode) => void
-  streaming: boolean
-  onStreaming: (streaming: boolean) => void
   onUpload: (file: File) => void
   documents?: DocumentRecord[]
   searchIn?: number[] | null
@@ -32,12 +29,12 @@ interface ChatComposerProps {
 }
 
 /**
- * ChatComposer — the dock: one answer mode, whether to stream, which documents to search in, and
- * the Aperture to ask through.
+ * ChatComposer — the dock: the answer mode, which documents to search in, and the Aperture to ask
+ * through. Every answer is streamed, so every answer can be stopped.
  * A reply that failed or was stopped is reported above it, in words, with a Retry action.
  */
 export default function ChatComposer({
-  onSend, onStop, onRetry, failure, restore, isLoading, mode, onMode, streaming, onStreaming, onUpload,
+  onSend, onStop, onRetry, failure, restore, isLoading, mode, onMode, onUpload,
   documents = [], searchIn = null, onSearchIn = () => {},
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -75,19 +72,13 @@ export default function ChatComposer({
       )}
       <div className="x-dock__modes">
         <Lens label="Answer mode" options={MODES} value={mode} onChange={onMode} />
-        <Switch
-          label="Stream"
-          checked={streaming}
-          onChange={onStreaming}
-          title={streaming ? 'Show the answer as it is written; it can be stopped' : 'Wait for the whole answer; it cannot be stopped'}
-        />
         {documents.length > 1 && <ScopePicker documents={documents} value={searchIn} onChange={onSearchIn} />}
       </div>
       <Aperture
         busy={isLoading}
         onSend={onSend}
-        // Only a stream can be stopped: closing it is the server's signal to save nothing
-        onStop={streaming ? onStop : undefined}
+        // Closing the stream is the server's signal to save nothing
+        onStop={onStop}
         restore={restore}
         placeholder="Ask anything about your documents"
         leading={

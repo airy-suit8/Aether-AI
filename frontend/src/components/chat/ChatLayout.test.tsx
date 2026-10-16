@@ -8,7 +8,7 @@ import { AuthProvider } from '../../services/AuthContext'
 import * as api from '../../services/api'
 import { version } from '../../../package.json'
 import snapshot from '../../../../backend/tests/openapi_snapshot.json'
-import { chatReply, documentList, documentRecord, documentStatus, done, session, SOURCE, turn } from '../../test/fixtures'
+import { documentList, documentRecord, documentStatus, done, session, SOURCE, turn } from '../../test/fixtures'
 
 vi.mock('../../services/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -326,17 +326,17 @@ describe('ChatLayout', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
   })
 
-  it('cannot stop an answer that is not streamed, since only closing a stream tells the server', async () => {
-    let finish: (reply: ReturnType<typeof chatReply>) => void = () => {}
-    vi.mocked(api.sendChat).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+  it('offers Default and Agent only, and always streams', async () => {
+    // Hybrid and LangChain answered as Default does, and an answer not streamed could not be
+    // stopped (D-075); the API still takes all four modes
+    vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone?.(done()))
     renderChat()
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('switch', { name: 'Stream' }))
-    await ask('Not streamed')
-    expect((screen.getByRole('button', { name: 'Stop generating' }) as HTMLButtonElement).disabled).toBe(true)
-    await act(async () => finish(chatReply({ answer: 'In one piece.', turn_id: 2 })))
-    expect(await screen.findByText('In one piece.')).toBeTruthy()
-    expect(api.sendChatStream).not.toHaveBeenCalled()
+    const modes = within(screen.getByRole('radiogroup', { name: 'Answer mode' })).getAllByRole('radio')
+    expect(modes.map(m => m.textContent)).toEqual(['Default', 'Agent'])
+    expect(screen.queryByRole('switch', { name: 'Stream' })).toBeNull()
+    await ask('Anything?')
+    expect(vi.mocked(api.sendChatStream).mock.calls[0][0].mode).toBe('default')
+    expect(api.sendChat).not.toHaveBeenCalled()
   })
 
   it('streams agent answers too, so they can be stopped', async () => {
@@ -347,7 +347,6 @@ describe('ChatLayout', () => {
     renderChat()
     const user = userEvent.setup()
     await user.click(screen.getByRole('radio', { name: 'Agent' }))
-    expect((screen.getByRole('switch', { name: 'Stream' }) as HTMLButtonElement).disabled).toBe(false)
     await ask('What is 2 + 2?')
     expect(vi.mocked(api.sendChatStream).mock.calls[0][0].mode).toBe('agent')
     expect(await screen.findByText('Two plus two is 4.')).toBeTruthy()
@@ -412,16 +411,6 @@ describe('ChatLayout', () => {
     expect(screen.queryByRole('button', { name: /search in/i })).toBeNull()
     await ask('Anything?')
     expect(vi.mocked(api.sendChatStream).mock.calls[0][0].documentIds).toBeNull()
-  })
-
-  it('passes the Hybrid mode to the request', async () => {
-    vi.mocked(api.sendChatStream).mockImplementation(async ({ onDone }) => onDone?.(done()))
-    renderChat()
-    const user = userEvent.setup()
-    // The answer mode is one radio group now, not four toggle buttons
-    await user.click(screen.getByRole('radio', { name: /hybrid/i }))
-    await ask('Hybrid please')
-    expect(vi.mocked(api.sendChatStream).mock.calls[0][0].mode).toBe('hybrid')
   })
 
   it('removes one document after a second, confirming click', async () => {

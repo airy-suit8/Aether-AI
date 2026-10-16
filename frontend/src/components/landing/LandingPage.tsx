@@ -15,7 +15,7 @@ const THEMES: { value: Theme; label: string }[] = [
 const STEPS = [
   { n: '01', title: 'Add', text: 'Drop in a PDF, a Word file, a spreadsheet or a note. It is split into passages.', node: 'var(--p-ink)' },
   { n: '02', title: 'Index', text: 'Each passage becomes a vector, so the search is by meaning and not only by words.', node: 'var(--p-s1)' },
-  { n: '03', title: 'Refract', text: 'Your question pulls out the passages closest to it. Hybrid mode adds keyword search.', node: 'var(--p-s3)' },
+  { n: '03', title: 'Refract', text: 'Your question pulls out the passages closest to it, and a reranker keeps the ones that answer it best.', node: 'var(--p-s3)' },
   { n: '04', title: 'Read', text: 'The answer is written from those passages, and each one is shown beside it.', node: 'var(--p-s5)' },
 ]
 

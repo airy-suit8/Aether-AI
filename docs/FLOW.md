@@ -305,7 +305,8 @@ ChatLayout.tsx     the workspace's state: messages, threads, documents, "Search 
   ├─ ChatWindow.tsx      the conversation
   │    └─ MessageBubble.tsx   one answer: clarityOf() (Grounded / Uncertain, by the server's grounded_at [new]),
   │                           ScopeNote, the answer as Markdown with [n] chips, SourceCards, "Show on p. N" [new]
-  ├─ ChatComposer.tsx    the question box, the answer mode, ScopePicker ("Search in"), Stream
+  ├─ ChatComposer.tsx    the question box, the answer mode (Default or Agent; every answer streamed, D-075),
+  │                      ScopePicker ("Search in")
   ├─ SettingsModal.tsx, ShareDialog.tsx, SourceViewer.tsx [new]
 services/api.ts    every call: send() adds the token, renews it once on a 401, turns errors into messages;
                    types from api-schema.ts, generated from the backend's schema (D-036)
