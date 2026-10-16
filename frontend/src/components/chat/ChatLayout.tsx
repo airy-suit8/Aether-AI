@@ -7,7 +7,7 @@ import SettingsModal from '../modals/SettingsModal'
 import ShareDialog from './ShareDialog'
 import SourceViewer from './SourceViewer'
 import {
-  ApiError, sendChat, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
+  ApiError, sendChatStream, sendFeedback, uploadDocument, getDocument, getDocumentsDetailed, deleteDocument, clearSession,
   getSessions, getSessionMessages, renameSession, deleteSession, logoutEverywhere,
 } from '../../services/api'
 import type { DocumentRecord, FeedbackValue, Mode, SessionSummary, Source, Turn } from '../../services/api'
@@ -92,9 +92,8 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
   const [composerText, setComposerText] = useState<{ text: string } | null>(null)
   const isLoading = pending !== null && pending.threadId === sessionId
 
-  // One answer mode at a time, plus whether to stream, and which documents to search in (null: all)
+  // One answer mode at a time, and which documents to search in (null: all)
   const [mode, setMode] = useState<Mode>('default')
-  const [streamingMode, setStreamingMode] = useState(true)
   const [searchIn, setSearchIn] = useState<number[] | null>(null)
 
   // Documents, and the conversations listed in the rail
@@ -266,48 +265,34 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
     }
 
     try {
-      if (streamingMode) {
-        let fullText = ''
-        await sendChatStream({
-          question,
-          sessionId: thread,
-          mode,
-          documentIds: searchIn,
-          signal: controller.signal,
-          onToken: (token) => {
-            fullText += token
-            if (!askedIn(run, thread)) return
-            setStreamingPhase('')
-            setStreamingText(fullText)
-          },
-          onDone: (data) => answered({
-            content: fullText,
-            sources: data.sources || [],
-            confidence: data.confidence || 0,
-            groundedAt: data.grounded_at ?? null,
-            toolUsed: data.tool_used || null,
-            turnId: data.turn_id ?? null,  // what feedback names it by
-            usage: data.usage ?? null,
-            steps: data.steps ?? null,
-            scope: data.scope ?? null,
-          }),
-          // A server error event, a dropped connection, a missing done event, or Stop
-          onError: failed,
-        })
-      } else {
-        const result = await sendChat({ question, sessionId: thread, mode, documentIds: searchIn, signal: controller.signal })
-        answered({
-          content: result.answer,
-          sources: result.sources || [],
-          confidence: result.confidence || 0,
-          groundedAt: result.grounded_at ?? null,
-          toolUsed: result.tool_used || null,
-          turnId: result.turn_id ?? null,
-          usage: result.usage ?? null,
-          steps: result.steps ?? null,
-          scope: result.scope ?? null,
-        })
-      }
+      // Every answer is streamed (D-075): it shows as it is written and can be stopped
+      let fullText = ''
+      await sendChatStream({
+        question,
+        sessionId: thread,
+        mode,
+        documentIds: searchIn,
+        signal: controller.signal,
+        onToken: (token) => {
+          fullText += token
+          if (!askedIn(run, thread)) return
+          setStreamingPhase('')
+          setStreamingText(fullText)
+        },
+        onDone: (data) => answered({
+          content: fullText,
+          sources: data.sources || [],
+          confidence: data.confidence || 0,
+          groundedAt: data.grounded_at ?? null,
+          toolUsed: data.tool_used || null,
+          turnId: data.turn_id ?? null,  // what feedback names it by
+          usage: data.usage ?? null,
+          steps: data.steps ?? null,
+          scope: data.scope ?? null,
+        }),
+        // A server error event, a dropped connection, a missing done event, or Stop
+        onError: failed,
+      })
     } catch (err) {
       failed(err instanceof Error ? err : new Error(String(err)))
     } finally {
@@ -319,9 +304,9 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
         setStreamingPhase('')
       }
     }
-  }, [sessionId, pending, mode, streamingMode, searchIn, askedIn, refreshThreads])
+  }, [sessionId, pending, mode, searchIn, askedIn, refreshThreads])
 
-  // Stop the reply: close its stream. Only a streamed reply can be stopped (see ChatComposer).
+  // Stop the reply: close its stream.
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
   }, [])
@@ -581,8 +566,6 @@ export default function ChatLayout({ addToast, theme = 'system', onTheme = () =>
           documents={readyDocuments}
           searchIn={searchIn}
           onSearchIn={setSearchIn}
-          streaming={streamingMode}
-          onStreaming={setStreamingMode}
           onUpload={handleUpload}
         />
       </main>

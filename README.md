@@ -99,7 +99,7 @@ Instead of Gemini, the app can use models that run on this computer through [Oll
    AETHER_EMBEDDING_PROVIDER=ollama
    ```
 
-   `GOOGLE_API_KEY` is then not used and can stay empty. For another model, add `AETHER_LLM_MODEL=` or `AETHER_EMBEDDING_MODEL=` with its name in Ollama, for example `AETHER_LLM_MODEL=gemma3:4b`. A model that cannot use tools still answers in Default, Hybrid and LangChain modes; in agent mode the app says it cannot. Either line can also be used alone: a local chat model with Gemini's embeddings keeps your documents as they are, but still needs the key.
+   `GOOGLE_API_KEY` is then not used and can stay empty. For another model, add `AETHER_LLM_MODEL=` or `AETHER_EMBEDDING_MODEL=` with its name in Ollama, for example `AETHER_LLM_MODEL=gemma3:4b`. A model that cannot use tools still answers in Default mode (and in Hybrid and LangChain, which the API still takes); in agent mode the app says it cannot. Either line can also be used alone: a local chat model with Gemini's embeddings keeps your documents as they are, but still needs the key.
 
 3. If you already have documents, read them again with the new embedding model, once, with the backend stopped:
 
@@ -309,7 +309,7 @@ Two more settings are worth setting there:
 
 **Rate limits.** Every route has one: requests that carry a valid sign-in count against that user, and the rest against their address, so people behind one office proxy do not share an allowance. Sign-up, sign-in, upload and chat have their own limits; everything else allows 120 requests a minute (`AETHER_RATE_LIMIT_DEFAULT`). The counts are kept in the server's memory and start again when it restarts.
 
-**Conversations.** Every question and answer is saved with the sources shown beside it. Each conversation has its own address (`/chat/<id>`) and the rail lists them all, newest first; reloading the page keeps you signed in on the same one, and `/chat` opens the most recent. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Stop ends a streamed answer, and nothing of a stopped or failed answer is saved: its question goes back into the box, with Retry. Each thread in the rail can be renamed in place, or deleted with two clicks ("Delete?", then again).
+**Conversations.** Every question and answer is saved with the sources shown beside it. Each conversation has its own address (`/chat/<id>`) and the rail lists them all, newest first; reloading the page keeps you signed in on the same one, and `/chat` opens the most recent. "New thread" starts a new conversation and keeps the old one; Settings, "Clear conversation" deletes the current one from the server. Every answer is streamed, so Stop can end any of them, and nothing of a stopped or failed answer is saved: its question goes back into the box, with Retry. Each thread in the rail can be renamed in place, or deleted with two clicks ("Delete?", then again).
 
 **Sharing a conversation.** "Share" in the top bar makes a link to the conversation that is open (`/shared/<token>`). Anyone who has the link can read that conversation and the passages it cites, without signing in; they cannot ask questions, and they see nothing else of yours, not even whose conversation it is. Questions you ask afterwards appear on it too. "Stop sharing" withdraws the link at once, and so does deleting the conversation; sharing again makes a new link. The token in the link is the only key, so treat the link like the conversation itself: it is never written to the logs.
 

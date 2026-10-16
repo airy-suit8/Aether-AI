@@ -536,6 +536,16 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Revisit:** when the search is changed to find a paper's results for "best" questions; or if Word documents with heading styles are read with their styles.
 - **Evidence:** `tests/unit/test_sections.py` (the headings of the owner's two papers; crossing a heading; a letter with none; the tags through the API; found once until the passages change); `tests/unit/test_prompts.py::test_the_section_is_named_and_cannot_break_out_of_its_attribute`; the measurement script and its answers were kept outside the repository.
 
+### D-075 The chat page offers Default and Agent, and always streams
+- **Date:** 2026-10-16 · `fewer-options`
+- **Context:** the owner asked for what is not needed to be removed from the dock: four answer modes (Default, Hybrid, Agent, LangChain) and a Stream switch.
+- **Options:** 1) leave them 2) take LangChain and the Stream switch off the page 3) 2, and Hybrid too, keeping Default 4) 2, and make Hybrid the one mode for documents, in place of Default 5) remove the modes from the API as well
+- **Chosen:** 3. The page offers Default and Agent and always streams. Hybrid and LangChain stay in the API (`mode`), with their tests: they are internship tasks (hybrid search; Tasks 14 and 15), and turns answered in them before still show their mode. `POST /chat`, the answer in one piece, stays for scripts and the evaluation; the page no longer calls it.
+- **Why:** LangChain answers as Default does, through LangChain's own objects (D-018). An answer not streamed cannot be stopped and shows nothing until it is whole. Default against Hybrid, measured on a copy of the owner's library with the reranker on: the passage that answers among the five kept 19 of 20 for both, first 11 of 20 for both, at the same rank on every question; the 10 unanswerable questions scored above the refusal line in both. 4 would change the search of every question for no measured gain; 5 would remove internship work that has tests.
+- **Trade-off:** a search that matches exact words is no longer one click away on the page; only the API has it. With the reranker off (`AETHER_RERANK_MODEL` empty) the two searches were not compared.
+- **Revisit:** if a set of questions shows Hybrid finding passages that Default misses, or if the reranker is turned off.
+- **Evidence:** `ChatLayout.test.tsx` ("offers Default and Agent only, and always streams"); the measurement script and its output were kept outside the repository.
+
 ---
 
 ## Template
