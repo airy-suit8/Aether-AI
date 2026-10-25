@@ -6,6 +6,29 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-25
+
+**Done**
+- `SPRINT_PLAN.md`'s Status table brought up to date: the rows for Sources in their place, Any OpenAI-compatible service and Scanned PDFs say they were merged on 15 Oct (they read as waiting); new rows for Decisions, flow and threats (15 Oct), the four follow-ups and fewer choices in the dock (16 Oct), and CI green again (16 Oct). Missed on 16 Oct; done now. Documentation only.
+- Nothing else changed between 16 and 25 Oct: `main` stayed at `09c7808`, no branch was pushed.
+
+**In progress**
+- Nothing.
+
+**Broken or risky**
+- GitHub moved `ubuntu-latest` to Ubuntu 26 on 19 Oct; this branch's push is CI's first run since (its result is on GitHub).
+- Unchanged: "the best accuracy" is answered with 84% only 3 times in 21; the owner's npm (11.6.1) is older than CI's (11.19.0); the quiz was waived for the 16 Oct merges.
+
+**Next**
+- Owner: commit or drop the `SDLC_PLAN.md` edit (uncommitted since 15 Oct); delete `.wt` (`four`, `openai`) when nothing uses it; optionally `gh auth login` and Node 24.21 or later.
+- Owner: the Sprint 4 test set; the data question (S11); the Sprint 9 decisions; the `[OWNER: ...]` places in the report.
+- Next fix to consider: find a paper's own results for "best" or "highest" questions.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-16, afternoon
 
 **Done**
