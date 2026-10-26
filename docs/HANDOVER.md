@@ -6,11 +6,35 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-26
+
+**Done**
+- The history of `main` was rewritten at the owner's request: every commit id changed, and the ids these documents cite were updated to the new ones. The tag `eval-baseline` was moved to its new commit. The old work branches on GitHub were deleted; all their work is in `main`. A backup of the history as it was is kept outside the repository: `D:\Desktop\Tirth Ganatra\Tirth\Tirth\Aether-AI-history-backup-2026-10-25.bundle`.
+- The Status table update of 25 Oct is part of `main` now.
+- No code changed: only documents.
+
+**In progress**
+- Nothing.
+
+**Broken or risky**
+- A copy of the repository made before 26 Oct has the old history. Save its local changes, then `git fetch` and `git reset --hard origin/main`, or clone again.
+- Pull requests #1 to #7 on GitHub still list their commits as they were; GitHub does not let a pull request's commits be changed.
+- Unchanged: "the best accuracy" is answered with 84% only 3 times in 21; the owner's npm (11.6.1) is older than CI's (11.19.0).
+
+**Next**
+- Owner: commit or drop the `SDLC_PLAN.md` edit (uncommitted since 15 Oct); delete `.wt`; optionally `gh auth login` and Node 24.21 or later.
+- Owner: the Sprint 4 test set; the data question (S11); the Sprint 9 decisions; the `[OWNER: ...]` places in the report.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-25
 
 **Done**
 - `SPRINT_PLAN.md`'s Status table brought up to date: the rows for Sources in their place, Any OpenAI-compatible service and Scanned PDFs say they were merged on 15 Oct (they read as waiting); new rows for Decisions, flow and threats (15 Oct), the four follow-ups and fewer choices in the dock (16 Oct), and CI green again (16 Oct). Missed on 16 Oct; done now. Documentation only.
-- Nothing else changed between 16 and 25 Oct: `main` stayed at `09c7808`, no branch was pushed.
+- Nothing else changed between 16 and 25 Oct: `main` stayed at `e55f889`, no branch was pushed.
 
 **In progress**
 - Nothing.
@@ -32,8 +56,8 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 ## Latest session: 2026-10-16, afternoon
 
 **Done**
-- The chat page offers Default and Agent, and every answer is streamed (`65e71d4`, D-075); merged into `main` (`654635a`) at the owner's request, without the quiz. LangChain answers as Default does; Hybrid, measured against Default on the 20 questions with the reranker on, put the answering passage at the same rank on every question (19 of 20 in the five kept, 11 first). The API still takes all four modes and `POST /chat`.
-- **CI was red on every push from `453b724` (15 Oct, the PDF viewer) to `654635a`**, unseen until the owner's failure mails: the Frontend and Browser journey jobs stopped at `npm ci`, because the lock file lacked `@emnapi/core` and `@emnapi/runtime` (npm 11.6.1 here accepts it, CI's npm 11.19.0 does not). So lint, the type check, the frontend tests and the journey did not run in CI for those commits; they had passed here. Fixed by writing the lock with npm 11.19.0 (`5ad78e3`, D-076); CI passed all three jobs on that branch, the first green run since 15 Oct. Merged into `main` with this entry.
+- The chat page offers Default and Agent, and every answer is streamed (`2978cdd`, D-075); merged into `main` (`f412523`) at the owner's request, without the quiz. LangChain answers as Default does; Hybrid, measured against Default on the 20 questions with the reranker on, put the answering passage at the same rank on every question (19 of 20 in the five kept, 11 first). The API still takes all four modes and `POST /chat`.
+- **CI was red on every push from `a5f2de1` (15 Oct, the PDF viewer) to `f412523`**, unseen until the owner's failure mails: the Frontend and Browser journey jobs stopped at `npm ci`, because the lock file lacked `@emnapi/core` and `@emnapi/runtime` (npm 11.6.1 here accepts it, CI's npm 11.19.0 does not). So lint, the type check, the frontend tests and the journey did not run in CI for those commits; they had passed here. Fixed by writing the lock with npm 11.19.0 (`a425fd6`, D-076); CI passed all three jobs on that branch, the first green run since 15 Oct. Merged into `main` with this entry.
 - GitHub CLI 2.102.0 installed for the owner's user at their request (winget, no admin), not logged in.
 - The owner uploaded `13003-64313-1-PB.pdf` again: it is document 6 now, with its PDF kept for the page viewer.
 
@@ -59,11 +83,11 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 ## Latest session: 2026-10-16
 
 **Done**
-- Merged into `main` at the owner's request (`e121ae6`) and pushed: the four follow-ups from `four-follow-ups`.
-  1. `start.bat` starts Ollama when the settings use it and it does not answer, waits up to 30 s, and says so if it still does not (`5ea42c4`, D-071; `src/ollama_ready.py`).
-  2. The reranking model is pinned: one commit of its repository, and the sha256 of each of its five files, checked before it is loaded (`0429bc1`, D-072).
-  3. OCR takes turns a page at a time, so another user's scan is read between a long scan's pages, and each user may have 200 pages read by OCR in any hour (`AETHER_OCR_PAGES_PER_HOUR`) (`654a092`, D-073). Also fixed a form-feed character in `backend/.env.example` (`AETHER_FILES_DIR`).
-  4. Each passage's tag names the section of its paper it is in, with a rule in the prompt (`6982574`, D-074). Measured on a copy of the owner's library with qwen3.5:4b, the three accuracy questions 7 times each with and without: a cited study's figure given as the paper's own 9 of 21 without, 2 of 21 with; the 18 other questions 36 of 36 either way.
+- Merged into `main` at the owner's request (`37ca06d`) and pushed: the four follow-ups from `four-follow-ups`.
+  1. `start.bat` starts Ollama when the settings use it and it does not answer, waits up to 30 s, and says so if it still does not (`baeb550`, D-071; `src/ollama_ready.py`).
+  2. The reranking model is pinned: one commit of its repository, and the sha256 of each of its five files, checked before it is loaded (`3842617`, D-072).
+  3. OCR takes turns a page at a time, so another user's scan is read between a long scan's pages, and each user may have 200 pages read by OCR in any hour (`AETHER_OCR_PAGES_PER_HOUR`) (`081c345`, D-073). Also fixed a form-feed character in `backend/.env.example` (`AETHER_FILES_DIR`).
+  4. Each passage's tag names the section of its paper it is in, with a rule in the prompt (`933ebb3`, D-074). Measured on a copy of the owner's library with qwen3.5:4b, the three accuracy questions 7 times each with and without: a cited study's figure given as the paper's own 9 of 21 without, 2 of 21 with; the 18 other questions 36 of 36 either way.
 - Checks: 820 backend tests passed, with no keys; ruff clean. The frontend was not changed, so its checks were not run. The Ollama check was tried against the real Ollama (answering: exit 0; a closed port: exit 3) and `start.bat`'s new block in a scratch copy for four cases. The pinned model was loaded for real, and offline.
 - The temporary copies of the owner's database and vector store that the measurements made were deleted from the system's temp folder.
 
@@ -76,7 +100,7 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 - Not tried on the owner's computer: `start.bat` starting Ollama from stopped, after a restart.
 - OCR's hourly count is kept in memory: a restart clears it, and several accounts have several hours' worth (D-073).
 - Section headings are found only when they are a usual section name on a line of their own (D-074).
-- Commit `6982574`'s message says 25 new section tests; there are 24.
+- Commit `933ebb3`'s message says 25 new section tests; there are 24.
 - `.wt/openai` is still on disk (not a worktree any more); `.wt/four` was used for this work. Delete `.wt` when nothing uses it.
 - Unchanged: Node 24.11 warnings from `npm ci`.
 
@@ -93,7 +117,7 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 ## Latest session: 2026-10-15, evening
 
 **Done**
-- Merged into `main` at the owner's request, without the quiz (their choice): the five branches (`2d3953d`); then two fixes, each on its own branch: `start.bat` ignores a `PYTHON` variable already set on the computer (`5c43db9`, D-069), and toasts sit above the dock so they never cover the question box (`949d0fb`, D-070). All pushed.
+- Merged into `main` at the owner's request, without the quiz (their choice): the five branches (`f0ebfeb`); then two fixes, each on its own branch: `start.bat` ignores a `PYTHON` variable already set on the computer (`0a64e5e`, D-069), and toasts sit above the dock so they never cover the question box (`07623b2`, D-070). All pushed.
 - `start.bat --packages-only` run on the owner's computer: `npm ci` (291 packages, pdf.js among them, 0 vulnerabilities) and the backend's packages into `.venv`; both copies kept for the next comparison.
 - The owner's app restarted from `main`: backend on 8000, frontend on 5173 (started by hand, outside `start.bat`).
 - Worktrees removed and their merged local branches deleted; the branches remain on GitHub.
@@ -119,7 +143,7 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 ## Latest session: 2026-10-15
 
 **Done**
-- Merged into `main` today (`7101726`): models on this computer through Ollama; document scope ("Search in", documents named in a question, papers read as papers, the answer from cited passages).
+- Merged into `main` today (`1c44772`): models on this computer through Ollama; document scope ("Search in", documents named in a question, papers read as papers, the answer from cited passages).
 - On branches, tested and pushed, **not merged**, each built on the one before:
   1. `rerank`: a local reranker; the Grounded line set for each embedding model (D-054 to D-058).
   2. `pdf-viewer`: PDFs kept, the page viewer with the passage marked; the fix for an empty thread on reload in development (D-059 to D-062).

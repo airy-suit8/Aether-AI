@@ -77,7 +77,7 @@ Not verified: anything on Windows or on the office network, anything that needs 
 | R7 No document identity | Fixed | `test_documents.py` |
 | R8 Delete misreports | Fixed | `test_documents.py::test_delete_returns_the_real_chunk_count` |
 | R9 Parsing loses content | Fixed: tables, every sheet as text, wide rows, clear messages for unreadable files. Changed: text that is not UTF-8 is refused with a message, because detection was measured as unsafe. **Open**: no OCR for scanned PDFs (they get a message) | `test_parsers.py`, `test_chunker.py` |
-| R10 Memory lossy and polluted | Fixed; the cache that was never evicted is now bounded (this sprint, 8a983de) | `test_memory.py`, `test_conversation_memory.py::test_the_cache_keeps_only_the_most_recently_used_sessions` |
+| R10 Memory lossy and polluted | Fixed; the cache that was never evicted is now bounded (this sprint, b1e7ff2) | `test_memory.py`, `test_conversation_memory.py::test_the_cache_keeps_only_the_most_recently_used_sessions` |
 | R11 Agent undermines grounding | Fixed: no own-knowledge answers, date arithmetic in Python, no confidence without a search, calculator fixed. Changed: the agent's answer is still sent word by word after it is finished; since Sprint 6 it is saved only once sent | `test_agent.py`, `test_datetime_tool.py`, `test_calculator.py`, `test_stream_closed.py` |
 | R12 Ingestion inside the request | Fixed: read in the background, with a status | `test_documents.py::test_an_upload_is_accepted_at_once_and_read_after_the_reply` |
 
@@ -87,7 +87,7 @@ Not verified: anything on Windows or on the office network, anything that needs 
 |---|---|---|
 | S1 Docker image would hold secrets | Fixed for secrets (`.dockerignore`, `override=False`). The image itself is still the old one (D4, deferred) | `.dockerignore`, `core/config.py` |
 | S2 Reusable tenant ids | Fixed: random tenant ids, migrated at startup, both stores under `data/` | `test_tenants.py` |
-| S3 Images can carry data out | Fixed (Sprint 1 and the redesign); **had no test**, now has one (53e0631) | `ChatLayout.test.tsx` ("loads no image an answer names…"), `test_exposure.py` (CSP) |
+| S3 Images can carry data out | Fixed (Sprint 1 and the redesign); **had no test**, now has one (1ddc867) | `ChatLayout.test.tsx` ("loads no image an answer names…"), `test_exposure.py` (CSP) |
 | S4 Unbounded work | Fixed | `test_calculator.py`, `test_agent.py::test_agent_loop_is_bounded`, `test_model_factories.py`, `test_upload_limits.py` |
 | S5 Injection filter blocks good text | Fixed: telemetry only; file names cleaned and escaped | `test_prompts.py`, `test_injection_and_names.py` |
 | S6 Override in the system prompt | Fixed | `grep -r OVERRIDE backend/src` finds nothing |
@@ -173,10 +173,10 @@ New documentation drift found and fixed: see N3.
 
 | Id | Severity | What and where | Status |
 |---|---|---|---|
-| N1 | Low | Both rate limits answered 429 with `{"error": "Rate limit exceeded: 10 per 1 minute"}` (slowapi's default handler, `main.py`): the only error without a `detail`, and with no `Retry-After`, so the web app could only say "wait a moment". **R** | Fixed (6f959ad): `api/errors.py::rate_limited` answers `{"detail": "Too many requests. Please wait N seconds…"}` with `Retry-After: N`; `test_api_routes.py` |
-| N2 | Medium | A document removed while it was still being read (the library offers Remove on a "Reading" row), or "Delete all" during a reading, lost its record, but the background reading then stored its passages anyway: searchable, with nothing left to delete them by (`pipeline/documents.py::finish_document`). The web app then showed "No such document." as an error. **R** | Fixed (b6d0b4d): the reading checks the record is still there and removes what it stored if not; `test_documents.py::test_a_document_removed_while_it_is_read_leaves_nothing_behind`, `ChatLayout.test.tsx` |
-| N3 | Low | Documentation drift: DESIGN.md gave 860 px for the workspace's stacking point (it is 900 px; 860 px is the start page's bench) and still said Prism lived on a branch; the README said a reload shows "your latest conversation" (since Sprint 6 it stays on the one in the address). **C** | Fixed (f21e43f) |
-| N4 | Low | Over many identical vectors, Chroma's filtered HNSW search misses chunks of the tenant asked for. The test suite has that shape (most tests upload one file for a new user) and two of four full runs failed on 13 Oct; a probe of 4,000 chunks of 20 repeated vectors missed in 18 of 18 queries, and raising `ef_search` did not help. Real sharing does not: 50 users with the same 40-chunk handbook, or 20 with a 200-chunk one, missed in 0 of 40 queries each. **R** | Not fixed in the app: no realistic case reproduces it. The search tests use a store of their own (Sprint 6, 285554c). Worth re-checking if many users ever share one large document |
+| N1 | Low | Both rate limits answered 429 with `{"error": "Rate limit exceeded: 10 per 1 minute"}` (slowapi's default handler, `main.py`): the only error without a `detail`, and with no `Retry-After`, so the web app could only say "wait a moment". **R** | Fixed (ce1141a): `api/errors.py::rate_limited` answers `{"detail": "Too many requests. Please wait N seconds…"}` with `Retry-After: N`; `test_api_routes.py` |
+| N2 | Medium | A document removed while it was still being read (the library offers Remove on a "Reading" row), or "Delete all" during a reading, lost its record, but the background reading then stored its passages anyway: searchable, with nothing left to delete them by (`pipeline/documents.py::finish_document`). The web app then showed "No such document." as an error. **R** | Fixed (e55088d): the reading checks the record is still there and removes what it stored if not; `test_documents.py::test_a_document_removed_while_it_is_read_leaves_nothing_behind`, `ChatLayout.test.tsx` |
+| N3 | Low | Documentation drift: DESIGN.md gave 860 px for the workspace's stacking point (it is 900 px; 860 px is the start page's bench) and still said Prism lived on a branch; the README said a reload shows "your latest conversation" (since Sprint 6 it stays on the one in the address). **C** | Fixed (4d9f136) |
+| N4 | Low | Over many identical vectors, Chroma's filtered HNSW search misses chunks of the tenant asked for. The test suite has that shape (most tests upload one file for a new user) and two of four full runs failed on 13 Oct; a probe of 4,000 chunks of 20 repeated vectors missed in 18 of 18 queries, and raising `ef_search` did not help. Real sharing does not: 50 users with the same 40-chunk handbook, or 20 with a 200-chunk one, missed in 0 of 40 queries each. **R** | Not fixed in the app: no realistic case reproduces it. The search tests use a store of their own (Sprint 6, cde4e74). Worth re-checking if many users ever share one large document |
 | N5 | Medium | A refresh token is not revoked on the server: signing out removes the cookie, but a stolen refresh cookie works for a week (`api/routes_auth.py`). **C** | Open: Sprint 8, item 4 (sign out everywhere) |
 | N6 | Low | Times are stored and sent as naive local time (`datetime.now().isoformat()`, `db/database.py`), and a browser reads them as its own local time: wrong for anyone in another time zone. **C** | Not fixed: changing the format changes the meaning of every stored row; one server in one office does not need it yet |
 | N7 | Low | Two uploads of the same file at the same moment both pass the duplicate check (it reads, then inserts: `api/routes_documents.py::_accept_upload`). **C** | Not fixed: the web app sends files one at a time, so only a script can hit it; a unique index would need care with failed uploads |
@@ -189,11 +189,11 @@ New documentation drift found and fixed: see N3.
 
 | Finding | Commit | Test |
 |---|---|---|
-| N1 | 6f959ad | `test_api_routes.py` (each route's own limit, and the default) |
-| N2 | b6d0b4d | `test_documents.py::test_a_document_removed_while_it_is_read_leaves_nothing_behind`; `ChatLayout.test.tsx` |
-| R10 (the cache) | 8a983de | `test_conversation_memory.py::test_the_cache_keeps_only_the_most_recently_used_sessions` |
-| S3 (its missing test) | 53e0631 | `ChatLayout.test.tsx` |
-| N3 | f21e43f | documentation |
+| N1 | ce1141a | `test_api_routes.py` (each route's own limit, and the default) |
+| N2 | e55088d | `test_documents.py::test_a_document_removed_while_it_is_read_leaves_nothing_behind`; `ChatLayout.test.tsx` |
+| R10 (the cache) | b1e7ff2 | `test_conversation_memory.py::test_the_cache_keeps_only_the_most_recently_used_sessions` |
+| S3 (its missing test) | 1ddc867 | `ChatLayout.test.tsx` |
+| N3 | 4d9f136 | documentation |
 
 ## 8. What is done right
 

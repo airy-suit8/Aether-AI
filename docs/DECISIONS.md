@@ -36,7 +36,7 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Context:** the project had no history; a database, vectors, logs and a code dump sat beside the code (D1, D2, D3).
 - **Chosen:** `git init`, with `aether.db*`, `vector_store/`, `logs/`, `data/` and `.env` ignored before the first commit; `.dockerignore` with the same.
 - **Why:** user data and keys must not be pushed, even to a private repository; every later change must be reversible.
-- **Evidence:** `.gitignore`, `.dockerignore`; commits 989ae9b, 6b7a384.
+- **Evidence:** `.gitignore`, `.dockerignore`; commits 1656474, 7acd924.
 
 ### D-003 A virtual environment on Python 3.12, every dependency pinned
 - **Date:** 2026-10-11
@@ -45,7 +45,7 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Chosen:** 2, with `requirements-dev.txt` for the tools; one upgrade per commit, with its reason.
 - **Why:** a fresh clone must start the same way every time; `pip-audit` needs exact versions to check.
 - **Trade-off:** upgrades are manual.
-- **Evidence:** `backend/requirements.txt`; commit 4e9831c.
+- **Evidence:** `backend/requirements.txt`; commit 09f0739.
 
 ### D-004 The backend refuses to start without JWT_SECRET; the environment wins over .env
 - **Date:** 2026-10-11
@@ -61,13 +61,13 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Chosen:** 2. The upload route is the one exception: it reads the body itself, as a stream, and hands blocking work to the thread pool.
 - **Why:** the libraries are blocking; wrapping them is less code and less risk than rewriting them.
 - **Trade-off:** concurrency is bounded by the thread pool.
-- **Evidence:** `api/routes_documents.py` (header comment); commit 1e8e934.
+- **Evidence:** `api/routes_documents.py` (header comment); commit 7a6d378.
 
 ### D-006 Errors are an error event, not answer text
 - **Date:** 2026-10-11
 - **Context:** a failed stream sent its error as tokens, so it was shown and saved as an answer (B9).
 - **Chosen:** a `{"type": "error"}` event, and a non-200 status for a failed agent.
-- **Evidence:** `api/schemas.py` (`ErrorEvent`); commit 4ebbbc4.
+- **Evidence:** `api/schemas.py` (`ErrorEvent`); commit 0ce0c1c.
 
 ### D-007 ChromaDB inside the backend, with cosine distance
 - **Date:** 2026-10-11 (cosine), kept 2026-10-12
@@ -92,7 +92,7 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Date:** 2026-10-11
 - **Chosen:** fake models (`tests/fakes.py`), a temp database, store and log folder (`tests/conftest.py`); `GOOGLE_API_KEY` and `OPENAI_API_KEY` set empty in the test process.
 - **Why:** tests that call a model cost money, fail with the network, and could read or damage the owner's data (T2, C3).
-- **Evidence:** `tests/conftest.py`; commit 716850d.
+- **Evidence:** `tests/conftest.py`; commit 3db48dd.
 
 ---
 
@@ -102,7 +102,7 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Date:** 2026-10-11
 - **Chosen:** each defect a later sprint fixes got a test of the correct behaviour, marked `xfail(strict=True)` with its finding id; the fixing sprint removed the mark.
 - **Why:** the fix is then proven by a test written before anyone knew how it would be done.
-- **Evidence:** commit 377b6af.
+- **Evidence:** commit 0340d2c.
 
 ### D-012 The API's schema is snapshotted, and a change to it must be reviewed
 - **Date:** 2026-10-11
@@ -436,7 +436,7 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 
 ### D-062 Fixed: a conversation opened by its address showed empty under the development server (not merged)
 - **Date:** 2026-10-15 · `pdf-viewer`
-- **Cause:** React runs effects twice in development; the cancelled first load, answering first, cleared the mark the second load checks. In the codebase since Sprint 6 (22d1925).
+- **Cause:** React runs effects twice in development; the cancelled first load, answering first, cleared the mark the second load checks. In the codebase since Sprint 6 (5238683).
 - **Chosen:** only a load that was not cancelled clears the mark; a test reproduces the network order.
 - **Evidence:** `ChatLayout.tsx` (the thread-loading effect), `ChatLayout.test.tsx`.
 
@@ -548,7 +548,7 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 
 ### D-076 The lock file is written by the npm CI uses
 - **Date:** 2026-10-16 · `fix-lockfile`
-- **Context:** CI's Frontend and Browser journey jobs failed on every push from `453b724` (15 Oct, the PDF viewer) to `654635a`, at their first step: `npm ci` refused the lock file ("Missing: @emnapi/core@1.11.3, @emnapi/runtime@1.11.3"). pdf.js brought in `@napi-rs/wasm-runtime`, which asks for those two as peers; npm 11.6.1 on the owner's computer wrote the lock without them and accepts it, npm 11.19.0 on CI (Node 24.21) does not. The work was checked only on the owner's computer, and CI's results were not looked at after pushing.
+- **Context:** CI's Frontend and Browser journey jobs failed on every push from `a5f2de1` (15 Oct, the PDF viewer) to `f412523`, at their first step: `npm ci` refused the lock file ("Missing: @emnapi/core@1.11.3, @emnapi/runtime@1.11.3"). pdf.js brought in `@napi-rs/wasm-runtime`, which asks for those two as peers; npm 11.6.1 on the owner's computer wrote the lock without them and accepts it, npm 11.19.0 on CI (Node 24.21) does not. The work was checked only on the owner's computer, and CI's results were not looked at after pushing.
 - **Options:** 1) write the lock again with npm 11.19.0 2) pin CI to npm 11.6.1 3) leave pdf.js's optional packages out of the install
 - **Chosen:** 1, with `npm install --package-lock-only` run by npm 11.19.0: the two packages are added; no other package's version changed (npm also rewrote some `peer` markers).
 - **Why:** it fixes the file, not the checker; 2 would hide the next such gap; 3 would make the install differ from the lock.
