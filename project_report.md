@@ -273,7 +273,7 @@ The plan also said "do not remove the current implementation" and "create a sepa
 | LangChain, LangChain core, LangGraph | 1.3.11, 1.4.8, 1.2.6 | `backend/requirements.txt` |
 | LangChain Google GenAI | 4.2.6 | `backend/requirements.txt` |
 | ChromaDB | 1.5.9 | `backend/requirements.txt` |
-| pypdf, python-docx, pandas, openpyxl, xlrd | 6.20.0, 1.2.0, 2.2.3, 3.1.5, 2.0.1 | `backend/requirements.txt` |
+| pypdf, python-docx, pandas, openpyxl, xlrd | 6.21.2, 1.2.0, 2.2.3, 3.1.5, 2.0.1 | `backend/requirements.txt` |
 | rank-bm25 | 0.2.2 | `backend/requirements.txt` |
 | bcrypt, PyJWT, slowapi | 5.0.0, 2.15.0, 0.1.9 | `backend/requirements.txt` |
 | Node.js | 20.19+ or 22.12+ (CI uses 24) | `README.md`; `.github/workflows/ci.yml` |
