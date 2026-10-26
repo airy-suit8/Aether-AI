@@ -556,6 +556,16 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Revisit:** when the owner's Node is updated to 24.21 or later (npm 11.19), which would make their own checks match CI's.
 - **Evidence:** with npm 11.19.0, `npm ci --dry-run` failed as CI did before the change and a clean `npm ci` passed after it, then the API-types check, lint, the type check, 138 tests, the build and the browser journey; with npm 11.6.1, `npm ci --dry-run` passed; CI on the branch (see its run).
 
+### D-077 The PDF route has the default rate limit as its own
+- **Date:** 2026-10-26 · `loose-ends`
+- **Context:** the app run for real on a copy of the owner's library could not show any source on its PDF page: `GET /documents/{id}/file` ended after 65,536 of the paper's 544,790 bytes. slowapi 0.1.9's middleware, which applies the default limit to every route without a decorator of its own, holds back a reply's `http.response.start` and sends it again before each piece of the body; Starlette sends a file in 64 KB pieces, and uvicorn closes the connection at the second start. Only routes without a decorator pass through it, and of those only this one replies in more than one piece. The tests used PDFs of a few kilobytes, and the test client does not check the order of the messages.
+- **Options:** 1) the route gets `@limiter.limit(settings.rate_limit_default)`, so the decorator checks it and the middleware lets it through 2) replace the middleware with a corrected copy of slowapi's 3) a newer slowapi (0.1.9 is the latest) 4) exempt the route from limits
+- **Chosen:** 1. The same rate as before, 120 a minute.
+- **Why:** the smallest change that fixes it; 2 means keeping a copy of a library's private class; 4 would leave a route that reads files with no limit.
+- **Trade-off:** a new route that replies in pieces (a file, a stream) needs a decorator of its own too; `test_every_api_route_has_a_limit` lists the decorated routes, so adding one is a visible choice.
+- **Revisit:** when slowapi sends the start once, or the middleware is replaced.
+- **Evidence:** `tests/integration/test_document_files.py::test_a_pdf_of_many_pieces_reaches_the_viewer_whole` sends a 150 KB PDF through every middleware and fails without the decorator (start, body, start, body); `test_api_routes.py::test_the_pdf_route_keeps_the_default_rate`; on a real uvicorn server with a copy of the owner's library, the 544,790-byte paper arrived whole.
+
 ---
 
 ## Template

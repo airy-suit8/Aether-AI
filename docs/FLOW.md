@@ -255,7 +255,9 @@ components/chat/SourceViewer.tsx
         → store.passages_at(tenant, id, [n-1, n, n+1]) → {kind, passages, original: has_original(), items}
   if kind is pdf and original:
       getDocumentFile(id) → GET /api/v1/documents/{id}/file
-        get_document_file(): FileResponse of data/files/<tenant>/<id>.pdf, inline; 404 with how to keep it
+        get_document_file(): FileResponse of data/files/<tenant>/<id>.pdf, inline, in 64 KB pieces;
+        404 with how to keep it. Rate limited by its own decorator: through the limiter's middleware
+        a reply of more than one piece is cut off after the first (D-077)
       services/pdf.ts drawPage(bytes, page, canvas, width)   pdf.js, loaded on first use (D-061)
         page.render() on the canvas; page.getTextContent() → each text piece and its box
       passageMatch.ts piecesOfPassage(pieces, passage text)  runs of 3 words, at least 6 long
