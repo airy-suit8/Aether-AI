@@ -6,6 +6,34 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-26, evening
+
+**Done** (branch `loose-ends`, pushed, CI green; not merged)
+- The app was tested for real on a copy of the owner's library with the local models (every mode, refusals, the confidence line, OCR of a real scan, sharing, another user's PDF refused, the OpenAI-compatible provider): 21 of 21 checks pass on this branch. On `main`, 19 of 21: the page viewer could not open any PDF over 64 KB.
+- That bug: the rate limiter's middleware sent a reply's start again before each 64 KB piece of a file, and uvicorn ended the reply at the second. The PDF route now has the default rate as its own limit (D-077); a test sends a 150 KB PDF through every middleware.
+- Dependencies, one at a time: pypdf 6.21.2 (9 advisories; it reads every upload), fastembed 0.9.1 (it allows Pillow 13), Pillow 13.0.0 (37 advisories), vite 8.3.5 and undici 8.12.3 (2 high, dev tools). pip-audit: 51 advisories before, 5 after, all in chromadb 1.5.9, which has no fixed release. npm audit: 0.
+- "The best accuracy" of the maternal health paper: a found passage in a paper's results, discussion or conclusion now comes with its neighbours (D-078). Right 7 of 7 times with it, 0 of 7 without; the 18 other questions 36 of 36.
+- The [new] and "(not merged)" markers of 15 Oct removed or explained; every setting listed in `backend/.env.example`, and the no-orphan check fails when one is missing.
+- The features taken from Verba (chunk window, reading order) and kotaemon/bRAG (reranking, a source shown on its PDF page) were checked in the pipeline: all configured and connected; the page viewer works once this branch is merged.
+- Checks: backend 832 tests passed, 98.9% coverage; ruff clean; frontend: API types, lint, typecheck, 138 tests, build, the browser journey; the dev server on Vite 8.3.5 starts.
+
+**In progress**
+- Nothing. The quiz before the merge is the owner's.
+
+**Broken or risky**
+- The agent's "best accuracy, minus 100" got worse with D-078: right 1 of 7 against 4 of 7 (it took another model's 81.3% from the discussion). Recorded in D-078.
+- chromadb 1.5.9 keeps its 5 advisories (in its HTTP server, which this app does not run; D-007).
+- Not merged into `main` yet; `start.bat` will install the new Python and npm packages once after the merge.
+
+**Next**
+- Owner: the quiz, then the merge; delete `design/prism` and the 110 old CI runs on GitHub (the commands were given in the session).
+- Owner: the `[OWNER: ...]` details (22 places, 9 in the report); the Sprint 4 test set; S11 and the Sprint 9 decisions; Docker when wanted; commit or drop the `SDLC_PLAN.md` edit.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-26
 
 **Done**
