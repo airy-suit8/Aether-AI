@@ -32,6 +32,9 @@ pypdf==6.21.2
 # PP-OCRv6 models in its package (RapidOCR 1.x's models ran English words together)
 pypdfium2==5.14.0
 rapidocr==3.10.0
+# Not imported here: RapidOCR and fastembed need it. Pinned so that the version with the
+# fixes is the one installed (Pillow 12.3.0 had 37 advisories)
+pillow==13.0.0
 python-docx==1.2.0
 docx2txt==0.9
 pandas==2.2.3
