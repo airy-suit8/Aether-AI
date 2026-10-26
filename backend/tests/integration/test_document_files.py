@@ -11,6 +11,7 @@ be read with the ones either side of it.
     the document's kind, its number of passages and whether its PDF is kept.
 """
 
+import anyio
 import pytest
 
 from filemakers import make_docx, make_pdf
@@ -53,6 +54,44 @@ def test_a_pdf_is_kept_as_it_was_uploaded(client, owner):
     assert r.headers["content-type"] == "application/pdf"
     assert r.headers["content-disposition"].startswith("inline")
     assert _kept(headers, document_id).is_file()
+
+
+def _asgi_get(app, path, headers):
+    """GET path through the whole app, every middleware included, and return each message it
+    sends, in order, as a server receives them. The test client does not check their order;
+    uvicorn does, and cuts a reply off at the first one out of place."""
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET", "scheme": "http",
+             "path": path, "raw_path": path.encode(), "query_string": b"", "root_path": "",
+             "headers": [(name.lower().encode(), value.encode()) for name, value in headers.items()],
+             "client": ("127.0.0.1", 50000), "server": ("testserver", 80)}
+    anyio.run(app, scope, receive, send)
+    return sent
+
+
+def test_a_pdf_of_many_pieces_reaches_the_viewer_whole(client, make_user, tmp_path):
+    # A file is sent in 64 KB pieces. The rate limiter's middleware sent the reply's start again
+    # before each piece, so uvicorn stopped every PDF over 64 KB at its first piece (D-077)
+    _, headers = make_user("bigpdf")
+    pages = [f"Page {i}: " + "the burner is inspected and its flame is measured. " * 12 for i in range(1, 201)]
+    pdf = make_pdf(tmp_path / "long manual.pdf", pages).read_bytes()
+    assert len(pdf) > 2 * 64 * 1024
+    record = status_of(client, headers, client.post(
+        "/api/v1/upload", headers=headers, files={"file": ("long manual.pdf", pdf, "application/pdf")}))
+    assert record["status"] == "ready", record
+    sent = _asgi_get(client.app, f"/api/v1/documents/{record['id']}/file", headers)
+    kinds = [message["type"] for message in sent]
+    assert kinds[0] == "http.response.start" and kinds.count("http.response.start") == 1, kinds[:4]
+    assert sent[0]["status"] == 200
+    assert kinds.count("http.response.body") > 2  # it did go in pieces
+    assert b"".join(m["body"] for m in sent if m["type"] == "http.response.body") == pdf
 
 
 def test_only_its_owner_gets_the_file_or_its_passages(client, owner, make_user):

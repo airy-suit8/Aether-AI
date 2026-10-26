@@ -18,6 +18,7 @@ from src.core import security
 from src.pipeline import documents
 from src.core.config import settings
 from src.core.logging import error_logger, request_logger
+from filemakers import make_pdf
 from helpers import DOC_TEXT, upload_text, ask, ask_stream, status_of, user_id_of
 
 QUESTION = "How often is the Zephyr turbine blade inspection?"
@@ -325,8 +326,21 @@ def test_every_api_route_has_a_limit():
     from src.api.deps import limiter
     assert limiter._default_limits  # applied by the middleware to every route without a decorator
     own = {name.rsplit(".", 1)[1] for name in limiter._route_limits}
-    assert own == {"register", "login", "upload_document", "chat", "chat_stream"}
+    # The PDF route has the default rate as its own limit: the middleware's handling cuts off a
+    # file of more than one piece (D-077)
+    assert own == {"register", "login", "upload_document", "chat", "chat_stream", "get_document_file"}
     assert not limiter._exempt_routes
+
+
+def test_the_pdf_route_keeps_the_default_rate(client, make_user, tmp_path):
+    _, headers = make_user("pdfrate")
+    pdf = make_pdf(tmp_path / "rate.pdf", ["The burner is checked every 30 days."])
+    r = client.post("/api/v1/upload", headers=headers, files={"file": ("rate.pdf", pdf.read_bytes(), "application/pdf")})
+    document_id = r.json()["document_id"]
+    path = f"/api/v1/documents/{document_id}/file"
+    for _ in range(120):
+        assert client.get(path, headers=headers).status_code == 200
+    _assert_rate_limited(client.get(path, headers=headers))
 
 
 def test_signed_in_users_have_their_own_allowance_even_from_one_address(client, make_user):

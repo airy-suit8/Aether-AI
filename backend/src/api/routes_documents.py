@@ -306,7 +306,10 @@ def get_passage(document_id: int, passage: int = PathParam(ge=1), around: int = 
 
 @router.get("/api/v1/documents/{document_id}/file", response_class=FileResponse, tags=["Documents"],
             responses={200: {"content": {"application/pdf": {}}, "description": "The PDF as it was uploaded"}})
-def get_document_file(document_id: int, user_id: int = Depends(get_current_user)):
+# Its own limit, the default rate: a route the rate limiter's middleware handles has its reply's
+# start sent again before each 64 KB piece of the file, which ends the reply at the first (D-077)
+@limiter.limit(settings.rate_limit_default)
+def get_document_file(request: Request, document_id: int, user_id: int = Depends(get_current_user)):
     """A document's PDF as it was uploaded, to show a source on its page. 404 for a document that
     is not yours, and for one whose file is not kept (not a PDF, or uploaded before 15 Oct 2026)."""
     document = get_document(user_id, document_id)

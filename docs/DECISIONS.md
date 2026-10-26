@@ -14,8 +14,8 @@ measurements made on 15 Oct 2026. Where a reason was never written down, the ent
 and fill it in. Record the rejected options: they are the best part of the log. Never rewrite an
 old entry; when a decision is reversed, add a new one that says which it replaces.
 
-Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
-`openai-compatible` and `ocr`, waiting for the owner.
+Entries marked **(not merged)** were written while their branches (`rerank`, `pdf-viewer`,
+`openai-compatible` and `ocr`) waited for the owner; all four were merged on 15 Oct 2026.
 
 ---
 
@@ -555,6 +555,26 @@ Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
 - **Trade-off:** an `npm install` run with npm 11.6.1 may write the lock without them again; `npm ci` with 11.6.1 still accepts the new one (checked).
 - **Revisit:** when the owner's Node is updated to 24.21 or later (npm 11.19), which would make their own checks match CI's.
 - **Evidence:** with npm 11.19.0, `npm ci --dry-run` failed as CI did before the change and a clean `npm ci` passed after it, then the API-types check, lint, the type check, 138 tests, the build and the browser journey; with npm 11.6.1, `npm ci --dry-run` passed; CI on the branch (see its run).
+
+### D-077 The PDF route has the default rate limit as its own
+- **Date:** 2026-10-26 · `loose-ends`
+- **Context:** the app run for real on a copy of the owner's library could not show any source on its PDF page: `GET /documents/{id}/file` ended after 65,536 of the paper's 544,790 bytes. slowapi 0.1.9's middleware, which applies the default limit to every route without a decorator of its own, holds back a reply's `http.response.start` and sends it again before each piece of the body; Starlette sends a file in 64 KB pieces, and uvicorn closes the connection at the second start. Only routes without a decorator pass through it, and of those only this one replies in more than one piece. The tests used PDFs of a few kilobytes, and the test client does not check the order of the messages.
+- **Options:** 1) the route gets `@limiter.limit(settings.rate_limit_default)`, so the decorator checks it and the middleware lets it through 2) replace the middleware with a corrected copy of slowapi's 3) a newer slowapi (0.1.9 is the latest) 4) exempt the route from limits
+- **Chosen:** 1. The same rate as before, 120 a minute.
+- **Why:** the smallest change that fixes it; 2 means keeping a copy of a library's private class; 4 would leave a route that reads files with no limit.
+- **Trade-off:** a new route that replies in pieces (a file, a stream) needs a decorator of its own too; `test_every_api_route_has_a_limit` lists the decorated routes, so adding one is a visible choice.
+- **Revisit:** when slowapi sends the start once, or the middleware is replaced.
+- **Evidence:** `tests/integration/test_document_files.py::test_a_pdf_of_many_pieces_reaches_the_viewer_whole` sends a 150 KB PDF through every middleware and fails without the decorator (start, body, start, body); `test_api_routes.py::test_the_pdf_route_keeps_the_default_rate`; on a real uvicorn server with a copy of the owner's library, the 544,790-byte paper arrived whole.
+
+### D-078 A found passage in a paper's results comes with its neighbours too
+- **Date:** 2026-10-26 · `loose-ends`
+- **Context:** asked for the maternal health paper's best accuracy, the model rarely gave 84% (3 of 21 answers, D-074): of the paper's own results, the search found only passage 69 (82.73%), and the passage just before it, which says "the highest result of accuracy by 84%", came only to the two best hits' neighbours, which 69 was not among.
+- **Options:** 1) leave it 2) the chunk window for every passage found 3) the chunk window also for each found passage in a results, discussion or conclusion section (the sections of D-074) 4) more passages read (top_k 8)
+- **Chosen:** 3. `rag._result_windows()`: besides the two best, a found passage whose section is Results, Discussion, Conclusion, Implementation and results (and their like) gets the passages either side, as the two best do.
+- **Why:** measured on a copy of the owner's library with qwen3.5:4b, each question asked alternately with and without, the three accuracy questions 7 times each and the 18 others twice: "what is the best accuracy reported" right (83.7% or 84%) **7 of 7 with, 0 of 7 without**; "what accuracy did the boosting technique reach" **5 of 7, 0 of 7**; the other 18 questions 36 of 36 with, 34 of 36 without; the time the same (741 s against 741 s). 2 and 4 add passages for every question; this adds them only around a paper's own results.
+- **Trade-off:** the agent's question ("search for its best accuracy, then subtract it from 100") got worse: right 1 of 7 with, 4 of 7 without. With more of the discussion in its search's answer, the agent took its first figure, 81.3% (Boosted Random Forest's best), as XGBoost's. A cited figure was given first 3 times in 21 with, 2 without. Up to two more passages are read for each found passage in those sections.
+- **Revisit:** when the agent is given the passages rather than the search's written answer, or with a larger model; if the agent's answers matter more than the chat's.
+- **Evidence:** `tests/integration/test_result_windows.py` (a result found third brings the passage with the best figure; without it only the two best have neighbours; an introduction found third gets none; which sections count); the measurement script and its answers were kept outside the repository.
 
 ---
 

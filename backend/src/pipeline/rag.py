@@ -188,7 +188,8 @@ def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None
     The user's top chunks for the query, as {"text", "meta", "score"} hits, within the scope.
     A question about several documents at once gets the best passages of each; one about a
     document's title or authors also gets each document's first passage; the best two hits come
-    with the passages either side of them. Added passages carry "added" and are context only.
+    with the passages either side of them, as does any found passage in a paper's results (D-078).
+    Added passages carry "added" and are context only.
     Each hit's meta names the section of its paper it is in, when it has one (D-074).
     """
     tenant = get_tenant_id(user_id)  # their chunks' key in the vector store (S2)
@@ -207,12 +208,27 @@ def retrieve(mode: Mode, user_id: int, query: str, scope: Optional[Scope] = None
     if settings.chunk_window:
         around: List[tuple] = []
         # The two best: by the reranker's judgement when there is one, else by similarity
-        for hit in sorted((h for h in hits if "added" not in h), key=lambda h: -h.get("relevance", h["score"]))[:2]:
+        found = sorted((h for h in hits if "added" not in h), key=lambda h: -h.get("relevance", h["score"]))
+        hits = sections.name_sections(tenant, hits)  # for _result_windows
+        found = [next(n for n in hits if _key(n) == _key(h)) for h in found]
+        for hit in found[:2] + _result_windows(tenant, found[2:]):
             meta = hit["meta"]
             if meta.get("document_id") is not None and meta.get("chunk_index") is not None:
                 around += store.passages_around(tenant, meta["document_id"], meta["chunk_index"], settings.chunk_window)
         hits += _added(tenant, query, around, hits, "neighbour")
     return sections.name_sections(tenant, _in_reading_order(hits))
+
+
+# The sections where a paper gives its own results (D-078)
+RESULT_SECTIONS = {"Results", "Discussion", "Conclusion", "Conclusions", "Results and discussion",
+                   "Implementation and results", "Experimental results", "Evaluation"}
+
+
+def _result_windows(tenant: str, hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The hits, besides the two best, that are in a paper's results, discussion or conclusion:
+    they get the passages either side too. A paper's best figure is often a passage away from the
+    one the search finds ("the highest result of accuracy by 84%" just before "82.73%")."""
+    return [h for h in hits if set((h["meta"].get("section") or "").split(", then ")) & RESULT_SECTIONS]
 
 
 def _generate(mode: Mode, results: List[Dict[str, Any]], question: str, chat_history: str, trace: Trace,
