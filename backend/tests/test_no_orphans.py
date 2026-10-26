@@ -6,6 +6,7 @@ The no-orphan check (SPRINT_PLAN.md, "The connection rule"). It fails when:
   - an API route has no test that calls it;
   - anything outside src/core/config.py reads the environment or a .env file;
   - a model id is written anywhere but src/core/config.py.
+  - a setting is missing from backend/.env.example.
 
 It reads the source with ast and needs no running server. CI runs it as its own step, and it
 also runs with the rest of the suite.
@@ -155,3 +156,17 @@ def test_each_model_id_is_written_in_exactly_one_place():
         assert places == [(CONFIG_FILE.relative_to(BACKEND_DIR), places[0][1])], (model_id, places)
     outside = [p for p in _app_files() if p != CONFIG_FILE and "gemini-" in p.read_text(encoding="utf-8")]
     assert outside == []
+
+
+# ── Every setting is listed in .env.example ───────────────────────────────────
+
+def _env_name(name, field):
+    """The environment variable that sets a setting: its alias (GOOGLE_API_KEY), else AETHER_<NAME>."""
+    return field.validation_alias if isinstance(field.validation_alias, str) else "AETHER_" + name.upper()
+
+
+def test_every_setting_is_listed_in_env_example():
+    example = (BACKEND_DIR / ".env.example").read_text(encoding="utf-8")
+    listed = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", example, re.M))
+    missing = [_env_name(n, f) for n, f in Settings.model_fields.items() if _env_name(n, f) not in listed]
+    assert not missing, f"settings missing from backend/.env.example: {missing}"
