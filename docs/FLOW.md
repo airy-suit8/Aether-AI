@@ -171,7 +171,9 @@ pipeline/rag.py  events(user_id, question, session_id, mode, document_ids)
          langchain: UserRetriever.invoke()       a LangChain retriever over the same dense search (D-018)
          reranker.rerank(query, hits, k)         retrieval/reranker.py: the cross-encoder keeps the best k (D-054)
        front-matter question → store.first_passages(): each document's passage 1, marked added "start" (D-051)
-       chunk window → store.passages_around() for the two best hits, marked added "neighbour" (D-052)
+       chunk window → store.passages_around() for the two best hits, marked added "neighbour" (D-052),
+                      and for any other found hit in a paper's results, discussion or conclusion:
+                      _result_windows(), from the hits' sections (D-078)
        _in_reading_order()                       documents by their best hit, passages in document order
        sections.name_sections()                  retrieval/sections.py: each hit's section of its paper, from its
                                                     document's headings (store.passages_of), kept per store.version (D-074)
