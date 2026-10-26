@@ -5,9 +5,7 @@ what order, and where it can fail. Read it before changing a path, and update it
 commit when a path changes. The reasons behind each step are in [DECISIONS.md](DECISIONS.md)
 (D-numbers below).
 
-Paths are `file` → `function`, from the folder `backend/` or `frontend/src/`. Steps marked
-**[new]** are on the branches waiting to be merged (`rerank`, `pdf-viewer`,
-`openai-compatible`, `ocr`).
+Paths are `file` → `function`, from the folder `backend/` or `frontend/src/`.
 
 ## Contents
 
@@ -19,7 +17,7 @@ Paths are `file` → `function`, from the folder `backend/` or `frontend/src/`. 
 6. Asking a question (the streamed answer)
 7. Agent mode
 8. Building a model, and when a model fails
-9. Showing a source in its document **[new]**
+9. Showing a source in its document
 10. Conversations: history, rating, sharing
 11. Removing documents
 12. The page: from a click to the screen
@@ -57,14 +55,14 @@ main.py  lifespan()  (runs once, when the server starts)
   ├─ migrate_chunks_to_tenants()           pipeline/documents.py   files old passages under tenant ids (D-028)
   ├─ recover_interrupted_uploads()         pipeline/documents.py   marks uploads cut short by a restart as failed
   ├─ store.embedding_model_changed()       vectordb/vector_store.py  warns if the embedding model changed (D-047)
-  └─ reranker.warm() in a thread [new]     retrieval/reranker.py   loads the reranking model in the background
+  └─ reranker.warm() in a thread           retrieval/reranker.py   loads the reranking model in the background
 ```
 
 Nothing opens a store or needs a key at import time (D-021): the database, the vector store and
 the models are opened on first use.
 
 **Where it fails:** no `JWT_SECRET` stops the start, on purpose. A reranking model that cannot be
-downloaded only logs a warning **[new]**.
+downloaded only logs a warning.
 
 ## 3. Every request, before its route
 
@@ -110,7 +108,7 @@ api/routes_documents.py  upload_document()                         async; the to
   _accept_upload()  (thread pool)
     type, empty file, library quota
     check_duplicate_document()   db/database.py: same hash already in the library?
-      already read, a PDF, no file kept → keep_original() and reply 202 "ready": nothing read [new] (D-060)
+      already read, a PDF, no file kept → keep_original() and reply 202 "ready": nothing read (D-060)
       otherwise → 409 duplicate (D-008)
     accept_document()            pipeline/documents.py: record "processing"
   reply 202 {document_id}; then, after the reply:
@@ -119,7 +117,7 @@ api/routes_documents.py  upload_document()                         async; the to
       ingest_document()
         load_document(owner)                  ingestion/loader.py   by extension (native or LangChain loaders)
           _parse_pdf()                        pypdf: text page by page
-            pages with no text → ocr.read_pages(owner)  [new]  ingestion/ocr.py (D-065)
+            pages with no text → ocr.read_pages(owner)         ingestion/ocr.py (D-065)
               _reserve(): the pages count against the owner's last hour, or the file is refused (D-073)
               each page in a turn of its own, in the order asked (_Turns): pypdfium2 draws it at
               200 dpi → RapidOCR reads it; one page at a time for the whole server (D-066, D-073)
@@ -129,7 +127,7 @@ api/routes_documents.py  upload_document()                         async; the to
         store.add_documents(tenant, chunks)   vectordb/vector_store.py: tenant_id on each; embeds them (get_embeddings)
       set_document_status("ready")            db/database.py
       delete_document() for an older file of the same name (D-027)
-    keep_original()  [new]                    pipeline/documents.py: a PDF moves to data/files/<tenant>/<id>.pdf (D-059)
+    keep_original()                           pipeline/documents.py: a PDF moves to data/files/<tenant>/<id>.pdf (D-059)
     on error: fail_document() → status "failed" with a message the user can read; its passages removed
     finally: the temp file is deleted
 Page: getDocument() every second until "ready" or "failed", then a toast
@@ -138,7 +136,7 @@ Page: getDocument() every second until "ready" or "failed", then a toast
 **Where it fails:** a file over 50 MB, too many passages or pages read by OCR (100 in a file, 200
 for a user in an hour), a PDF with no words even for OCR, the embedding model busy (429/503: "upload
 it again in a minute") or not set up (Ollama not running, model not installed, a model not named for
-an OpenAI-compatible service **[new]**). A restart while a file is read marks it failed at the next
+an OpenAI-compatible service). A restart while a file is read marks it failed at the next
 start.
 
 ## 6. Asking a question (the streamed answer)
@@ -166,16 +164,16 @@ pipeline/rag.py  events(user_id, question, session_id, mode, document_ids)
   3. retrieve(mode, user, query, scope)
        get_tenant_id(user)                       db/database.py
        _search(mode, tenant, query, k, ids)      once, or once per document for an "each" question
-         pool = 20 when a reranker is set [new], else top_k (5)
+         pool = 20 when a reranker is set, else top_k (5)
          default:   retriever.search()           → store.similarity_search(): cosine, filtered by tenant and documents
                                                     (exact comparison when Chroma's index comes back short, D-043)
          hybrid:    retriever.search_hybrid()    dense + search_bm25(), fused by rank, scored by cosine (D-022)
          langchain: UserRetriever.invoke()       a LangChain retriever over the same dense search (D-018)
-         reranker.rerank(query, hits, k)  [new]  retrieval/reranker.py: the cross-encoder keeps the best k (D-054)
+         reranker.rerank(query, hits, k)         retrieval/reranker.py: the cross-encoder keeps the best k (D-054)
        front-matter question → store.first_passages(): each document's passage 1, marked added "start" (D-051)
        chunk window → store.passages_around() for the two best hits, marked added "neighbour" (D-052)
        _in_reading_order()                       documents by their best hit, passages in document order
-       sections.name_sections()  [new]           retrieval/sections.py: each hit's section of its paper, from its
+       sections.name_sections()                  retrieval/sections.py: each hit's section of its paper, from its
                                                     document's headings (store.passages_of), kept per store.version (D-074)
   4. no hits → refusal "No documents have been uploaded yet"
      confidence = mean similarity of the hits found (not of those added)
@@ -183,12 +181,12 @@ pipeline/rag.py  events(user_id, question, session_id, mode, document_ids)
   5. _report_injection_patterns()                prompts: log passages that read like instructions; sent unchanged (D-033)
   6. _generate()                                 answer_from "chunks" (default, D-053):
        CITED_RAG_PROMPT | get_llm() | parser .stream()   prompts/prompt_templates.py: format_context(numbered, titles);
-                                                    each tag names the passage's section when it has one [new] (D-074)
+                                                    each tag names the passage's section when it has one (D-074)
        → yields {"type": "token"} events as the model writes
      (answer_from "summary": SUMMARIZE_PROMPT, then RAG_PROMPT: two calls)
   7. _answer_sources()                           the passages the answer cites as [n]; none for a refusal
   8. memory.add_turn() → save_conversation()     db/database.py: the turn, saved only after the last token (D-039)
-  9. yield {"type": "done", sources, confidence, turn_id, usage, scope, grounded_at [new]}
+  9. yield {"type": "done", sources, confidence, turn_id, usage, scope, grounded_at}
        grounded_at = settings.grounded_line(): the "Grounded" line for this embedding model (D-058)
 
 Page: onToken → the answer grows on screen; onDone → answered() → the message with its sources (section 12)
@@ -196,7 +194,7 @@ Page: onToken → the answer grows on screen; onDone → answered() → the mess
 
 **Where it fails:** the model is busy (429/503 after three tries: one error event, MODEL_BUSY) or
 not set up (`setup_problem()`: Ollama not running, a model not installed, a key refused, a service
-out of reach **[new]**): an error event, nothing saved. Closing the stream (Stop) ends the
+out of reach): an error event, nothing saved. Closing the stream (Stop) ends the
 generator before step 8: no turn is saved. A question near the documents' subject but not answered
 in them passes the threshold and relies on the model to say so (D-057). A small model can quote a
 cited study's figure as the paper's own (D-054): section tags made it 2 answers in 21, from 9
@@ -217,7 +215,7 @@ pipeline/rag.py  _agent_events()
 ```
 
 **Where it fails:** a model that cannot use tools (gemma3:4b; or an OpenAI-compatible model
-without tools **[new]**) gets a message naming the fix. A loop that keeps calling tools stops at
+without tools) gets a message naming the fix. A loop that keeps calling tools stops at
 the recursion limit and lists the calls it made.
 
 ## 8. Building a model, and when a model fails
@@ -227,22 +225,22 @@ llm/llm_client.py  get_llm(temperature, model)           (D-016)
   settings.llm_provider:
     "gemini" → GeminiChat(...)              needs GOOGLE_API_KEY; the Google client's own retries off
     "ollama" → OllamaChat(...)              num_ctx 8192, thinking off (D-049), keep_alive 30m
-    "openai" → OpenAICompatibleChat(...)  [new]  openai_url, OPENAI_API_KEY or "none", model named or ModelSetupError,
+    "openai" → OpenAICompatibleChat(...)         openai_url, OPENAI_API_KEY or "none", model named or ModelSetupError,
                                                  reasoning_effort when set (D-063, D-064)
   each mixes in RetryWhenUnavailable: 429 and 5xx (Ollama: 429 and 503) tried again after 2 s, 4 s (3 attempts, D-034);
   a stream is not retried once its first piece is out
 
-embeddings/embedder.py  get_embeddings()  the same three providers; OpenAI-compatible embeddings without tiktoken [new]
+embeddings/embedder.py  get_embeddings()  the same three providers; OpenAI-compatible embeddings without tiktoken
 
 errors, read by every route:
-  is_unavailable(e)   quota or availability, from Google, Ollama or openai [new] errors   → 503 MODEL_BUSY
+  is_unavailable(e)   quota or availability, from Google, Ollama or openai errors   → 503 MODEL_BUSY
   setup_problem(e)    something the owner must fix, in words for the person who asked    → 503 with that message
 ```
 
 Tests replace `get_llm` and `get_embeddings` with the fakes in `tests/fakes.py` (D-010), and
-`reranker._load` and `ocr._load` with fakes too **[new]**.
+`reranker._load` and `ocr._load` with fakes too.
 
-## 9. Showing a source in its document [new]
+## 9. Showing a source in its document
 
 ```
 Page: MessageBubble.tsx  a source card pinned open, whose source names its document_id and passage
@@ -275,7 +273,7 @@ that date carry no passage number, so their cards have no button.
 
 ```
 GET  /sessions                       routes_chat.list_sessions()      → get_sessions(): the rail's thread list
-GET  /sessions/{id}/messages         session_messages()               → get_session_turns() + grounded_at [new]
+GET  /sessions/{id}/messages         session_messages()               → get_session_turns() + grounded_at
 PATCH / DELETE /sessions/{id}        rename_conversation(), delete_conversation()
 POST /feedback {turn_id, 1|-1|0}     submit_feedback()                → update_conversation_feedback()
 POST /sessions/{id}/share            share_conversation()             → share_session(): a 192-bit token, never logged (D-045)
@@ -283,16 +281,16 @@ GET  /shared/{token}  (no sign-in)   shared_conversation()            → get_sh
 ```
 
 Page: `ChatLayout.tsx` loads a thread when the URL's thread id changes (the effect around
-`getSessionMessages`). The fix for an empty thread on reload in development is there **[new]**
+`getSessionMessages`). The fix for an empty thread on reload in development is there
 (D-062).
 
 ## 11. Removing documents
 
 ```
 DELETE /documents/{id}    delete_one_document() → pipeline/documents.py delete_document()
-                            store.delete_document_chunks() → delete_document_record() → the kept PDF [new]
+                            store.delete_document_chunks() → delete_document_record() → the kept PDF
 DELETE /documents         delete_documents() → clear_documents()
-                            store.delete_user_chunks() → clear_user_documents() → data/files/<tenant>/ [new]
+                            store.delete_user_chunks() → clear_user_documents() → data/files/<tenant>/
 ```
 
 Passages go first: if that fails, the record stays, so the list still matches the store.
@@ -302,14 +300,14 @@ Passages go first: if that fails, the record stays, so the list still matches th
 ```
 main.tsx → App.tsx  routes: / and /login (start page), /chat/:threadId and /settings (workspace),
                     /shared/:token (SharedPage)
-ChatLayout.tsx     the workspace's state: messages, threads, documents, "Search in", the open source [new]
+ChatLayout.tsx     the workspace's state: messages, threads, documents, "Search in", the open source
   ├─ Sidebar.tsx         threads and the library (upload, remove)
   ├─ ChatWindow.tsx      the conversation
-  │    └─ MessageBubble.tsx   one answer: clarityOf() (Grounded / Uncertain, by the server's grounded_at [new]),
-  │                           ScopeNote, the answer as Markdown with [n] chips, SourceCards, "Show on p. N" [new]
+  │    └─ MessageBubble.tsx   one answer: clarityOf() (Grounded / Uncertain, by the server's grounded_at),
+  │                           ScopeNote, the answer as Markdown with [n] chips, SourceCards, "Show on p. N"
   ├─ ChatComposer.tsx    the question box, the answer mode (Default or Agent; every answer streamed, D-075),
   │                      ScopePicker ("Search in")
-  ├─ SettingsModal.tsx, ShareDialog.tsx, SourceViewer.tsx [new]
+  ├─ SettingsModal.tsx, ShareDialog.tsx, SourceViewer.tsx
 services/api.ts    every call: send() adds the token, renews it once on a 401, turns errors into messages;
                    types from api-schema.ts, generated from the backend's schema (D-036)
 design/prism.tsx   the components every screen is built from (DESIGN.md)

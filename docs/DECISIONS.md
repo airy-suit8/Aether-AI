@@ -14,8 +14,8 @@ measurements made on 15 Oct 2026. Where a reason was never written down, the ent
 and fill it in. Record the rejected options: they are the best part of the log. Never rewrite an
 old entry; when a decision is reversed, add a new one that says which it replaces.
 
-Entries marked **(not merged)** are on the branches `rerank`, `pdf-viewer`,
-`openai-compatible` and `ocr`, waiting for the owner.
+Entries marked **(not merged)** were written while their branches (`rerank`, `pdf-viewer`,
+`openai-compatible` and `ocr`) waited for the owner; all four were merged on 15 Oct 2026.
 
 ---
 
