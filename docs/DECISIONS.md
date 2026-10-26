@@ -576,6 +576,17 @@ Entries marked **(not merged)** were written while their branches (`rerank`, `pd
 - **Revisit:** when the agent is given the passages rather than the search's written answer, or with a larger model; if the agent's answers matter more than the chat's.
 - **Evidence:** `tests/integration/test_result_windows.py` (a result found third brings the passage with the best figure; without it only the two best have neighbours; an introduction found third gets none; which sections count); the measurement script and its answers were kept outside the repository.
 
+### D-079 The agent's 81.3% is the paper's own table: D-078's trade-off, corrected
+- **Date:** 2026-10-26 · `agent-finding`
+- **Replaces:** the reason D-078 gives for its trade-off. D-078 itself stands.
+- **Context:** D-078 says the agent's "search for its best accuracy, then subtract it from 100" got worse (right 1 of 7) because it took another model's 81.3% from the discussion as XGBoost's. Traced on a copy of the owner's library, three runs: the agent searches "best accuracy", and the search's answer reads Table 4 of the paper (page 20), which gives the 80:20 split's accuracy as 0.813 for all three models; the sentence under it says "XGBoost Classifier has the highest accuracy of 83.7%", which is the table's recall. The paper contradicts itself; 81.3% is its own table's figure, not another study's and not another model's.
+- **Options:** 1) change nothing, and say what the agent's figure is 2) tell the models to prefer a paper's text over its tables 3) have the agent's search name the document and the question in full
+- **Chosen:** 1.
+- **Why:** both figures are the paper's own; 2 would be wrong for a paper whose text is the mistake, and fitted to one paper; 3 changes nothing here, since the search is already limited to the paper the question names (scope, D-050).
+- **Trade-off:** the agent and the chat can give different answers to "the best accuracy" of this paper; each can be traced to a passage of it.
+- **Revisit:** if the agent's answers are checked against a reference set (Sprint 4), with a reference that says which figure counts.
+- **Evidence:** three traced agent runs (the search's answers cite Table 4's 0.813); the paper's passages 62 (Table 4, page 20) and 65 (the discussion).
+
 ---
 
 ## Template

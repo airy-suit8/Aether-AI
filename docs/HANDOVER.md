@@ -6,6 +6,26 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-10-26, late
+
+**Done**
+- The 25 temporary copies of the owner's database and store that the test runs left in the temp folder were deleted, at the owner's word; nothing else was.
+- The agent's "best accuracy" (D-078's trade-off) traced: its 81.3% is the paper's own Table 4 (accuracy 0.813 for all three models), which contradicts the paper's text (83.7%, the table's recall). Not a fault of the app; D-079 corrects D-078's explanation. No code changed.
+
+**In progress**
+- Nothing.
+
+**Broken or risky**
+- The paper contradicts itself, so the chat (from the text: 84%) and the agent (from the table: 81.3%) can differ (D-079).
+
+**Next**
+- As in the entry below.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-26, evening
 
 **Done** (branch `loose-ends`, CI green; merged into `main`)
