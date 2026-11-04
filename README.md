@@ -1,6 +1,6 @@
 # Aether AI
 
-[![CI](https://github.com/airy-suit8/Aether-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/airy-suit8/Aether-AI/actions/workflows/ci.yml)
+[![CI](https://github.com/airy-suit8/Aether-AI/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/airy-suit8/Aether-AI/actions/workflows/ci.yml?query=branch%3Amain)
 
 Ask questions about your own documents and get answers that cite the exact passages they came from. Aether AI is a multi-user retrieval-augmented generation (RAG) app: a FastAPI backend with LangChain, ChromaDB and SQLite, and a React + TypeScript web app.
 
