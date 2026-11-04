@@ -6,6 +6,27 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-11-05
+
+**Done**
+- The owner's `SDLC_PLAN.md` edit pushed, at their choice without its closing "PRODUCTION READY" line, which the audit and the deferred Docker work contradict: the superseded note and the credit line are gone, the corrected status line stays.
+- CI had turned red: GitHub's `ubuntu-latest` became Ubuntu 26.04, where Playwright 1.56 cannot install Chromium. The browser journey alone now runs on `ubuntu-24.04` (D-080); all three jobs pass again.
+- README rewritten: what the app does first, a quick start, how to use it (modes, the confidence labels, Search in, sources, scans, sharing), the models, running it for others, data, the developer part, and a table of the project's documents; out-of-date statements corrected.
+
+**In progress**
+- Nothing.
+
+**Broken or risky**
+- The browser journey runs on an older runner image; upgrade Playwright when it supports Ubuntu 26.04, then go back to `ubuntu-latest` (D-080).
+
+**Next**
+- As in the entries below.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-10-26, late
 
 **Done**
