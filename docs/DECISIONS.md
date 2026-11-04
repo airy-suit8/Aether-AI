@@ -587,6 +587,16 @@ Entries marked **(not merged)** were written while their branches (`rerank`, `pd
 - **Revisit:** if the agent's answers are checked against a reference set (Sprint 4), with a reference that says which figure counts.
 - **Evidence:** three traced agent runs (the search's answers cite Table 4's 0.813); the paper's passages 62 (Table 4, page 20) and 65 (the discussion).
 
+### D-080 The browser journey runs on Ubuntu 24.04
+- **Date:** 2026-11-05 · `ci-ubuntu-24`
+- **Context:** GitHub moved `ubuntu-latest` to Ubuntu 26.04. On it, the Browser journey job stopped at "Install Chromium for Playwright": "Playwright does not support chromium on ubuntu26.04-x64" (run 41902542858, 4 Nov 2026). The backend and frontend jobs pass on 26.04.
+- **Options:** 1) run that job on `ubuntu-24.04` 2) upgrade Playwright to a version that supports Ubuntu 26.04 3) run every job on `ubuntu-24.04`
+- **Chosen:** 1.
+- **Why:** the smallest change that runs the journey again, with the pinned Playwright 1.56.1 it was written against; 2 is a dependency upgrade to make on its own, with the journey re-run; 3 holds back jobs that work on 26.04.
+- **Trade-off:** one job on an older image, which GitHub will retire in time.
+- **Revisit:** when Playwright supports Ubuntu 26.04 (then upgrade it and go back to `ubuntu-latest`), or when GitHub announces the end of `ubuntu-24.04`.
+- **Evidence:** the failed run above; CI on this branch.
+
 ---
 
 ## Template
