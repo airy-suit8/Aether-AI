@@ -57,10 +57,12 @@ def run_agent(user_id: int, question: str, session_id: str,
     sub-question as a turn. config is a LangChain config for the agent's own model calls (the
     pipeline passes one that counts their tokens).
 
-    Returns {"answer", "sources", "confidence", "tool_used", "steps"}. steps are the tool calls in
-    the order they ran, each {"tool", "input", "output"}, with the reply cut short (Sprint 8,
-    item 2). The turn is not saved here: the pipeline saves it once the answer has been sent, so a
-    stream the client closed saves none.
+    Returns {"answer", "sources", "confidence", "tool_used", "steps", "unsupported"}. steps are the
+    tool calls in the order they ran, each {"tool", "input", "output"}, with the reply cut short
+    (Sprint 8, item 2). unsupported is True when the answer rests on nothing a tool gave: no
+    passage found, no sum, no date (D-081); the pipeline then refuses instead of sending it. The
+    turn is not saved here: the pipeline saves it once the answer has been sent, so a stream the
+    client closed saves none.
     """
     
     metadata_store = {
@@ -134,11 +136,13 @@ def run_agent(user_id: int, question: str, session_id: str,
     # that keeps calling tools would run, and bill, almost without limit; the setting caps it.
     # Other errors propagate to the API, which reports them as errors instead of saving and
     # showing them as an answer.
+    out_of_steps = False
     try:
         result = agent.invoke({"messages": messages},
                               config={**(config or {}), "recursion_limit": settings.agent_recursion_limit})
     except GraphRecursionError:
         # create_agent raises at the limit; the old create_react_agent answered with this text
+        out_of_steps = True
         result = {"messages": [AIMessage(content=OUT_OF_STEPS)]}
 
     # Extract the final answer from the LLM (.text joins content blocks into one string)
@@ -165,6 +169,11 @@ def run_agent(user_id: int, question: str, session_id: str,
     # Format tools used for the UI badge
     tools_used_str = " + ".join(sorted(list(metadata_store["tool_used"]))) if metadata_store["tool_used"] else "agent_direct"
     
+    # D-081: the prompt alone did not stop a small model answering from its own knowledge (D-026):
+    # the local model answered 3 of 4 questions the documents do not cover. An answer must rest on
+    # a passage a search found, a sum or a date; the out-of-steps message is the app's own.
+    unsupported = not (out_of_steps or unique_sources or metadata_store["tool_used"] & {"calculator", "datetime"})
+
     # Confidence is how close the retrieved passages were; an answer that searched no document
     # has none (it used to claim 1.0).
     return {
@@ -173,4 +182,5 @@ def run_agent(user_id: int, question: str, session_id: str,
         "confidence": metadata_store["confidence"],
         "tool_used": tools_used_str,
         "steps": metadata_store["steps"],
+        "unsupported": unsupported,
     }

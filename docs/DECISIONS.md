@@ -597,6 +597,16 @@ Entries marked **(not merged)** were written while their branches (`rerank`, `pd
 - **Revisit:** when Playwright supports Ubuntu 26.04 (then upgrade it and go back to `ubuntu-latest`), or when GitHub announces the end of `ubuntu-24.04`.
 - **Evidence:** the failed run above; CI on this branch.
 
+### D-081 An agent answer must rest on a tool result, or it is refused
+- **Date:** 2026-11-23 · `agent-refusal`
+- **Context:** D-026 says the agent may not answer from the model's own knowledge, but only the prompt said so. Checked on a copy of the owner's library with qwen3.5:4b, Default mode refused all four questions the documents do not cover; Agent mode answered three of them from memory (the 2022 World Cup, water's boiling point, Microsoft's CEO), two without calling any tool, and "the population of Japan" once in two tries. THREAT.md's "It invents an answer" covered Default mode only.
+- **Options:** 1) a stronger prompt 2) when the agent calls no tool, answer in Default mode instead 3) refuse, in code, an answer that rests on nothing a tool gave: no passage found, no sum, no date 4) check each name and number of the answer against the tools' replies 5) ask a judge model whether the answer is supported
+- **Chosen:** 3. `run_agent` reports `unsupported` when no search found a passage and neither the calculator nor the date tool ran (the out-of-steps message is the app's own and is kept); `_agent_events` then sends the refusal Default mode sends (`NOT_FOUND`, or `NO_DOCUMENTS` for a user with none), lists no sources, saves no turn, and still shows the steps the agent took.
+- **Why:** the prompt already said it and the model did not follow it, so 1 is no control; 3 is a check the model cannot skip, decided from what the tools returned, and refuses where Default refuses. 2 doubles the work and still lets the model add facts after an empty search; 4 breaks on paraphrase; 5 costs a model call per answer and the judge can be wrong too.
+- **Trade-off:** an Agent answer that needs only the conversation ("what did I ask before?", rephrasing an earlier answer) is refused; Default mode answers those. Not caught: an answer that mixes found passages, or a sum, with facts of the model's own (a sum on a number it made up).
+- **Revisit:** if Agent mode must answer from the conversation alone, or an invented fact is seen inside a supported answer, or with a model that follows the prompt.
+- **Evidence:** `tests/integration/test_agent.py` (the four refusal tests fail without the change); the run on a copy of the owner's library before and after, in the pull request.
+
 ---
 
 ## Template

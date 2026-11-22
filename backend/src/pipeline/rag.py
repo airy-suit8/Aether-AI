@@ -398,9 +398,10 @@ def events(user_id: int, question: str, session_id: str = "default", mode: Mode 
 
 def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, started: float,
                   scope: Scope) -> Iterator[Dict[str, Any]]:
-    """Run the agent, then send its answer word by word (it has no token stream of its own).
+    """Run the agent, then send its answer word by word (it has no token stream of its own), or the
+    refusal when the answer rests on no tool result (D-081).
     The turn is saved after the last word, as in the other modes: a stream closed before then
-    saves none (Sprint 6, decision 11).
+    saves none (Sprint 6, decision 11); a refusal saves none.
     Its usage has an "agent" stage, the agent's own model calls, and a "document_search" stage
     for each search it made, whose seconds the agent's stage does not count again."""
     searches: List[Dict[str, Any]] = []
@@ -414,11 +415,16 @@ def _agent_events(user_id: int, question: str, session_id: str, trace: Trace, st
         result = run_agent(user_id, question, session_id, search_documents=search_documents, config=config)
     agent = trace.stages["agent"]
     agent["seconds"] = round(max(0.0, agent["seconds"] - sum(s["seconds"] for s in searches)), 3)
-    for i, word in enumerate(result["answer"].split(" ")):
+    # An answer that rests on no tool result is refused as the other modes refuse, and not saved;
+    # its steps still show what the agent tried (D-081)
+    refused = trace.refused = result["unsupported"]
+    text = (NOT_FOUND if scope.all_documents else NO_DOCUMENTS) if refused else result["answer"]
+    for i, word in enumerate(text.split(" ")):
         yield {"type": "token", "content": word if i == 0 else " " + word}
     # The database column is a number, so an answer that searched no document records 0
-    turn_id = memory.add_turn(user_id, session_id, question, result["answer"], result["confidence"] or 0.0,
-                              mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
+    turn_id = None if refused else memory.add_turn(
+        user_id, session_id, question, result["answer"], result["confidence"] or 0.0,
+        mode=STORED_MODE["agent"], sources=result["sources"], tool_used=result["tool_used"])
     yield {"type": "done", "sources": result["sources"], "confidence": result["confidence"],
            "tool_used": result["tool_used"], "steps": result["steps"], "turn_id": turn_id,
            "usage": _usage(trace, started, searches), "scope": scope.described(),

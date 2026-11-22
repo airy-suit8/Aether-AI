@@ -82,7 +82,7 @@ process. Turning OCR off (`AETHER_OCR=false`) keeps pdfium from reading uploads 
 
 | Risk | What limits it | Evidence |
 |---|---|---|
-| It invents an answer | Below the similarity threshold the question is refused without asking it (D-023); the prompt says to refuse when the passages do not answer; the answer cites its passages, and the ring shows how close they were | `tests/unit/test_search.py` |
+| It invents an answer | Below the similarity threshold the question is refused without asking it (D-023); the prompt says to refuse when the passages do not answer; the answer cites its passages, and the ring shows how close they were. In Agent mode, an answer that rests on no tool result (no passage found, no sum, no date) is refused in code (D-081). **Not caught:** facts of the model's own added to found passages or a sum | `tests/unit/test_search.py`; `tests/integration/test_agent.py` (the four refusal tests) |
 | It takes a cited study's result for the paper's own | The prompt says results cited as [7] belong to the cited work (D-051). **Not solved:** qwen3.5:4b still did it on the owner's paper (D-054) | SPRINT_PLAN.md, "Reranking and confidence lines" |
 | It loops on tool calls and bills without end | The agent stops at 12 steps (D-026) | `tests/integration/test_agent.py` |
 
