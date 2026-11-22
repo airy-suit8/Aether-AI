@@ -6,6 +6,32 @@ of it. Never rewrite an old entry. Also read first: [FLOW.md](FLOW.md), [THREAT.
 
 ---
 
+## Latest session: 2026-11-23
+
+**Done**
+- Viva material for the owner (a 15-slide deck and a 38-page study guide), kept outside the repository.
+- The whole app checked on `main` (`940b35d`), on a copy of the owner's library with the local models:
+  - backend 832 tests;
+  - frontend: lint 0 errors, 138 tests, the build and the browser journey;
+  - in the real app, these pass: Default mode (sources, follow-ups, "each document", a named paper, Search in, refusals), the agent's tools, upload, delete, a hidden instruction ignored, isolation between users, history, feedback, sharing, OCR, and sign-in with refresh and sign-out.
+- Found: Agent mode answered 3 of 4 questions the documents do not cover from the model's own knowledge, because D-026 was enforced only by the prompt. Fixed on branch `agent-refusal` (D-081, pull request #8): an Agent answer must rest on a passage found, a sum or a date, or it is refused. Checks: 836 tests; the real model on a copy, 18 of 18; CI green.
+
+**In progress**
+- Pull request #8 is not merged. The owner's quiz (six questions, asked in the session) has not been answered yet.
+
+**Broken or risky**
+- The PDF viewer needs a recent browser: pdf.js 6.3.289 calls `Map.prototype.getOrInsertComputed`. It draws in Chrome 157 and Edge 158; in Playwright's bundled Chromium 141 it shows "The page could not be drawn.", and the app does not log the error. The browser journey never opens a PDF page, so CI would not catch this.
+- The owner's account now holds two papers on the Maternal Health Risk dataset. "The maternal health risk paper" picks the newer one (69.2%); "the Maternal Health Risks paper" picks the boosting paper (84%). Asked for "the boosting technique paper's" best accuracy, the model gave a cited study's 98% (D-054, still open).
+
+**Next**
+- The quiz, then merge #8 and restart the app.
+- If the app must run in older browsers: pdf.js's legacy build, or a polyfill for `getOrInsertComputed`.
+
+**Do not touch**
+- As below.
+
+---
+
 ## Latest session: 2026-11-05
 
 **Done**

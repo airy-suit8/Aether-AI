@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from helpers import ask, ask_stream, upload_text
 
 from src.core.config import settings
+from src.pipeline import rag
 
 
 def test_agent_uses_the_calculator(client, make_user, fake_llm):
@@ -102,14 +103,60 @@ def test_empty_final_answer_falls_back_to_the_tool_output(client, make_user, mon
     assert r.json()["answer"] == "The result is: 6 * 7 = 42"
 
 
-def test_empty_answer_without_a_tool_says_so(client, make_user, monkeypatch):
+def test_an_empty_answer_without_a_tool_is_refused(client, make_user, monkeypatch):
+    # It used to say "I executed the tool but encountered an issue..." though no tool ran (D-081)
     _, headers = make_user("emptyd")
+    upload_text(client, headers)
     monkeypatch.setattr(ScriptedChatModel, "_reply", lambda self, messages: AIMessage(content=""))
     r = ask(client, headers, "Say nothing", mode="agent")
     assert r.status_code == 200, r.text
-    assert r.json()["answer"] == "I executed the tool but encountered an issue formatting the final answer."
+    assert r.json()["answer"] == rag.NOT_FOUND
     assert r.json()["tool_used"] == "agent_direct"
     assert r.json()["confidence"] is None  # R11: was 1.0
+
+
+# ── An answer must rest on a tool result (D-081) ──────────────────────────────
+
+def test_an_answer_from_the_model_s_own_knowledge_is_refused_and_not_saved(client, make_user, monkeypatch):
+    # qwen3.5:4b answered "Who won the 2022 FIFA World Cup?" so, without calling a tool (D-026's gap)
+    _, headers = make_user("ownknowledge")
+    upload_text(client, headers)
+    monkeypatch.setattr(ScriptedChatModel, "_reply",
+                        lambda self, messages: AIMessage(content="Japan has about 125 million people."))
+    status, events = ask_stream(client, headers, "What is the population of Japan?", session_id="own", mode="agent")
+    assert status == 200
+    text = "".join(e["content"] for e in events if e["type"] == "token")
+    assert text == rag.NOT_FOUND
+    done = events[-1]
+    assert done["sources"] == [] and done["steps"] == [] and done["tool_used"] == "agent_direct"
+    assert done["turn_id"] is None  # a refusal is not saved, as in the other modes
+    assert client.get("/api/v1/sessions", headers=headers).json()["sessions"] == []
+
+
+def test_an_answer_after_searches_that_found_nothing_is_refused(client, make_user, fake_llm, monkeypatch):
+    _, headers = make_user("foundnothing")
+    upload_text(client, headers)
+    monkeypatch.setattr(settings, "confidence_threshold", 1.1)  # every search finds nothing close enough
+    r = ask(client, headers, "What is the population of Japan?", mode="agent")
+    assert r.status_code == 200, r.text
+    assert r.json()["answer"] == rag.NOT_FOUND and r.json()["sources"] == []
+    # What the agent tried still shows
+    assert [(s["tool"], s["output"]) for s in r.json()["steps"]] == [("document_search", rag.NOT_FOUND)]
+
+
+def test_with_no_documents_the_refusal_says_so(client, make_user, monkeypatch):
+    _, headers = make_user("nodocsagent")
+    monkeypatch.setattr(ScriptedChatModel, "_reply", lambda self, messages: AIMessage(content="Paris."))
+    assert ask(client, headers, "What is the capital of France?", mode="agent").json()["answer"] == rag.NO_DOCUMENTS
+
+
+def test_running_out_of_steps_is_said_even_when_no_search_found_anything(client, make_user, monkeypatch):
+    _, headers = make_user("foundnothingloop")
+    upload_text(client, headers)
+    monkeypatch.setattr(settings, "confidence_threshold", 1.1)
+    monkeypatch.setattr(ScriptedChatModel, "_reply", lambda self, messages: AIMessage(
+        content="", tool_calls=[{"name": "document_search_wrapper", "args": {"query": "Japan"}, "id": f"c{len(messages)}"}]))
+    assert "need more steps" in ask(client, headers, "Loop", mode="agent").json()["answer"]
 
 
 # ── The tool trace (Sprint 8, item 2) ─────────────────────────────────────────

@@ -212,13 +212,18 @@ pipeline/rag.py  _agent_events()
                                        → rag.answer(..., save_turn=False, document_ids=scope.ids)  (section 6, without saving)
     create_agent(get_llm(tool_temperature), tools, AGENT_SYSTEM_PROMPT)   langchain.agents
     history from memory → agent.invoke(messages, recursion_limit=12)
-    → {answer, sources, confidence (lowest of its searches; none if it searched nothing), tool_used, steps}
-  the answer is sent word by word, then memory.add_turn(), then the done event with steps and usage
+    → {answer, sources, confidence (lowest of its searches; none if it searched nothing), tool_used, steps,
+       unsupported (no passage found, no sum, no date, and not out of steps; D-081)}
+  unsupported → NOT_FOUND (NO_DOCUMENTS if the user has none) is sent instead, no turn saved
+  otherwise the answer is sent word by word, then memory.add_turn()
+  then the done event with steps and usage
 ```
 
 **Where it fails:** a model that cannot use tools (gemma3:4b; or an OpenAI-compatible model
 without tools) gets a message naming the fix. A loop that keeps calling tools stops at
-the recursion limit and lists the calls it made.
+the recursion limit and lists the calls it made. An answer from the model's own knowledge is
+refused only when it rests on no tool result: one that adds such facts to found passages or a
+sum gets through (D-081), and a question that needs only the conversation is refused.
 
 ## 8. Building a model, and when a model fails
 

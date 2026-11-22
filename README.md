@@ -107,7 +107,7 @@ cd ..\backend
 Type a question in the box at the foot of the page. The answer appears as it is written; **Stop** ends it, and nothing of a stopped or failed answer is saved: the question goes back into the box, with **Retry**.
 
 - **Default** searches your documents and writes the answer from the passages it found, citing them as [1], [2].
-- **Agent** can also use a calculator and a date tool, and chain them with the document search ("find the paper's best accuracy, then subtract it from 100"). It is slower, needs a model that can use tools, and lists each step above its answer.
+- **Agent** can also use a calculator and a date tool, and chain them with the document search ("find the paper's best accuracy, then subtract it from 100"). It is slower, needs a model that can use tools, and lists each step above its answer. Like Default, it refuses when neither your documents nor its tools give the answer: it does not answer from the model's general knowledge.
 
 Under each answer, its sources, and how well the passages matched the question:
 
